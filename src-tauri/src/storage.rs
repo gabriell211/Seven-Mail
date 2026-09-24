@@ -201,8 +201,11 @@ pub fn list_queue(paths: &AppPaths) -> Result<Vec<QueueOperation>, String> {
     list_operations(&paths.pending)
 }
 
-pub fn claim_next(paths: &AppPaths) -> Result<Option<QueueOperation>, String> {
-    let Some(operation) = list_operations(&paths.pending)?.into_iter().next() else {
+pub fn claim_next_kind(paths: &AppPaths, kind: &str) -> Result<Option<QueueOperation>, String> {
+    let Some(operation) = list_operations(&paths.pending)?
+        .into_iter()
+        .find(|operation| operation.kind == kind)
+    else {
         return Ok(None);
     };
 
@@ -306,10 +309,26 @@ pub fn apply_message_action(
     Ok(message)
 }
 
-pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
-    if paths.message_cache.exists() {
-        fs::remove_dir_all(&paths.message_cache).map_err(io_error)?;
+fn clear_directory_contents(dir: &Path) -> Result<(), String> {
+    if !dir.exists() {
+        return Ok(());
     }
+
+    for entry in fs::read_dir(dir).map_err(io_error)? {
+        let path = entry.map_err(io_error)?.path();
+        if path.is_dir() {
+            clear_directory_contents(&path)?;
+            fs::remove_dir(&path).map_err(io_error)?;
+        } else {
+            fs::remove_file(&path).map_err(io_error)?;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
+    clear_directory_contents(&paths.message_cache)?;
     fs::create_dir_all(&paths.message_cache).map_err(io_error)?;
     Ok(())
 }
