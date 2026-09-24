@@ -388,13 +388,13 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 - [x] IMAP
 - [x] SMTP
-- [ ] POP3
-- [ ] OAuth 2.0
-- [ ] Authorization Code + PKCE
-- [ ] Renovação segura de tokens
+- [x] POP3
+- [x] OAuth 2.0
+- [x] Authorization Code + PKCE
+- [x] Renovação segura de tokens
 - [x] Descoberta automática de configuração
-- [ ] CalDAV
-- [ ] CardDAV
+- [x] CalDAV
+- [x] CardDAV
 - [ ] APIs nativas de provedores quando necessárias
 - [x] Autenticação por senha quando suportada
 - [x] Gmail
@@ -404,18 +404,18 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Conta Microsoft
 - [x] Servidores corporativos
 - [x] Servidores personalizados
-- [ ] Diretórios LDAP quando disponíveis
+- [x] Diretórios LDAP quando disponíveis
 
 ## Configuração avançada
 
 - [x] Configuração automática
 - [x] Configuração manual
 - [x] Porta IMAP
-- [ ] Porta POP
+- [x] Porta POP
 - [x] Porta SMTP
 - [x] SSL/TLS
 - [x] STARTTLS
-- [ ] Timeout configurável
+- [x] Timeout configurável
 - [x] Validação de certificado
 - [x] Teste de conexão
 
@@ -504,11 +504,11 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Exportar ICS
 - [x] Abrir convites ICS
 - [x] Fusos horários
-- [ ] Múltiplos fusos horários
-- [ ] Horário de trabalho
-- [ ] Dias úteis configuráveis
-- [ ] Local de trabalho
-- [ ] Horário de trabalho por dia
+- [x] Múltiplos fusos horários
+- [x] Horário de trabalho
+- [x] Dias úteis configuráveis
+- [x] Local de trabalho
+- [x] Horário de trabalho por dia
 - [ ] Calendários de feriados
 - [ ] Importação de feriados personalizados quando suportado
 
@@ -540,8 +540,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Grupos
 - [x] Listas de contatos
 - [ ] Catálogo global de endereços
-- [ ] Diretório corporativo
-- [ ] Consulta LDAP
+- [x] Diretório corporativo
+- [x] Consulta LDAP
 - [x] Grupos de distribuição
 - [ ] Destinatários sugeridos
 - [x] Pesquisa
@@ -560,7 +560,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 - [ ] Contatos compartilhados quando suportados pelo provedor
 - [ ] Listas compartilhadas
-- [ ] Diretórios corporativos somente leitura
+- [x] Diretórios corporativos somente leitura
 
 ---
 
@@ -622,7 +622,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Indicador de estado da sincronização
 - [ ] Resolução de conflitos
 - [ ] Sincronização incremental
-- [ ] Configuração do período armazenado localmente
+- [x] Configuração do período armazenado localmente
 
 ---
 
@@ -634,7 +634,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Lembrete de tarefa
 - [x] Configuração por conta
 - [x] Configuração por pasta
-- [ ] Silenciar conta
+- [x] Silenciar conta
 - [x] Silenciar conversa
 - [x] Horário silencioso
 - [ ] Ações rápidas pela notificação
@@ -681,7 +681,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 - [x] Credenciais armazenadas com segurança
 - [x] Keychain/Keyring do sistema operacional
-- [ ] OAuth 2.0
+- [x] OAuth 2.0
 - [x] TLS
 - [x] Validação de certificado
 - [x] Proteção contra conteúdo remoto
@@ -693,8 +693,8 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Aviso de remetente externo
 - [x] Bloqueio de anexos perigosos
 - [x] Exibição de resultados SPF, DKIM e DMARC quando disponíveis
-- [ ] Suporte a autenticação em duas etapas do provedor
-- [ ] Criptografia do armazenamento local
+- [x] Suporte a autenticação em duas etapas do provedor
+- [x] Criptografia do armazenamento local
 - [x] Bloqueio do aplicativo
 - [x] Sessões protegidas
 - [x] Limpeza segura de dados locais
@@ -725,7 +725,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Painel de leitura à direita
 - [x] Painel de leitura abaixo
 - [x] Painel de leitura desativado
-- [ ] Personalização do menu lateral
+- [x] Personalização do menu lateral
 - [x] Personalização de ações rápidas
 - [x] Personalização do painel de pastas
 - [x] Mostrar/ocultar fotos dos remetentes
@@ -747,10 +747,10 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 ## Idioma e região
 
 - [ ] Múltiplos idiomas
-- [ ] Formato de data
-- [ ] Formato de hora
-- [ ] Primeiro dia da semana
-- [ ] Fuso horário
+- [x] Formato de data
+- [x] Formato de hora
+- [x] Primeiro dia da semana
+- [x] Fuso horário
 - [x] Verificação ortográfica
 - [x] Autocorreção
 - [x] Capitalização automática
@@ -806,10 +806,10 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Indexação local
 - [x] Busca rápida
 - [x] Processamento de mensagens em background
-- [ ] Limite de concorrência
+- [x] Limite de concorrência
 - [ ] Retry com backoff
-- [ ] Economia de memória
-- [ ] Economia de bateria
+- [x] Economia de memória
+- [x] Economia de bateria
 - [x] Suporte a caixas com grande volume de mensagens
 
 ---
@@ -842,12 +842,12 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Bandeja do sistema
 - [ ] Badge de mensagens não lidas
 - [x] Notificações nativas
-- [ ] Protocolo mailto:
+- [x] Protocolo mailto:
 - [ ] Definir como cliente padrão
 - [x] Abrir arquivos EML
 - [ ] Abrir arquivos MSG quando suportado
 - [ ] Abrir arquivos OFT quando suportado
-- [ ] Abrir arquivos ICS
+- [x] Abrir arquivos ICS
 - [x] Arrastar arquivos para composição
 - [ ] Arrastar anexos para área de trabalho
 - [ ] Arrastar anexos para outros aplicativos
@@ -956,7 +956,7 @@ A aplicação deverá utilizar:
 - [x] Armazenamento local
 - [x] IMAP
 - [x] SMTP
-- [ ] OAuth 2.0 + PKCE
+- [x] OAuth 2.0 + PKCE
 - [x] Descoberta automática de contas
 - [x] Primeira sincronização
 - [x] Caixa de entrada
@@ -982,7 +982,7 @@ A aplicação deverá utilizar:
 ## 0.3.0 — Múltiplas contas
 
 - [x] Caixa unificada
-- [ ] OAuth
+- [x] OAuth
 - [x] Gmail
 - [x] Yahoo
 - [x] iCloud
@@ -1004,7 +1004,7 @@ A aplicação deverá utilizar:
 
 ## 0.5.0 — Calendário
 
-- [ ] CalDAV e/ou API do provedor
+- [x] CalDAV e/ou API do provedor
 - [x] Calendários
 - [ ] Eventos
 - [x] Recorrência
@@ -1017,12 +1017,12 @@ A aplicação deverá utilizar:
 
 ## 0.6.0 — Contatos
 
-- [ ] CardDAV e/ou API do provedor
+- [x] CardDAV e/ou API do provedor
 - [ ] Pessoas
 - [x] Favoritos
 - [x] Categorias
 - [x] Grupos
-- [ ] Diretório corporativo / LDAP
+- [x] Diretório corporativo / LDAP
 - [x] CSV
 - [x] vCard
 
@@ -1056,7 +1056,7 @@ A aplicação deverá utilizar:
 - [x] Importação
 - [x] Exportação
 - [x] Backup
-- [ ] Criptografia local
+- [x] Criptografia local
 - [x] Regras e configurações importáveis/exportáveis
 - [ ] Políticas corporativas quando suportadas pelo provedor
 
