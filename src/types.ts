@@ -73,6 +73,13 @@ export interface QueueOperation {
   payload: Record<string, unknown>;
 }
 
+export interface ConditionalMailRule {
+  id: string;
+  field: "from" | "subject" | "category" | "priority";
+  value: string;
+  accent: string;
+}
+
 export interface AppSettings {
   theme: ThemeMode;
   readingPane: ReadingPane;
@@ -117,6 +124,8 @@ export interface AppSettings {
   remoteContentAllowedSenders?: string[];
   warnSuspiciousLinks?: boolean;
   externalSenderWarning?: boolean;
+  quickActions?: Array<"archive" | "delete" | "flag" | "read" | "pin">;
+  conditionalMailRules?: ConditionalMailRule[];
 }
 
 
