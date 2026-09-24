@@ -5,6 +5,14 @@ import { bridge } from "../lib/bridge";
 import { pushCloudDocument } from "../lib/neon";
 import { syncWorkspaceCollection } from "../lib/workspace-sync";
 import {
+  eventConflicts,
+  exceptionOccurrence,
+  expandCalendarEvents,
+  splitRecurringSeries,
+  suggestMeetingSlots,
+  type CalendarOccurrence,
+} from "../lib/calendar-recurrence";
+import {
   contactsFromCsv,
   contactsFromVcard,
   contactsToCsv,
@@ -174,6 +182,7 @@ export function PersistentCalendarView() {
   const store = useWorkspace<CalendarEvent>("calendar");
   const calendars = useWorkspace<CalendarListItem>("calendar-list");
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
+  const [editingOccurrence,setEditingOccurrence]=useState<{sourceId:string;originalStart:string}|null>(null);
   const [cursor, setCursor] = useState(() => new Date());
   const [view, setView] = useState<"day" | "three" | "week" | "workweek" | "month" | "agenda">("month");
 
@@ -183,6 +192,11 @@ export function PersistentCalendarView() {
     : [localCalendar,...calendars.items];
   const visibleCalendarIds=new Set(calendarList.filter((item)=>item.visible!==false).map((item)=>item.id));
   const visibleEvents=store.items.filter((event)=>visibleCalendarIds.has(event.calendarId??"local"));
+  const expandedEvents=useMemo(()=>{
+    const rangeStart=new Date(cursor.getFullYear()-1,0,1);
+    const rangeEnd=new Date(cursor.getFullYear()+2,11,31,23,59,59,999);
+    return expandCalendarEvents(visibleEvents,rangeStart,rangeEnd);
+  },[visibleEvents,cursor.getFullYear()]);
 
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const gridStart = new Date(first);
@@ -222,18 +236,18 @@ export function PersistentCalendarView() {
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
-    for (const event of visibleEvents) {
+    for (const event of expandedEvents) {
       const key = new Date(event.startAt).toDateString();
       const list = [...(map.get(key) ?? []), event]
         .sort((a, b) => a.startAt.localeCompare(b.startAt));
       map.set(key, list);
     }
     return map;
-  }, [visibleEvents]);
+  }, [expandedEvents]);
 
   const agenda = useMemo(
-    () => [...visibleEvents].sort((a, b) => a.startAt.localeCompare(b.startAt)),
-    [visibleEvents],
+    () => [...expandedEvents].sort((a, b) => a.startAt.localeCompare(b.startAt)),
+    [expandedEvents],
   );
 
   function fresh(): CalendarEvent {
@@ -340,11 +354,54 @@ export function PersistentCalendarView() {
       title:`${event.title} (cópia)`,
       status:"confirmed",
       reminderNotifiedAt:undefined,
+      recurrenceParentId:undefined,
+      occurrenceOriginalStart:undefined,
     });
   }
 
-  const EventButton = ({ event }: { event: CalendarEvent }) => (
-    <button className="calendar-event" style={{ borderLeftColor: event.color }} onClick={() => setEditing(event)}>
+  function openOccurrence(event:CalendarOccurrence) {
+    const source=store.items.find((item)=>item.id===event.sourceEventId);
+    if(!source||!source.recurrence||source.recurrence==="none"||event.recurrenceParentId){
+      setEditing(event);
+      setEditingOccurrence(null);
+      return;
+    }
+    setEditing({...source,startAt:event.startAt,endAt:event.endAt});
+    setEditingOccurrence({sourceId:source.id,originalStart:event.startAt});
+  }
+
+  async function saveThisOccurrence() {
+    if(!editing||!editingOccurrence) return;
+    const source=store.items.find((item)=>item.id===editingOccurrence.sourceId);
+    if(!source) return;
+    const {series,exception}=exceptionOccurrence(source,editingOccurrence.originalStart,{
+      ...editing,
+      id:undefined as never,
+      recurrence:"none",
+      recurrenceParentId:source.id,
+    });
+    await store.save(series);
+    await store.save(exception);
+    setEditing(null);
+    setEditingOccurrence(null);
+  }
+
+  async function saveFollowingOccurrences() {
+    if(!editing||!editingOccurrence) return;
+    const source=store.items.find((item)=>item.id===editingOccurrence.sourceId);
+    if(!source) return;
+    const {previous,following}=splitRecurringSeries(source,editingOccurrence.originalStart,{
+      ...editing,
+      id:undefined as never,
+    });
+    await store.save(previous);
+    await store.save(following);
+    setEditing(null);
+    setEditingOccurrence(null);
+  }
+
+  const EventButton = ({ event }: { event: CalendarOccurrence }) => (
+    <button className="calendar-event" style={{ borderLeftColor: event.color }} onClick={() => openOccurrence(event)}>
       <b>{event.title || "Sem título"}</b>
       {!event.allDay && <small>{new Date(event.startAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</small>}
       {event.location && <small>{event.location}</small>}
@@ -440,9 +497,13 @@ export function PersistentCalendarView() {
         <CalendarEditor
           value={editing}
           calendars={calendarList}
+          allEvents={store.items}
+          occurrence={editingOccurrence}
           onChange={setEditing}
-          onClose={() => setEditing(null)}
-          onSave={() => store.save(editing)}
+          onClose={() => {setEditing(null);setEditingOccurrence(null);}}
+          onSave={editingOccurrence?saveThisOccurrence:()=>store.save(editing)}
+          onSaveFollowing={editingOccurrence?saveFollowingOccurrences:undefined}
+          onEditSeries={editingOccurrence?()=>{const source=store.items.find((item)=>item.id===editingOccurrence.sourceId);if(source){setEditing(source);setEditingOccurrence(null);}}:undefined}
           onDuplicate={store.items.some((item)=>item.id===editing.id)?async()=>{await duplicateEvent(editing);setEditing(null);}:undefined}
           onDelete={store.items.some((item) => item.id === editing.id) ? async () => { await store.remove(editing.id); setEditing(null); } : undefined}
         />
@@ -454,22 +515,33 @@ export function PersistentCalendarView() {
 function CalendarEditor({
   value,
   calendars,
+  allEvents,
+  occurrence,
   onChange,
   onClose,
   onSave,
   onDelete,
   onDuplicate,
+  onSaveFollowing,
+  onEditSeries,
 }: {
   value: CalendarEvent;
   calendars: CalendarListItem[];
+  allEvents: CalendarEvent[];
+  occurrence?: {sourceId:string;originalStart:string}|null;
   onChange: (value: CalendarEvent) => void;
   onClose: () => void;
   onSave: () => Promise<void>;
   onDelete?: () => Promise<void>;
   onDuplicate?: () => Promise<void>;
+  onSaveFollowing?: () => Promise<void>;
+  onEditSeries?: () => void;
 }) {
+  const conflicts=useMemo(()=>eventConflicts(value,allEvents),[value.startAt,value.endAt,value.id,allEvents]);
+  const suggestions=useMemo(()=>conflicts.length?suggestMeetingSlots(value,allEvents,4):[],[value.startAt,value.endAt,value.id,allEvents,conflicts.length]);
+
   return (
-    <EditorModal title={value.title || "Novo evento"} eyebrow="EVENTO" onClose={onClose} onSave={onSave} disabled={!value.title.trim() || !value.startAt || !value.endAt}>
+    <EditorModal title={value.title || "Novo evento"} eyebrow={occurrence?"OCORRÊNCIA":"EVENTO"} onClose={onClose} onSave={onSave} saveLabel={occurrence?"Salvar esta ocorrência":"Salvar"} disabled={!value.title.trim() || !value.startAt || !value.endAt}>
       <label className="full"><span>Título</span><input autoFocus value={value.title} onChange={(event) => onChange({ ...value, title: event.target.value })} /></label>
       <label><span>Início</span><input type="datetime-local" value={value.startAt.slice(0, 16)} onChange={(event) => onChange({ ...value, startAt: event.target.value })} /></label>
       <label><span>Fim</span><input type="datetime-local" value={value.endAt.slice(0, 16)} onChange={(event) => onChange({ ...value, endAt: event.target.value })} /></label>
@@ -484,10 +556,14 @@ function CalendarEditor({
       <label><span>Repetir até</span><input type="date" value={value.recurrenceUntil?.slice(0,10)??""} disabled={!value.recurrence||value.recurrence==="none"} onChange={(event)=>onChange({...value,recurrenceUntil:event.target.value||undefined})}/></label>
       <label><span>Fuso horário</span><input value={value.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone} onChange={(event)=>onChange({...value,timezone:event.target.value})}/></label>
       <label><span>Categorias</span><input value={(value.categories??[]).join(", ")} onChange={(event)=>onChange({...value,categories:event.target.value.split(",").map((item)=>item.trim()).filter(Boolean)})}/></label>
-      <label className="full"><span>Descrição</span><textarea value={value.description} onChange={(event) => onChange({ ...value, description: event.target.value })} /></label>
+      {conflicts.length>0&&<div className="full scheduling-assistant"><header><b>{conflicts.length} conflito(s) detectado(s)</b><span>Horários livres sugeridos</span></header><div>{suggestions.map((slot)=><button key={slot.startAt} type="button" onClick={()=>onChange({...value,startAt:slot.startAt,endAt:slot.endAt})}>{new Date(slot.startAt).toLocaleString("pt-BR",{weekday:"short",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</button>)}</div></div>}
+      <label><span>Mostrar como</span><select value={value.freeBusyStatus??"busy"} onChange={(event)=>onChange({...value,freeBusyStatus:event.target.value as CalendarEvent["freeBusyStatus"]})}><option value="busy">Ocupado</option><option value="tentative">Provisório</option><option value="free">Livre</option></select></label>
+            <label className="full"><span>Descrição</span><textarea value={value.description} onChange={(event) => onChange({ ...value, description: event.target.value })} /></label>
       <label><span>Lembrete</span><input type="datetime-local" value={value.reminderAt?.slice(0,16) ?? ""} onChange={(event) => onChange({ ...value, reminderAt: event.target.value || undefined, reminderNotifiedAt: undefined })} /></label>
       <label className="inline-check"><input type="checkbox" checked={value.allDay} onChange={(event) => onChange({ ...value, allDay: event.target.checked })} /> Dia inteiro</label>
       <label className="inline-check"><input type="checkbox" checked={Boolean(value.isPrivate)} onChange={(event)=>onChange({...value,isPrivate:event.target.checked})}/> Evento privado</label>
+      {occurrence&&onEditSeries&&<button className="secondary" onClick={onEditSeries}>Editar série inteira</button>}
+      {occurrence&&onSaveFollowing&&<button className="secondary" onClick={()=>void onSaveFollowing()}>Salvar esta e as próximas</button>}
       {onDuplicate && <button className="secondary" onClick={()=>void onDuplicate()}><Icon name="copy" size={14}/> Duplicar evento</button>}
       {onDelete && <button className="danger-link" onClick={() => void onDelete()}><Icon name="trash" size={14} /> Excluir evento</button>}
     </EditorModal>
