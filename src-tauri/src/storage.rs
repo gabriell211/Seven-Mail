@@ -1,4 +1,4 @@
-use crate::models::{AccountProfile, MailMessage, QueueOperation, RuntimeInfo};
+use crate::models::{AccountProfile, MailMessage, QueueOperation, QueuedAttachment, RuntimeInfo};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{fs, io::{self, Write}, path::{Path, PathBuf}};
 
@@ -9,6 +9,7 @@ pub struct AppPaths {
     pub cache: PathBuf,
     pub message_cache: PathBuf,
     pub queue: PathBuf,
+    pub queue_attachments: PathBuf,
     pub pending: PathBuf,
     pub processing: PathBuf,
     pub completed: PathBuf,
@@ -33,6 +34,7 @@ impl AppPaths {
             cache: root.join("cache"),
             message_cache: root.join("cache").join("messages"),
             queue: root.join("queue"),
+            queue_attachments: root.join("queue").join("attachments"),
             pending: root.join("queue").join("pending"),
             processing: root.join("queue").join("processing"),
             completed: root.join("queue").join("completed"),
@@ -51,6 +53,7 @@ impl AppPaths {
             &self.cache,
             &self.message_cache,
             &self.queue,
+            &self.queue_attachments,
             &self.pending,
             &self.processing,
             &self.completed,
@@ -267,6 +270,103 @@ pub fn claim_next_kind(paths: &AppPaths, kind: &str) -> Result<Option<QueueOpera
     claim_next_matching(paths, |operation| operation.kind == kind)
 }
 
+pub fn claim_next_send_due(paths: &AppPaths) -> Result<Option<QueueOperation>, String> {
+    let now = chrono::Utc::now();
+    claim_next_matching(paths, |operation| {
+        if operation.kind != "send" {
+            return false;
+        }
+
+        operation
+            .payload
+            .get("sendAt")
+            .and_then(|value| value.as_str())
+            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+            .map(|when| when.with_timezone(&chrono::Utc) <= now)
+            .unwrap_or(true)
+    })
+}
+
+fn safe_attachment_name(value: &str) -> String {
+    let value = value
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_' | ' ') { ch } else { '_' })
+        .collect::<String>();
+    let trimmed = value.trim_matches(['.', ' ']);
+    if trimmed.is_empty() { "arquivo".into() } else { trimmed.chars().take(120).collect() }
+}
+
+fn dangerous_attachment(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|value| value.to_str()).unwrap_or("").to_ascii_lowercase().as_str(),
+        "exe" | "msi" | "bat" | "cmd" | "com" | "scr" | "pif" | "ps1" | "vbs" | "vbe" | "js" | "jse" | "wsf" | "wsh" | "hta" | "reg" | "lnk"
+    )
+}
+
+pub fn stage_attachments(
+    paths: &AppPaths,
+    operation_id: &str,
+    sources: &[String],
+) -> Result<Vec<QueuedAttachment>, String> {
+    safe_component(operation_id)?;
+    let destination = paths.queue_attachments.join(operation_id);
+    fs::create_dir_all(&destination).map_err(io_error)?;
+
+    let mut output = Vec::new();
+    let mut total = 0u64;
+
+    for (index, source) in sources.iter().enumerate() {
+        let source_path = Path::new(source);
+        if !source_path.is_file() {
+            return Err(format!("Anexo não encontrado: {}", source_path.display()));
+        }
+        if dangerous_attachment(source_path) {
+            return Err(format!("Extensão de anexo bloqueada por segurança: {}", source_path.display()));
+        }
+
+        let metadata = fs::metadata(source_path).map_err(io_error)?;
+        if metadata.len() > 25 * 1024 * 1024 {
+            return Err("Cada anexo deve ter no máximo 25 MB.".to_string());
+        }
+        total = total.saturating_add(metadata.len());
+        if total > 100 * 1024 * 1024 {
+            return Err("O total de anexos desta mensagem não pode exceder 100 MB.".to_string());
+        }
+
+        let original_name = source_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("arquivo");
+        let name = safe_attachment_name(original_name);
+        let staged_name = format!("{index:03}-{name}");
+        let staged_path = destination.join(staged_name);
+        fs::copy(source_path, &staged_path).map_err(io_error)?;
+
+        output.push(QueuedAttachment {
+            name,
+            path: staged_path.display().to_string(),
+            size: metadata.len(),
+        });
+    }
+
+    Ok(output)
+}
+
+pub fn cancel_operation(paths: &AppPaths, operation_id: &str) -> Result<bool, String> {
+    safe_component(operation_id)?;
+    let pending = paths.pending.join(format!("{operation_id}.json"));
+    if !pending.exists() {
+        return Ok(false);
+    }
+
+    fs::remove_file(pending).map_err(io_error)?;
+    let attachments = paths.queue_attachments.join(operation_id);
+    if attachments.exists() {
+        fs::remove_dir_all(attachments).map_err(io_error)?;
+    }
+    Ok(true)
+}
+
 pub fn claim_next_mail_action(paths: &AppPaths, account_id: &str) -> Result<Option<QueueOperation>, String> {
     safe_component(account_id)?;
     claim_next_matching(paths, |operation| {
@@ -300,7 +400,12 @@ pub fn complete(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
         return Ok(());
     }
     let destination = paths.completed.join(format!("{}.json", operation_id));
-    fs::rename(source, destination).map_err(io_error)
+    fs::rename(source, destination).map_err(io_error)?;
+    let attachments = paths.queue_attachments.join(operation_id);
+    if attachments.exists() {
+        fs::remove_dir_all(attachments).map_err(io_error)?;
+    }
+    Ok(())
 }
 
 pub fn fail(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
