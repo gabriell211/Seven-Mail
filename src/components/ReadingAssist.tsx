@@ -19,17 +19,14 @@ export function ReadingAssist({
 
   useEffect(()=>{
     return ()=>{
-      if("speechSynthesis" in window) window.speechSynthesis.cancel();
+      window.speechSynthesis.cancel();
     };
   },[]);
 
   function toggleSpeech(){
-    if(!("speechSynthesis" in window)){
-      window.alert("Leitura em voz alta não está disponível neste sistema.");
-      return;
-    }
+    const speech=speech;
     if(speaking){
-      window.speechSynthesis.cancel();
+      speech.cancel();
       setSpeaking(false);
       return;
     }
@@ -39,8 +36,8 @@ export function ReadingAssist({
     utterance.pitch=1;
     utterance.onend=()=>setSpeaking(false);
     utterance.onerror=()=>setSpeaking(false);
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
+    speech.cancel();
+    speech.speak(utterance);
     setSpeaking(true);
   }
 
