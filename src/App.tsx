@@ -178,10 +178,16 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,activeAccount,onCompose,onAdd,onRefresh,syncing}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;syncing:boolean}) {
+function MailView({accounts,messages,activeAccount,onCompose,onAdd,onRefresh,onMessageAction,syncing}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean}) {
   const [folder,setFolder] = useState("Caixa de entrada");
   const [selectedId,setSelectedId] = useState<string>();
   const selected = messages.find(m=>m.id===selectedId);
+  const folderMessages = messages.filter(message=>message.folder===folder);
+
+  async function act(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox") {
+    await onMessageAction(messageId, action);
+    if (["archive","delete","spam","inbox"].includes(action)) setSelectedId(undefined);
+  }
 
   return <div className="mail-layout">
     <aside className="folder-pane">
@@ -203,8 +209,8 @@ function MailView({accounts,messages,activeAccount,onCompose,onAdd,onRefresh,syn
         <div className="icon-group"><button className="icon-button"><Icon name="filter"/></button><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={!activeAccount||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div>
       </header>
       <div className="segmented"><button className="active">Prioritários</button><button>Outros</button></div>
-      {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : messages.length===0 ? <div className="empty-state small"><div className="empty-symbol"><Icon name="inbox" size={30}/></div><h3>Tudo limpo</h3><p>As mensagens sincronizadas aparecerão aqui.</p></div> :
-        <div className="message-list">{messages.map(message=><button key={message.id} className={"message "+(selectedId===message.id?"selected ":"")+(!message.isRead?"unread":"")} onClick={()=>setSelectedId(message.id)}>
+      {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : folderMessages.length===0 ? <div className="empty-state small"><div className="empty-symbol"><Icon name="inbox" size={30}/></div><h3>Tudo limpo</h3><p>As mensagens sincronizadas aparecerão aqui.</p></div> :
+        <div className="message-list">{folderMessages.map(message=><button key={message.id} className={"message "+(selectedId===message.id?"selected ":"")+(!message.isRead?"unread":"")} onClick={()=>{setSelectedId(message.id);if(!message.isRead) void act(message.id,"read");}}>
           <span className="avatar">{(message.from.name||message.from.email)[0].toUpperCase()}</span>
           <span className="message-copy"><span className="message-meta"><b>{message.from.name||message.from.email}</b><time>{new Date(message.receivedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</time></span><strong>{message.subject||"(sem assunto)"}</strong><small>{message.preview}</small></span>
           {message.hasAttachments&&<Icon name="paperclip" size={14}/>}
@@ -214,7 +220,14 @@ function MailView({accounts,messages,activeAccount,onCompose,onAdd,onRefresh,syn
 
     <section className="reading-pane">
       {selected ? <>
-        <header className="reading-header"><div><span className="eyebrow">MENSAGEM</span><h1>{selected.subject}</h1></div><div className="icon-group"><button className="icon-button"><Icon name="reply"/></button><button className="icon-button"><Icon name="forward"/></button><button className="icon-button"><Icon name="more"/></button></div></header>
+        <header className="reading-header"><div><span className="eyebrow">MENSAGEM</span><h1>{selected.subject}</h1></div><div className="icon-group">
+  <button className="icon-button" title={selected.isFlagged?"Remover sinalização":"Sinalizar"} onClick={()=>void act(selected.id,selected.isFlagged?"unflag":"flag")}><Icon name="flag"/></button>
+  <button className="icon-button" title="Arquivar" onClick={()=>void act(selected.id,"archive")}><Icon name="archive"/></button>
+  <button className="icon-button" title="Excluir" onClick={()=>void act(selected.id,"delete")}><Icon name="trash"/></button>
+  <button className="icon-button" title="Responder"><Icon name="reply"/></button>
+  <button className="icon-button" title="Encaminhar"><Icon name="forward"/></button>
+  <button className="icon-button" title="Mais opções"><Icon name="more"/></button>
+</div></header>
         <div className="sender"><span className="avatar big">{(selected.from.name||selected.from.email)[0].toUpperCase()}</span><div><b>{selected.from.name||selected.from.email}</b><small>{selected.from.email}</small></div><time>{new Date(selected.receivedAt).toLocaleString()}</time></div>
         <article className="mail-body">{selected.bodyText||selected.preview}</article>
         <div className="reply-actions"><button className="secondary"><Icon name="reply" size={15}/> Responder</button><button className="secondary"><Icon name="forward" size={15}/> Encaminhar</button></div>
@@ -325,6 +338,12 @@ export default function App() {
     }
   }
 
+  async function applyMessageAction(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox") {
+    if (!activeAccount) return;
+    await bridge.messageAction(activeAccount.id, messageId, action);
+    setMessages(await bridge.listCachedMessages(activeAccount.id));
+  }
+
   const filtered = useMemo(()=>{
     const q=search.trim().toLowerCase();
     return q ? messages.filter(m=>[m.subject,m.preview,m.from.name,m.from.email].filter(Boolean).some(v=>v!.toLowerCase().includes(q))) : messages;
@@ -343,7 +362,7 @@ export default function App() {
         <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} onCompose={()=>setComposeOpen(true)} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} syncing={syncState==="syncing"}/>} 
+        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} onCompose={()=>setComposeOpen(true)} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"}/>} 
         {section==="calendar"&&<CalendarView/>}
         {section==="people"&&<PeopleView/>}
         {section==="tasks"&&<TasksView/>}
