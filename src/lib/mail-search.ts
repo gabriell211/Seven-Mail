@@ -42,7 +42,7 @@ function parseToken(raw: string): SearchToken {
   }
 
   if (key === "is" && ["read", "unread", "flagged", "unflagged"].includes(normalize(value))) {
-    return { kind: "state", value: normalize(value) as SearchToken & never };
+    return { kind: "state", value: normalize(value) as "read" | "unread" | "flagged" | "unflagged" };
   }
 
   if (key === "has" && ["attachment", "attachments"].includes(normalize(value))) {
