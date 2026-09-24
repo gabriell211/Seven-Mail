@@ -1,4 +1,5 @@
 mod credentials;
+mod dav_sync;
 mod imap_sync;
 mod interchange;
 mod local_crypto;
@@ -8,7 +9,7 @@ mod providers;
 mod storage;
 mod workspace;
 
-use models::{AccountProfile, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
+use models::{AccountProfile, DavSyncResult, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
 use storage::AppPaths;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
@@ -88,6 +89,26 @@ fn clear_app_lock() -> Result<(), String> {
 #[tauri::command]
 fn discover_provider(email: String) -> ProviderSettings {
     providers::discover(&email)
+}
+
+#[tauri::command]
+fn sync_dav(account_id: String) -> Result<DavSyncResult, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    dav_sync::sync(&account)
+}
+
+#[tauri::command]
+fn test_dav_connection(account_id: String) -> Result<bool, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    dav_sync::test(&account)
 }
 
 #[tauri::command]
@@ -601,6 +622,8 @@ pub fn run() {
             verify_app_lock,
             clear_app_lock,
             discover_provider,
+            sync_dav,
+            test_dav_connection,
             test_smtp_connection,
             test_imap_connection,
             sync_inbox,
