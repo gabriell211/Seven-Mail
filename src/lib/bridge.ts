@@ -24,6 +24,8 @@ export const bridge = {
   verifyAppLock: (pin: string): Promise<boolean> => command("verify_app_lock", { pin }),
   clearAppLock: (): Promise<void> => command("clear_app_lock"),
   discoverProvider: (email: string): Promise<ProviderSettings> => command("discover_provider", { email }),
+  syncDav: (accountId: string): Promise<{calendarObjects:string[];contactObjects:string[]}> => command("sync_dav", { accountId }),
+  testDavConnection: (accountId: string): Promise<boolean> => command("test_dav_connection", { accountId }),
   testSmtpConnection: (accountId: string): Promise<boolean> => command("test_smtp_connection", { accountId }),
   testImapConnection: (accountId: string): Promise<boolean> => command("test_imap_connection", { accountId }),
   syncInbox: (accountId: string, limit = 50): Promise<number> => command("sync_inbox", { accountId, limit }),
