@@ -860,6 +860,43 @@ pub fn secure_clear_local_data(paths: &AppPaths) -> Result<(), String> {
     Ok(())
 }
 
+pub fn prune_message_cache(paths: &AppPaths, retention_days: u32) -> Result<usize, String> {
+    if retention_days == 0 {
+        return Ok(0);
+    }
+
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days.clamp(1, 3650) as i64);
+    let messages = list_cached_messages(paths, None)?;
+    let mut removed = 0usize;
+
+    for message in messages {
+        let Ok(received) = chrono::DateTime::parse_from_rfc3339(&message.received_at) else {
+            continue;
+        };
+        if received.with_timezone(&chrono::Utc) >= cutoff {
+            continue;
+        }
+
+        let message_path = paths
+            .message_cache
+            .join(&message.account_id)
+            .join(format!("{}.json", message.id));
+        if message_path.exists() {
+            fs::remove_file(&message_path).map_err(io_error)?;
+        }
+
+        if let Ok(raw_path) = raw_message_path(paths, &message.account_id, &message.id) {
+            if raw_path.exists() {
+                fs::remove_file(raw_path).map_err(io_error)?;
+            }
+        }
+
+        removed += 1;
+    }
+
+    Ok(removed)
+}
+
 pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
     if paths.message_cache.exists() {
         fs::remove_dir_all(&paths.message_cache).map_err(io_error)?;
