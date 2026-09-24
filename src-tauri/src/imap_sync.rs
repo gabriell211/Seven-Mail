@@ -158,6 +158,9 @@ impl async_imap::Authenticator for &OAuth2 {
 
 async fn login(account: &AccountProfile) -> Result<async_imap::Session<TlsStream<TcpStream>>, String> {
     let client = connect(account).await?;
+    if !account.can("read") {
+        return Err("A conta compartilhada não possui permissão de leitura.".to_string());
+    }
     let username = account.username.clone().unwrap_or_else(|| account.email.clone());
 
     if account.oauth_enabled {
@@ -170,7 +173,7 @@ async fn login(account: &AccountProfile) -> Result<async_imap::Session<TlsStream
             .await
             .map_err(|(error, _)| format!("Autenticação OAuth IMAP recusada: {error}"))
     } else {
-        let password = credentials::load(&account.id)?;
+        let password = credentials::load(account.credential_account_id())?;
         client
             .login(username, password)
             .await
