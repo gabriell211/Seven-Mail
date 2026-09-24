@@ -39,3 +39,4 @@ rand = "0.8"
 reqwest = { version = "0.13", features = ["blocking"] }
 regex = "1"
 ldap3 = "0.12.1"
+openssl = { version = "0.10", features = ["vendored"] }
