@@ -101,6 +101,8 @@ export interface CalendarEvent {
   allDay: boolean;
   color: string;
   participants: string[];
+  reminderAt?: string;
+  reminderNotifiedAt?: string;
 }
 
 export interface ContactItem {
