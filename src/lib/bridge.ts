@@ -32,6 +32,8 @@ export const bridge = {
   cacheMessage: (message: MailMessage): Promise<void> => command("cache_message", { message }),
   queueOperation: (operation: QueueOperation): Promise<void> => command("queue_operation", { operation }),
   stageAttachments: (operationId: string, sources: string[], maxFileMb = 25, maxTotalMb = 100): Promise<QueuedAttachment[]> => command("stage_attachments", { operationId, sources, maxFileMb, maxTotalMb }),
+  stageMessageAsEml: (operationId: string, accountId: string, messageId: string, suggestedName: string): Promise<QueuedAttachment> =>
+    command("stage_message_as_eml", { operationId, accountId, messageId, suggestedName }),
   cancelOperation: (operationId: string): Promise<boolean> => command("cancel_operation", { operationId }),
   listQueue: (): Promise<QueueOperation[]> => command("list_queue"),
   flushOutbox: (): Promise<number> => command("flush_outbox"),
