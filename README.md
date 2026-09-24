@@ -425,21 +425,21 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 ## Calendários
 
-- [ ] Múltiplos calendários
+- [x] Múltiplos calendários
 - [ ] Calendários por conta
 - [ ] Calendários compartilhados
 - [x] Calendários locais
-- [ ] Mostrar/ocultar calendários
+- [x] Mostrar/ocultar calendários
 - [x] Cores personalizadas
 
 ## Visualizações
 
 - [x] Dia
 - [x] Semana
-- [ ] Semana útil
+- [x] Semana útil
 - [x] Mês
 - [x] Agenda
-- [ ] Visualização de 3 dias
+- [x] Visualização de 3 dias
 - [ ] Calendários lado a lado
 - [x] Hoje
 
@@ -448,17 +448,17 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Criar evento
 - [x] Editar evento
 - [x] Excluir evento
-- [ ] Duplicar evento
+- [x] Duplicar evento
 - [ ] Arrastar evento
 - [ ] Redimensionar evento
 - [x] Local
 - [x] Descrição
 - [x] Participantes
-- [ ] Participantes obrigatórios
-- [ ] Participantes opcionais
-- [ ] Salas e recursos
+- [x] Participantes obrigatórios
+- [x] Participantes opcionais
+- [x] Salas e recursos
 - [x] Evento de dia inteiro
-- [ ] Evento privado
+- [x] Evento privado
 - [x] Lembretes
 - [ ] Recorrência
 - [ ] Exceções de recorrência
@@ -471,7 +471,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 ## Reuniões
 
 - [ ] Criar reunião
-- [ ] Salvar reunião como rascunho
+- [x] Salvar reunião como rascunho
 - [ ] Convidar participantes
 - [ ] Assistente de agendamento
 - [ ] Consulta de disponibilidade livre/ocupado
@@ -503,7 +503,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Importar ICS
 - [x] Exportar ICS
 - [ ] Abrir convites ICS
-- [ ] Fusos horários
+- [x] Fusos horários
 - [ ] Múltiplos fusos horários
 - [ ] Horário de trabalho
 - [ ] Dias úteis configuráveis
@@ -523,32 +523,32 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Excluir contato
 - [ ] Foto
 - [x] Nome
-- [ ] Sobrenome
-- [ ] Apelido
+- [x] Sobrenome
+- [x] Apelido
 - [x] Empresa
 - [x] Cargo
 - [x] E-mails
 - [x] Telefones
-- [ ] Endereços
-- [ ] Datas importantes
+- [x] Endereços
+- [x] Datas importantes
 - [x] Observações
 
 ## Organização
 
 - [x] Contatos favoritos
-- [ ] Categorias
-- [ ] Grupos
-- [ ] Listas de contatos
+- [x] Categorias
+- [x] Grupos
+- [x] Listas de contatos
 - [ ] Catálogo global de endereços
 - [ ] Diretório corporativo
 - [ ] Consulta LDAP
 - [ ] Grupos de distribuição
 - [ ] Destinatários sugeridos
 - [x] Pesquisa
-- [ ] Mesclar duplicados
-- [ ] Detecção de duplicados
+- [x] Mesclar duplicados
+- [x] Detecção de duplicados
 - [ ] Edição em massa
-- [ ] Exclusão em massa
+- [x] Exclusão em massa
 
 ## Importação e exportação
 
@@ -575,7 +575,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Data de vencimento
 - [x] Lembretes
 - [ ] Recorrência
-- [ ] Categorias
+- [x] Categorias
 - [x] Notas
 - [x] Listas personalizadas
 - [x] Transformar e-mail em tarefa
@@ -586,7 +586,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Minha agenda / Meu dia
 - [x] Tarefas para hoje
 - [x] Próximas tarefas
-- [ ] E-mails sinalizados como tarefas
+- [x] E-mails sinalizados como tarefas
 
 ---
 
@@ -1021,7 +1021,7 @@ A aplicação deverá utilizar:
 - [ ] Pessoas
 - [x] Favoritos
 - [x] Categorias
-- [ ] Grupos
+- [x] Grupos
 - [ ] Diretório corporativo / LDAP
 - [x] CSV
 - [x] vCard
