@@ -75,6 +75,23 @@ const DEFAULT_SETTINGS: AppSettings = {
   externalSenderWarning: true,
   appLockEnabled: false,
   appLockMinutes: 5,
+  locale: "pt-BR",
+  dateFormat: "short",
+  timeFormat: "24",
+  firstDayOfWeek: 0,
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  secondaryTimezones: [],
+  workDays: [1,2,3,4,5],
+  workHours: {
+    "1":{start:"08:00",end:"18:00"},
+    "2":{start:"08:00",end:"18:00"},
+    "3":{start:"08:00",end:"18:00"},
+    "4":{start:"08:00",end:"18:00"},
+    "5":{start:"08:00",end:"18:00"}
+  },
+  workplace: "",
+  navOrder: ["mail","calendar","people","tasks","notes","rules","settings"],
+  hiddenNavItems: [],
   quickSteps: [],
   shortcuts: {
     newMessage:"ctrl+n",
@@ -807,6 +824,34 @@ function RulesView() {
 function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signatures,onSaveSignature,onDeleteSignature,profiles,activeProfileId,onActivateProfile,onSaveProfile,onDeleteProfile}:{settings:AppSettings;onChange:(s:AppSettings)=>void;runtime?:RuntimeInfo;accounts:AccountProfile[];onAccountsChange:(accounts:AccountProfile[])=>void;signatures:SignatureItem[];onSaveSignature:(signature:SignatureItem)=>Promise<void>;onDeleteSignature:(signature:SignatureItem)=>Promise<void>;profiles:ProfileItem[];activeProfileId?:string;onActivateProfile:(profile:ProfileItem|null)=>void;onSaveProfile:(profile:ProfileItem)=>Promise<void>;onDeleteProfile:(profile:ProfileItem)=>Promise<void>}) {
   const set = <K extends keyof AppSettings>(key:K,value:AppSettings[K])=>onChange({...settings,[key]:value});
 
+  function toggleWorkDay(day:number){
+    const current=settings.workDays??[1,2,3,4,5];
+    const next=current.includes(day)?current.filter((item)=>item!==day):[...current,day].sort();
+    set("workDays",next);
+  }
+
+  function setWorkHour(day:number,field:"start"|"end",value:string){
+    const current=settings.workHours??{};
+    const existing=current[String(day)]??{start:"08:00",end:"18:00"};
+    set("workHours",{...current,[String(day)]:{...existing,[field]:value}});
+  }
+
+  function moveNavItem(id:AppSection,direction:-1|1){
+    const order=[...(settings.navOrder??NAV.map((item)=>item.id))];
+    const index=order.indexOf(id);
+    if(index<0) return;
+    const target=index+direction;
+    if(target<0||target>=order.length) return;
+    [order[index],order[target]]=[order[target],order[index]];
+    set("navOrder",order);
+  }
+
+  function toggleNavItem(id:AppSection){
+    if(id==="settings") return;
+    const hidden=settings.hiddenNavItems??[];
+    set("hiddenNavItems",hidden.includes(id)?hidden.filter((item)=>item!==id):[...hidden,id]);
+  }
+
   async function exportBackup(encrypted=false) {
     const password=encrypted?window.prompt("Senha para criptografar o backup")?.trim():"";
     if(encrypted&&(!password||password.length<6)){
@@ -954,6 +999,16 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
 
     return <Workspace title="Configurações" eyebrow="PREFERÊNCIAS">
     <div className="settings-row brand-settings-row"><div><h3>Sobre o Seven Mail</h3><p>Identidade e informações do aplicativo.</p></div><div className="brand-about-card"><BrandLogo variant="about"/><div><strong>Seven Mail</strong><span>Cliente desktop local-first</span><small>Windows · Linux</small></div></div></div>
+    <div className="settings-row"><div><h3>Idioma, data e hora</h3><p>Preferências regionais usadas no calendário e nas áreas principais.</p></div><div className="shortcut-grid regional-settings">
+      <label><span>Idioma</span><select value={settings.locale??"pt-BR"} onChange={e=>set("locale",e.target.value as AppSettings["locale"])}><option value="pt-BR">Português (Brasil)</option><option value="en-US">English (US)</option><option value="es-ES">Español</option></select></label>
+      <label><span>Formato de data</span><select value={settings.dateFormat??"short"} onChange={e=>set("dateFormat",e.target.value as AppSettings["dateFormat"])}><option value="short">Curta</option><option value="medium">Média</option><option value="long">Longa</option></select></label>
+      <label><span>Formato de hora</span><select value={settings.timeFormat??"24"} onChange={e=>set("timeFormat",e.target.value as AppSettings["timeFormat"])}><option value="24">24 horas</option><option value="12">12 horas</option></select></label>
+      <label><span>Primeiro dia</span><select value={settings.firstDayOfWeek??0} onChange={e=>set("firstDayOfWeek",Number(e.target.value) as AppSettings["firstDayOfWeek"])}><option value={0}>Domingo</option><option value={1}>Segunda-feira</option><option value={6}>Sábado</option></select></label>
+      <label><span>Fuso principal</span><input value={settings.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone} onChange={e=>set("timezone",e.target.value)}/></label>
+      <label><span>Fusos secundários</span><input value={(settings.secondaryTimezones??[]).join(", ")} onChange={e=>set("secondaryTimezones",e.target.value.split(",").map((item)=>item.trim()).filter(Boolean))} placeholder="America/New_York, Europe/London"/></label>
+    </div></div>
+    <div className="settings-row"><div><h3>Horário de trabalho</h3><p>Define semana útil, expediente por dia e local de trabalho.</p></div><div className="work-settings"><label><span>Local de trabalho</span><input value={settings.workplace??""} onChange={e=>set("workplace",e.target.value)} placeholder="Escritório, Casa, Híbrido"/></label><div className="work-day-grid">{[0,1,2,3,4,5,6].map((day)=>{const labels=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];const enabled=(settings.workDays??[1,2,3,4,5]).includes(day);const hours=settings.workHours?.[String(day)]??{start:"08:00",end:"18:00"};return <article className={enabled?"active":""} key={day}><label><input type="checkbox" checked={enabled} onChange={()=>toggleWorkDay(day)}/>{labels[day]}</label><input type="time" disabled={!enabled} value={hours.start} onChange={e=>setWorkHour(day,"start",e.target.value)}/><input type="time" disabled={!enabled} value={hours.end} onChange={e=>setWorkHour(day,"end",e.target.value)}/></article>;})}</div></div></div>
+    <div className="settings-row"><div><h3>Menu lateral</h3><p>Escolha a ordem e quais áreas ficam visíveis no menu principal.</p></div><div className="nav-customizer">{(settings.navOrder??NAV.map((item)=>item.id)).map((id)=>{const item=NAV.find((nav)=>nav.id===id);if(!item)return null;const hidden=(settings.hiddenNavItems??[]).includes(id);return <article key={id}><Icon name={item.icon} size={14}/><span>{item.label}</span><label><input type="checkbox" checked={!hidden} disabled={id==="settings"} onChange={()=>toggleNavItem(id)}/> Visível</label><button className="icon-button" onClick={()=>moveNavItem(id,-1)}>↑</button><button className="icon-button" onClick={()=>moveNavItem(id,1)}>↓</button></article>;})}</div></div>
     <div className="settings-row"><div><h3>Aparência</h3><p>Tema, densidade e pré-visualização da lista.</p></div><div className="appearance-settings"><div className="choices">{(["system","light","dark"] as const).map(t=><button className={settings.theme===t?"choice active":"choice"} key={t} onClick={()=>set("theme",t)}><Icon name={t==="dark"?"moon":"sun"} size={16}/>{t==="system"?"Sistema":t==="light"?"Claro":"Escuro"}</button>)}</div><label><input type="checkbox" checked={settings.compact} onChange={e=>set("compact",e.target.checked)}/> Lista compacta</label><label><span>Linhas de prévia</span><select value={settings.previewLines} onChange={e=>set("previewLines",Number(e.target.value) as AppSettings["previewLines"])}><option value={1}>1 linha</option><option value={2}>2 linhas</option></select></label></div></div>
     <div className="settings-row"><div><h3>Quick Steps</h3><p>Combine múltiplas ações em um único botão e, opcionalmente, associe um atalho.</p></div><div className="quick-step-settings"><button className="secondary" onClick={createQuickStep}><Icon name="plus" size={13}/> Novo Quick Step</button>{(settings.quickSteps??[]).length===0?<small>Nenhuma ação composta configurada.</small>:(settings.quickSteps??[]).map((step)=><article key={step.id}><span><b>{step.name}</b><small>{step.actions.map((action)=>action.target?`${action.kind} → ${action.target}`:action.kind).join(" · ")}</small></span>{step.shortcut&&<kbd>{step.shortcut}</kbd>}<button className="icon-button" aria-label={`Excluir ${step.name}`} onClick={()=>removeQuickStep(step.id)}><Icon name="trash" size={13}/></button></article>)}</div></div>
     <div className="settings-row"><div><h3>Atalhos de teclado</h3><p>Personalize os atalhos principais. Use formatos como <code>ctrl+n</code>, <code>shift+r</code> ou <code>delete</code>.</p></div><div className="shortcut-grid">{([
@@ -1032,6 +1087,14 @@ export default function App() {
   const [settings,setSettings] = useState<AppSettings>(()=>{
     try { return {...DEFAULT_SETTINGS,...JSON.parse(localStorage.getItem("seven-mail:settings")||"{}")}; } catch { return DEFAULT_SETTINGS; }
   });
+
+  const navItems=useMemo(()=>{
+    const order=settings.navOrder??NAV.map((item)=>item.id);
+    const hidden=new Set(settings.hiddenNavItems??[]);
+    return order
+      .map((id)=>NAV.find((item)=>item.id===id))
+      .filter((item):item is (typeof NAV)[number]=>Boolean(item)&&(!hidden.has(item!.id)||item!.id==="settings"));
+  },[settings.navOrder,settings.hiddenNavItems]);
 
   const activeProfile = profiles.find((profile)=>profile.id===activeProfileId);
   const profileAccounts = activeProfile
@@ -2343,7 +2406,7 @@ export default function App() {
   return <><LaunchScreen ready={bootReady}/>{appLocked&&<AppLockScreen onUnlock={unlockApp}/>}<div className="app-shell">
     <aside className="nav-rail">
       <div className="rail-brand"><BrandLogo variant="rail"/></div>
-      <nav>{NAV.map(item=><button key={item.id} className={section===item.id?"nav-item active":"nav-item"} title={item.label} onClick={()=>setSection(item.id)}><Icon name={item.icon}/><span>{item.label}</span></button>)}</nav>
+      <nav>{navItems.map(item=><button key={item.id} className={section===item.id?"nav-item active":"nav-item"} title={item.label} onClick={()=>setSection(item.id)}><Icon name={item.icon}/><span>{item.label}</span></button>)}</nav>
       <button className="profile" onClick={()=>setAccountOpen(true)}>{activeAccount?activeAccount.displayName[0].toUpperCase():<Icon name="userplus" size={17}/>}</button>
     </aside>
     <main className="main">
@@ -2361,7 +2424,7 @@ export default function App() {
       </header>
       <div className="content">
         {section==="mail"&&<MailView accounts={profileAccounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onForwardAsAttachment={(message)=>void forwardAsAttachment(message)} onResendMessage={(message)=>void resendMessage(message)} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onIgnoreConversation={(message)=>void ignoreConversation(message)} onSetSenderCleanup={setSenderCleanup} onAllowRemoteContent={(sender)=>setSettings((current)=>({...current,remoteContentAllowedSenders:[...new Set([...(current.remoteContentAllowedSenders??[]),sender.toLocaleLowerCase("pt-BR")])]}))} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={settings}/>} 
-        {section==="calendar"&&<PersistentCalendarView accounts={profileAccounts}/>} 
+        {section==="calendar"&&<PersistentCalendarView accounts={profileAccounts} settings={settings}/>} 
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
         {section==="notes"&&<PersistentNotesView query={search}/>}
