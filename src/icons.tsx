@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-export type IconName = "mail"|"calendar"|"people"|"check"|"note"|"rule"|"settings"|"search"|"plus"|"inbox"|"send"|"draft"|"archive"|"trash"|"spam"|"star"|"flag"|"paperclip"|"refresh"|"chevron"|"more"|"reply"|"forward"|"filter"|"cloud"|"shield"|"moon"|"sun"|"x"|"userplus"|"clock"|"lock";
+export type IconName = "mail"|"calendar"|"people"|"check"|"note"|"rule"|"settings"|"search"|"plus"|"inbox"|"send"|"draft"|"archive"|"trash"|"spam"|"star"|"flag"|"paperclip"|"refresh"|"chevron"|"more"|"reply"|"forward"|"filter"|"cloud"|"shield"|"moon"|"sun"|"x"|"userplus"|"clock"|"lock"|"pin";
 
 const paths: Record<IconName, string[]> = {
   mail:["M4 6h16v12H4z","m4 7 8 6 8-6"], calendar:["M5 5h14v14H5z","M8 3v4M16 3v4M5 9h14"],
@@ -20,7 +20,8 @@ const paths: Record<IconName, string[]> = {
   cloud:["M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.4-1.8A5 5 0 0 0 7 18Z"], shield:["M12 3 5 6v6c0 5 3 8 7 9 4-1 7-4 7-9V6z","m9 12 2 2 4-5"],
   moon:["M20 15a8 8 0 0 1-11-11 9 9 0 1 0 11 11Z"], sun:["M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10Z","M12 2v2M12 20v2M2 12h2M20 12h2"],
   x:["M6 6l12 12M18 6 6 18"], userplus:["M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z","M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"],
-  clock:["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z","M12 6v6l4 2"], lock:["M6 10h12v11H6z","M8 10V7a4 4 0 0 1 8 0v3"]
+  clock:["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z","M12 6v6l4 2"], lock:["M6 10h12v11H6z","M8 10V7a4 4 0 0 1 8 0v3"],
+  pin:["M12 17v5","M5 4h14","m8 4 1 7 3 2 3-2 1-7","M9 15h6"]
 };
 
 export function Icon({name,size=20,...props}: SVGProps<SVGSVGElement> & {name:IconName;size?:number}) {
