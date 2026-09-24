@@ -89,14 +89,9 @@ fn flush_outbox() -> Result<usize, String> {
     let mut sent = 0usize;
 
     loop {
-        let Some(operation) = storage::claim_next(&paths)? else {
+        let Some(operation) = storage::claim_next_kind(&paths, "send")? else {
             break;
         };
-
-        if operation.kind != "send" {
-            storage::fail(&paths, &operation.id)?;
-            continue;
-        }
 
         let Some(account) = accounts.iter().find(|item| item.id == operation.account_id) else {
             storage::fail(&paths, &operation.id)?;
