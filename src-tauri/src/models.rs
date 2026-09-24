@@ -63,9 +63,31 @@ pub struct AccountProfile {
     #[serde(default)]
     pub aliases: Vec<String>,
     #[serde(default)]
+    pub is_shared_mailbox: bool,
+    #[serde(default)]
+    pub shared_owner_account_id: Option<String>,
+    #[serde(default)]
+    pub shared_mode: Option<String>,
+    #[serde(default)]
+    pub shared_permissions: Vec<String>,
+    #[serde(default)]
+    pub send_mode: Option<String>,
+    #[serde(default)]
     pub muted: bool,
     #[serde(default = "default_timeout_seconds")]
     pub connection_timeout_seconds: u64,
+}
+
+impl AccountProfile {
+    pub fn credential_account_id(&self) -> &str {
+        self.shared_owner_account_id.as_deref().unwrap_or(&self.id)
+    }
+
+    pub fn can(&self, permission: &str) -> bool {
+        !self.is_shared_mailbox
+            || self.shared_permissions.is_empty()
+            || self.shared_permissions.iter().any(|value| value == permission)
+    }
 }
 
 fn default_timeout_seconds() -> u64 {
