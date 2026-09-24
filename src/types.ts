@@ -104,6 +104,13 @@ export interface AppSettings {
   quietHoursEnabled?: boolean;
   quietHoursStart?: string;
   quietHoursEnd?: string;
+  ignoredConversationKeys?: string[];
+  cleanupSenders?: Record<string, number>;
+  autoReplyEnabled?: boolean;
+  autoReplySubject?: string;
+  autoReplyBody?: string;
+  autoReplyStart?: string;
+  autoReplyEnd?: string;
 }
 
 
