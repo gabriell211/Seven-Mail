@@ -5,6 +5,19 @@ import { Icon } from "../icons";
 import { bridge } from "../lib/bridge";
 import type { AccountProfile, AppSettings, ContentBlockItem, MailTemplateItem, QueuedAttachment, SignatureItem, WorkspaceDocument } from "../types";
 
+interface SpeechRecognitionLike {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
 export interface QueuedSendInfo {
   id: string;
   sendAt: string;
@@ -135,8 +148,10 @@ export function Composer({
   const [templates, setTemplates] = useState<MailTemplateItem[]>([]);
   const [contentBlocks, setContentBlocks] = useState<ContentBlockItem[]>([]);
   const [draggingFiles, setDraggingFiles] = useState(false);
+  const [dictating,setDictating]=useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const finishedRef = useRef(false);
+  const recognitionRef=useRef<SpeechRecognitionLike|null>(null);
 
   const linkPreview=useMemo(()=>{
     const match=draft.bodyText.match(/https?:\/\/[^\s<>"']+/i);
@@ -201,6 +216,10 @@ export function Composer({
     return ()=>unlisten?.();
   }, [draft.id,settings.maxAttachmentMb]);
 
+  useEffect(()=>{
+    return ()=>recognitionRef.current?.stop();
+  },[]);
+
   useEffect(() => {
     if (finishedRef.current) return;
     const timer = window.setTimeout(() => {
@@ -223,6 +242,50 @@ export function Composer({
       bodyText: editor.innerText,
       bodyHtml: editor.innerHTML,
     }));
+  }
+
+  function toggleDictation() {
+    if(dictating){
+      recognitionRef.current?.stop();
+      setDictating(false);
+      return;
+    }
+
+    const speechWindow=window as typeof window & {
+      SpeechRecognition?: SpeechRecognitionConstructor;
+      webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    };
+    const Constructor=speechWindow.SpeechRecognition??speechWindow.webkitSpeechRecognition;
+    if(!Constructor){
+      window.alert("Ditado por voz não está disponível neste sistema.");
+      return;
+    }
+
+    const recognition=new Constructor();
+    recognition.lang=settings.composeLanguage??"pt-BR";
+    recognition.continuous=true;
+    recognition.interimResults=false;
+    recognition.onresult=(event)=>{
+      let transcript="";
+      for(let index=0;index<event.results.length;index+=1){
+        const result=event.results[index];
+        if(result?.isFinal) transcript+=result[0]?.transcript??"";
+      }
+      const text=transcript.trim();
+      if(!text) return;
+      if(draft.mode==="rich"){
+        editorRef.current?.focus();
+        document.execCommand("insertText",false,`${text} `);
+        syncEditor();
+      }else{
+        setDraft((current)=>({...current,bodyText:`${current.bodyText}${current.bodyText&&!/\s$/.test(current.bodyText)?" ":""}${text} `}));
+      }
+    };
+    recognition.onerror=()=>setDictating(false);
+    recognition.onend=()=>setDictating(false);
+    recognitionRef.current=recognition;
+    recognition.start();
+    setDictating(true);
   }
 
   function format(command: string, value?: string) {
@@ -577,6 +640,7 @@ export function Composer({
         <footer className="compose-footer composer-footer">
           <div>
             <button className="icon-button attachment-button" title="Anexar arquivo" onClick={() => void pickAttachments()}><Icon name="paperclip" /></button>
+            <button className={dictating?"icon-button active":"icon-button"} title={dictating?"Parar ditado":"Ditado por voz"} onClick={toggleDictation}><Icon name="mic"/></button>
             {accountSignatures.length > 0 && <select className="signature-picker" aria-label="Inserir assinatura" defaultValue="" onChange={(event) => { if (event.target.value) insertSignature(event.target.value); event.currentTarget.value = ""; }}><option value="">Assinatura</option>{accountSignatures.map((signature) => <option key={signature.id} value={signature.id}>{signature.name}{signature.isDefault ? " · padrão" : ""}</option>)}</select>}
             {templates.length>0&&<select className="signature-picker" aria-label="Aplicar modelo" defaultValue="" onChange={(event)=>{if(event.target.value)useTemplate(event.target.value);event.currentTarget.value="";}}><option value="">Modelo</option>{templates.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select>}
             {contentBlocks.length>0&&<select className="signature-picker" aria-label="Inserir bloco" defaultValue="" onChange={(event)=>{if(event.target.value)insertContentBlock(event.target.value);event.currentTarget.value="";}}><option value="">Bloco</option>{contentBlocks.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select>}
