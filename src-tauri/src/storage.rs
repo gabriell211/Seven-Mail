@@ -297,15 +297,16 @@ pub fn apply_message_action(
 
     write_json(&path, &message)?;
 
+    let mailbox = message.remote_folder.clone().unwrap_or_else(|| "INBOX".to_string());
     let (kind, payload) = match action {
-        "read" => ("read", serde_json::json!({"remoteId": message.remote_id, "read": true})),
-        "unread" => ("read", serde_json::json!({"remoteId": message.remote_id, "read": false})),
-        "flag" => ("flag", serde_json::json!({"remoteId": message.remote_id, "flagged": true})),
-        "unflag" => ("flag", serde_json::json!({"remoteId": message.remote_id, "flagged": false})),
-        "archive" => ("move", serde_json::json!({"remoteId": message.remote_id, "target": "archive"})),
-        "delete" => ("move", serde_json::json!({"remoteId": message.remote_id, "target": "trash"})),
-        "spam" => ("move", serde_json::json!({"remoteId": message.remote_id, "target": "spam"})),
-        "inbox" => ("move", serde_json::json!({"remoteId": message.remote_id, "target": "inbox"})),
+        "read" => ("read", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "read": true})),
+        "unread" => ("read", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "read": false})),
+        "flag" => ("flag", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "flagged": true})),
+        "unflag" => ("flag", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "flagged": false})),
+        "archive" => ("move", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "target": "archive"})),
+        "delete" => ("move", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "target": "trash"})),
+        "spam" => ("move", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "target": "spam"})),
+        "inbox" => ("move", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "target": "inbox"})),
         _ => unreachable!(),
     };
 
@@ -325,6 +326,9 @@ pub fn apply_message_action(
 }
 
 pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
+    if paths.message_cache.exists() {
+        fs::remove_dir_all(&paths.message_cache).map_err(io_error)?;
+    }
     fs::create_dir_all(&paths.message_cache).map_err(io_error)?;
     Ok(())
 }
