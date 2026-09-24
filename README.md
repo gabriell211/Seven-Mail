@@ -673,7 +673,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Configurações
 - [x] Perfis
 - [x] Backup completo do perfil
-- [ ] Backup criptografado
+- [x] Backup criptografado
 
 ---
 
@@ -695,9 +695,9 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Exibição de resultados SPF, DKIM e DMARC quando disponíveis
 - [ ] Suporte a autenticação em duas etapas do provedor
 - [ ] Criptografia do armazenamento local
-- [ ] Bloqueio do aplicativo
-- [ ] Sessões protegidas
-- [ ] Limpeza segura de dados locais
+- [x] Bloqueio do aplicativo
+- [x] Sessões protegidas
+- [x] Limpeza segura de dados locais
 - [ ] Políticas de retenção quando oferecidas pelo provedor
 - [ ] Rótulos de sensibilidade quando oferecidos pelo provedor
 - [ ] Restrições de encaminhamento/cópia quando oferecidas pelo provedor
