@@ -7,10 +7,10 @@ import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
 import { ensureNotificationPermission, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
-import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
+import { deleteCloudDocument, pullCloudAccounts, pullCloudDocuments, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
 import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
 import { pendingRulesForMessage } from "./lib/rules";
-import type { AccountProfile, AppSection, AppSettings, MailFolder, MailMessage, ProviderSettings, RuleItem, RuntimeInfo, TaskItem, WorkspaceDocument } from "./types";
+import type { AccountProfile, AppSection, AppSettings, CategoryItem, MailFolder, MailMessage, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
@@ -366,6 +366,8 @@ export default function App() {
   const [undoSend,setUndoSend] = useState<{id:string;expiresAt:number}|null>(null);
   const [search,setSearch] = useState("");
   const [focusMessageId,setFocusMessageId] = useState<string>();
+  const [categories,setCategories] = useState<CategoryItem[]>([]);
+  const [savedSearches,setSavedSearches] = useState<SavedSearchItem[]>([]);
   const [syncState,setSyncState] = useState<"idle"|"syncing"|"error">("idle");
   const [settings,setSettings] = useState<AppSettings>(()=>{
     try { return {...DEFAULT_SETTINGS,...JSON.parse(localStorage.getItem("seven-mail:settings")||"{}")}; } catch { return DEFAULT_SETTINGS; }
@@ -374,6 +376,121 @@ export default function App() {
   const unified = activeId==="__all__";
   const activeAccount = unified ? undefined : (accounts.find(a=>a.id===activeId)||accounts[0]);
   const composeAccount = activeAccount ?? accounts.find((account)=>account.isDefault) ?? accounts[0];
+
+  async function loadWorkspaceCollection<T>(kind: WorkspaceKind): Promise<T[]> {
+    const local = await bridge.listWorkspace<T>(kind).catch(() => []);
+    const merged = new Map(local.map((document) => [document.id, document]));
+
+    try {
+      const cloud = await pullCloudDocuments<T>(kind);
+      for (const document of cloud) {
+        const current = merged.get(document.id);
+        if (!current || document.updatedAt > current.updatedAt) {
+          await bridge.upsertWorkspace(document);
+          merged.set(document.id, document);
+        } else if (current.updatedAt > document.updatedAt) {
+          void pushCloudDocument(current).catch(() => undefined);
+        }
+      }
+
+      for (const document of local) {
+        if (!cloud.some((remote) => remote.id === document.id)) {
+          void pushCloudDocument(document).catch(() => undefined);
+        }
+      }
+    } catch {
+      // Local-first: cloud is optional.
+    }
+
+    return [...merged.values()]
+      .sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))
+      .map((document)=>document.payload);
+  }
+
+  async function refreshMailOrganization() {
+    const [nextCategories,nextSavedSearches] = await Promise.all([
+      loadWorkspaceCollection<CategoryItem>("category"),
+      loadWorkspaceCollection<SavedSearchItem>("saved-search"),
+    ]);
+    setCategories(nextCategories);
+    setSavedSearches(nextSavedSearches);
+  }
+
+  async function createCategory() {
+    const name = window.prompt("Nome da categoria")?.trim();
+    if (!name || categories.some((category)=>category.name.toLocaleLowerCase("pt-BR")===name.toLocaleLowerCase("pt-BR"))) return;
+
+    const category: CategoryItem = {
+      id: crypto.randomUUID(),
+      name,
+      color: COLORS[categories.length % COLORS.length],
+    };
+    const document: WorkspaceDocument<CategoryItem> = {
+      id: category.id,
+      kind: "category",
+      updatedAt: new Date().toISOString(),
+      payload: category,
+    };
+    await bridge.upsertWorkspace(document);
+    setCategories((current)=>[...current,category]);
+    void pushCloudDocument(document).catch(() => undefined);
+  }
+
+  async function deleteCategory(category: CategoryItem) {
+    if (!window.confirm(`Excluir a categoria "${category.name}"?`)) return;
+    await bridge.deleteWorkspace("category",category.id);
+    setCategories((current)=>current.filter((item)=>item.id!==category.id));
+    void deleteCloudDocument("category",category.id).catch(() => undefined);
+
+    const cached = await bridge.listCachedMessages();
+    for (const message of cached) {
+      if (!message.categories.includes(category.name)) continue;
+      const updated = {...message,categories:message.categories.filter((name)=>name!==category.name)};
+      await bridge.cacheMessage(updated);
+      void pushCloudMessage(updated).catch(() => undefined);
+    }
+    setMessages(await bridge.listCachedMessages(unified ? undefined : activeAccount?.id));
+  }
+
+  async function toggleMessageCategory(message: MailMessage, category: CategoryItem) {
+    const hasCategory = message.categories.includes(category.name);
+    const updated: MailMessage = {
+      ...message,
+      categories: hasCategory
+        ? message.categories.filter((name)=>name!==category.name)
+        : [...message.categories,category.name],
+    };
+    await bridge.cacheMessage(updated);
+    setMessages((current)=>current.map((item)=>item.id===updated.id?updated:item));
+    void pushCloudMessage(updated).catch(() => undefined);
+  }
+
+  async function saveCurrentSearch() {
+    const query = search.trim();
+    if (!query) return;
+    const name = window.prompt("Nome da pesquisa salva",query)?.trim();
+    if (!name) return;
+
+    const existing = savedSearches.find((item)=>item.query===query);
+    const item: SavedSearchItem = existing
+      ? {...existing,name}
+      : {id:crypto.randomUUID(),name,query};
+    const document: WorkspaceDocument<SavedSearchItem> = {
+      id:item.id,
+      kind:"saved-search",
+      updatedAt:new Date().toISOString(),
+      payload:item,
+    };
+    await bridge.upsertWorkspace(document);
+    setSavedSearches((current)=>[item,...current.filter((value)=>value.id!==item.id)]);
+    void pushCloudDocument(document).catch(() => undefined);
+  }
+
+  async function deleteSavedSearch(item: SavedSearchItem) {
+    await bridge.deleteWorkspace("saved-search",item.id);
+    setSavedSearches((current)=>current.filter((value)=>value.id!==item.id));
+    void deleteCloudDocument("saved-search",item.id).catch(() => undefined);
+  }
 
   async function refreshDrafts() {
     const documents = await bridge.listWorkspace<ComposeDraft>("draft").catch(() => []);
@@ -490,6 +607,13 @@ export default function App() {
     const onCloudSession = () => void loadAccounts();
     window.addEventListener("seven-mail:cloud-session", onCloudSession);
     return () => window.removeEventListener("seven-mail:cloud-session", onCloudSession);
+  },[]);
+
+  useEffect(()=>{
+    void refreshMailOrganization();
+    const onCloudSession = () => void refreshMailOrganization();
+    window.addEventListener("seven-mail:cloud-session",onCloudSession);
+    return ()=>window.removeEventListener("seven-mail:cloud-session",onCloudSession);
   },[]);
 
   useEffect(()=>{
