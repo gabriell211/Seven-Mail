@@ -22,10 +22,16 @@ pub struct AccountProfile {
     pub is_default: bool,
     #[serde(default)]
     pub username: Option<String>,
+    #[serde(default = "default_incoming_protocol")]
+    pub incoming_protocol: String,
     #[serde(default)]
     pub imap_host: Option<String>,
     #[serde(default)]
     pub imap_port: Option<u16>,
+    #[serde(default)]
+    pub pop3_host: Option<String>,
+    #[serde(default)]
+    pub pop3_port: Option<u16>,
     #[serde(default)]
     pub smtp_host: Option<String>,
     #[serde(default)]
@@ -42,6 +48,10 @@ pub struct AccountProfile {
 
 fn default_timeout_seconds() -> u64 {
     30
+}
+
+fn default_incoming_protocol() -> String {
+    "imap".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
