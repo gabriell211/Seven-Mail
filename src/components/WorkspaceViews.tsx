@@ -714,7 +714,7 @@ export function PersistentRulesView({ onRunRules }: { onRunRules?: () => Promise
         </button>
         <button className="secondary" onClick={()=>void importRules()}><Icon name="upload" size={14}/> Importar</button>
         <button className="secondary" disabled={store.items.length===0} onClick={()=>void exportRules()}><Icon name="download" size={14}/> Exportar</button>
-        {runResult && <span>{runResult}</span>
+        {runResult && <span>{runResult}</span>}
       </div>
       {store.items.length === 0 ? (
         <div className="rule-card">
