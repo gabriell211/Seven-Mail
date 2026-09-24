@@ -63,6 +63,16 @@ fn sync_inbox(account_id: String, limit: Option<u32>) -> Result<usize, String> {
 }
 
 #[tauri::command]
+fn flush_mail_actions(account_id: String) -> Result<usize, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    imap_sync::flush_actions(&paths, &account)
+}
+
+#[tauri::command]
 fn list_cached_messages(account_id: Option<String>) -> Result<Vec<MailMessage>, String> {
     storage::list_cached_messages(&AppPaths::resolve()?, account_id.as_deref())
 }
@@ -137,6 +147,7 @@ pub fn run() {
             test_smtp_connection,
             test_imap_connection,
             sync_inbox,
+            flush_mail_actions,
             list_cached_messages,
             cache_message,
             queue_operation,
