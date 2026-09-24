@@ -28,6 +28,12 @@ export interface AccountProfile {
   ldapUrl?: string;
   ldapBaseDn?: string;
   ldapFilter?: string;
+  oauthEnabled?: boolean;
+  oauthClientId?: string;
+  oauthAuthorizationUrl?: string;
+  oauthTokenUrl?: string;
+  oauthScopes?: string[];
+  oauthRedirectUri?: string;
   smtpHost?: string;
   smtpPort?: number;
   securityMode?: "tls" | "starttls";
