@@ -41,11 +41,11 @@ export function AccountsPanel({
 
   async function test(account: AccountProfile) {
     setBusyId(account.id);
-    setStatus((current) => ({ ...current, [account.id]: "Testando IMAP e SMTP..." }));
+    setStatus((current) => ({ ...current, [account.id]: `Testando ${account.incomingProtocol==="pop3"?"POP3":"IMAP"} e SMTP...` }));
     try {
       await bridge.testImapConnection(account.id);
       await bridge.testSmtpConnection(account.id);
-      setStatus((current) => ({ ...current, [account.id]: "IMAP e SMTP conectados" }));
+      setStatus((current) => ({ ...current, [account.id]: `${account.incomingProtocol==="pop3"?"POP3":"IMAP"} e SMTP conectados` }));
     } catch (reason) {
       setStatus((current) => ({
         ...current,
@@ -77,7 +77,7 @@ export function AccountsPanel({
       <div className="settings-row account-settings">
         <div>
           <h3>Contas de e-mail</h3>
-          <p>Edite servidores, troque a credencial do keyring, teste IMAP/SMTP e escolha a conta padrão.</p>
+          <p>Edite IMAP/POP3/SMTP, troque a credencial do keyring, teste a conexão e escolha a conta padrão.</p>
         </div>
         <div className="account-settings-list">
           {accounts.length === 0 && <div className="mini-empty">Nenhuma conta conectada.</div>}
@@ -110,8 +110,14 @@ export function AccountsPanel({
             <div className="form-grid account-edit-grid">
               <label><span>Nome</span><input value={editing.displayName} onChange={(event) => setEditing({ ...editing, displayName: event.target.value })} /></label>
               <label><span>E-mail</span><input type="email" value={editing.email} onChange={(event) => setEditing({ ...editing, email: event.target.value, username: event.target.value })} /></label>
-              <label><span>Servidor IMAP</span><input value={editing.imapHost ?? ""} onChange={(event) => setEditing({ ...editing, imapHost: event.target.value })} /></label>
-              <label><span>Porta IMAP</span><input type="number" value={editing.imapPort ?? 993} onChange={(event) => setEditing({ ...editing, imapPort: Number(event.target.value) })} /></label>
+              <label><span>Protocolo de entrada</span><select value={editing.incomingProtocol ?? "imap"} onChange={(event) => setEditing({ ...editing, incomingProtocol: event.target.value as "imap"|"pop3" })}><option value="imap">IMAP</option><option value="pop3">POP3 (TLS)</option></select></label>
+              {(editing.incomingProtocol??"imap")==="imap"?<>
+                <label><span>Servidor IMAP</span><input value={editing.imapHost ?? ""} onChange={(event) => setEditing({ ...editing, imapHost: event.target.value })} /></label>
+                <label><span>Porta IMAP</span><input type="number" value={editing.imapPort ?? 993} onChange={(event) => setEditing({ ...editing, imapPort: Number(event.target.value) })} /></label>
+              </>:<>
+                <label><span>Servidor POP3</span><input value={editing.pop3Host ?? ""} onChange={(event) => setEditing({ ...editing, pop3Host: event.target.value })} /></label>
+                <label><span>Porta POP</span><input type="number" value={editing.pop3Port ?? 995} onChange={(event) => setEditing({ ...editing, pop3Port: Number(event.target.value) })} /></label>
+              </>}
               <label><span>Servidor SMTP</span><input value={editing.smtpHost ?? ""} onChange={(event) => setEditing({ ...editing, smtpHost: event.target.value })} /></label>
               <label><span>Porta SMTP</span><input type="number" value={editing.smtpPort ?? 465} onChange={(event) => setEditing({ ...editing, smtpPort: Number(event.target.value) })} /></label>
               <label><span>Segurança</span><select value={editing.securityMode ?? "tls"} onChange={(event) => setEditing({ ...editing, securityMode: event.target.value as AccountProfile["securityMode"] })}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
