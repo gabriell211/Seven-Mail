@@ -1373,7 +1373,49 @@ export default function App() {
       const matching = pendingRulesForMessage(rules,current);
 
       for (const rule of matching) {
-        current = await bridge.messageAction(current.accountId,current.id,rule.action);
+        if (["archive","delete","spam","flag","read"].includes(rule.action)) {
+          current = await bridge.messageAction(
+            current.accountId,
+            current.id,
+            rule.action as "archive"|"delete"|"spam"|"flag"|"read",
+          );
+        } else if (rule.action==="move" && rule.target?.trim()) {
+          current = await bridge.moveMessageToFolder(current.accountId,current.id,rule.target.trim(),rule.target.trim());
+        } else if (rule.action==="copy" && rule.target?.trim()) {
+          await bridge.copyMessageToFolder(current.accountId,current.id,rule.target.trim());
+        } else if (rule.action==="category" && rule.target?.trim()) {
+          current = {
+            ...current,
+            categories:[...new Set([...current.categories,rule.target.trim()])],
+          };
+        } else if (rule.action==="forward" && rule.target?.trim()) {
+          const account=accounts.find((item)=>item.id===current.accountId);
+          if(account){
+            const operationId=crypto.randomUUID();
+            await bridge.queueOperation({
+              id:operationId,
+              kind:"send",
+              accountId:current.accountId,
+              createdAt:new Date().toISOString(),
+              attempts:0,
+              payload:{
+                fromAddress:account.email,
+                to:rule.target.trim(),
+                cc:"",
+                bcc:"",
+                subject:/^(enc|fw|fwd):/i.test(current.subject)?current.subject:`Enc: ${current.subject||"(sem assunto)"}`,
+                bodyText:`Mensagem encaminhada automaticamente por regra.\n\nDe: ${current.from.name||current.from.email} <${current.from.email}>\nData: ${new Date(current.receivedAt).toLocaleString("pt-BR")}\nAssunto: ${current.subject}\n\n${current.bodyText||current.preview}`,
+                bodyHtml:"",
+                attachments:[],
+                priority:"normal",
+                requestReadReceipt:false,
+                requestDeliveryReceipt:false,
+                sendAt:new Date().toISOString(),
+              },
+            });
+          }
+        }
+
         current = {
           ...current,
           appliedRuleIds: [...new Set([...(current.appliedRuleIds ?? []),rule.id])],
