@@ -167,6 +167,13 @@ export interface CalendarEvent {
   status?: "confirmed" | "draft" | "cancelled";
   timezone?: string;
   onlineMeetingUrl?: string;
+  organizer?: string;
+  recurrenceExceptions?: string[];
+  recurrenceParentId?: string;
+  occurrenceOriginalStart?: string;
+  attendeeResponse?: "needs-action" | "accepted" | "tentative" | "declined";
+  keepInvitationInInbox?: boolean;
+  freeBusyStatus?: "busy" | "free" | "tentative";
 }
 
 export interface CalendarListItem {
