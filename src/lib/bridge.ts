@@ -47,6 +47,7 @@ export const bridge = {
   moveMessageToFolder: (accountId: string, messageId: string, targetPath: string, targetLabel: string): Promise<MailMessage> =>
     command("move_message_to_folder", { accountId, messageId, targetPath, targetLabel }),
   clearCache: (): Promise<void> => command("clear_cache"),
+  pruneMessageCache: (retentionDays: number): Promise<number> => command("prune_message_cache", { retentionDays }),
   secureClearLocalData: (): Promise<void> => command("secure_clear_local_data"),
   readTextFile: (path: string): Promise<string> => command("read_text_file", { path }),
   writeTextFile: (path: string, content: string): Promise<void> => command("write_text_file", { path, content }),
