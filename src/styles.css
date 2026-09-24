@@ -48,3 +48,5 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 
 .server-grid{display:grid;grid-template-columns:minmax(0,1fr) 100px minmax(0,1fr) 100px;gap:9px;padding:14px 21px 0;border-top:1px solid var(--line);margin-top:15px}
 .server-grid label{display:flex;flex-direction:column;gap:5px;font-size:8px;color:var(--muted);font-weight:800}.server-grid label.full{grid-column:1/-1}.server-grid input,.server-grid select{height:36px;border:1px solid var(--line);background:var(--solid);border-radius:9px;color:var(--text);padding:0 9px;font-size:10px;outline:0}.form-error{margin:10px 21px 0;padding:9px 11px;border-radius:9px;background:rgba(221,65,85,.08);color:#c93f52;font-size:9px;line-height:1.45}
+
+.icon-button:disabled{opacity:.35;cursor:not-allowed}.spinning svg{animation:spin .9s linear infinite}.sync.error{color:#c93f52}.sync.error i{background:#d84d60;box-shadow:0 0 0 4px rgba(216,77,96,.12)}.sync.syncing i{background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinning svg{animation:none}}
