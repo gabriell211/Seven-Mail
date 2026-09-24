@@ -78,7 +78,7 @@ pub fn import_eml(paths: &AppPaths, account: &AccountProfile, path: &str) -> Res
         account_id: account.id.clone(),
         remote_id: None,
         remote_folder: None,
-        folder: "Importados".to_string(),
+        folder: "Caixa de entrada".to_string(),
         subject: parsed.subject().unwrap_or("(sem assunto)").to_owned(),
         preview,
         from: mail_address(parsed.from().and_then(|value| value.first())),
