@@ -5,7 +5,7 @@ mod providers;
 mod storage;
 mod workspace;
 
-use models::{AccountProfile, MailMessage, ProviderSettings, QueueOperation, RuntimeInfo, WorkspaceDocument};
+use models::{AccountProfile, MailFolder, MailMessage, ProviderSettings, QueueOperation, RuntimeInfo, WorkspaceDocument};
 use storage::AppPaths;
 
 #[tauri::command]
@@ -61,6 +61,31 @@ fn sync_inbox(account_id: String, limit: Option<u32>) -> Result<usize, String> {
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
     imap_sync::sync_latest(&paths, &account, limit.unwrap_or(50))
+}
+
+#[tauri::command]
+fn list_mail_folders(account_id: String) -> Result<Vec<MailFolder>, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    imap_sync::list_folders(&account)
+}
+
+#[tauri::command]
+fn sync_mail_folder(
+    account_id: String,
+    path: String,
+    label: String,
+    limit: Option<u32>,
+) -> Result<usize, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    imap_sync::sync_folder(&paths, &account, &path, &label, limit.unwrap_or(50))
 }
 
 #[tauri::command]
@@ -178,6 +203,8 @@ pub fn run() {
             test_smtp_connection,
             test_imap_connection,
             sync_inbox,
+            list_mail_folders,
+            sync_mail_folder,
             flush_mail_actions,
             list_cached_messages,
             cache_message,
