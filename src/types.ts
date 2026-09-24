@@ -149,6 +149,17 @@ export interface AppSettings {
   appLockMinutes?: 0 | 1 | 5 | 15 | 30;
   quickSteps?: QuickStepItem[];
   shortcuts?: ShortcutBindings;
+  locale?: "pt-BR" | "en-US" | "es-ES";
+  dateFormat?: "short" | "medium" | "long";
+  timeFormat?: "12" | "24";
+  firstDayOfWeek?: 0 | 1 | 6;
+  timezone?: string;
+  secondaryTimezones?: string[];
+  workDays?: number[];
+  workHours?: Record<string,{start:string;end:string}>;
+  workplace?: string;
+  navOrder?: AppSection[];
+  hiddenNavItems?: AppSection[];
   quickActions?: Array<"archive" | "delete" | "flag" | "read" | "pin">;
   conditionalMailRules?: ConditionalMailRule[];
   autoCorrectEnabled?: boolean;
