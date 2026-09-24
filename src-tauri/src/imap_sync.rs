@@ -1,6 +1,7 @@
 use crate::{
     credentials,
     models::{AccountProfile, MailAddress, MailFolder, MailMessage},
+    oauth,
     providers,
     storage::{self, AppPaths},
 };
@@ -142,14 +143,39 @@ fn parse_message(
     })
 }
 
+struct OAuth2 {
+    user: String,
+    access_token: String,
+}
+
+impl async_imap::Authenticator for &OAuth2 {
+    type Response = String;
+
+    fn process(&mut self, _: &[u8]) -> Self::Response {
+        format!("user={}\x01auth=Bearer {}\x01\x01", self.user, self.access_token)
+    }
+}
+
 async fn login(account: &AccountProfile) -> Result<async_imap::Session<TlsStream<TcpStream>>, String> {
     let client = connect(account).await?;
-    let password = credentials::load(&account.id)?;
-    let username = account.username.as_deref().unwrap_or(&account.email);
-    client
-        .login(username, password)
-        .await
-        .map_err(|(error, _)| format!("Autenticação IMAP recusada: {error}"))
+    let username = account.username.clone().unwrap_or_else(|| account.email.clone());
+
+    if account.oauth_enabled {
+        let auth = OAuth2 {
+            user: username,
+            access_token: oauth::access_token(account)?,
+        };
+        client
+            .authenticate("XOAUTH2", &auth)
+            .await
+            .map_err(|(error, _)| format!("Autenticação OAuth IMAP recusada: {error}"))
+    } else {
+        let password = credentials::load(&account.id)?;
+        client
+            .login(username, password)
+            .await
+            .map_err(|(error, _)| format!("Autenticação IMAP recusada: {error}"))
+    }
 }
 
 pub fn test(account: &AccountProfile) -> Result<bool, String> {
