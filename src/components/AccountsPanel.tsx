@@ -116,6 +116,7 @@ export function AccountsPanel({
               <label><span>Porta SMTP</span><input type="number" value={editing.smtpPort ?? 465} onChange={(event) => setEditing({ ...editing, smtpPort: Number(event.target.value) })} /></label>
               <label><span>Segurança</span><select value={editing.securityMode ?? "tls"} onChange={(event) => setEditing({ ...editing, securityMode: event.target.value as AccountProfile["securityMode"] })}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
               <label><span>Cor</span><input type="color" value={editing.color} onChange={(event) => setEditing({ ...editing, color: event.target.value })} /></label>
+              <label className="full"><span>Aliases de envio</span><input value={(editing.aliases??[]).join(", ")} onChange={(event) => setEditing({ ...editing, aliases: event.target.value.split(",").map((value)=>value.trim()).filter(Boolean) })} placeholder="alias@dominio.com, outro@dominio.com" /></label>
               <label className="full"><span>Nova senha / senha de aplicativo</span><input type="password" value={secret} onChange={(event) => setSecret(event.target.value)} placeholder="Deixe vazio para manter a credencial atual" /></label>
             </div>
             <div className="secure-note"><Icon name="lock" size={16} /><span>A senha continua somente no Credential Manager/Keyring do sistema operacional.</span></div>
