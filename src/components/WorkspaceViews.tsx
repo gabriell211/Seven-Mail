@@ -695,7 +695,7 @@ export function PersistentTasksView({ onOpenRelatedMessage }: { onOpenRelatedMes
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const tomorrowStart = todayStart + 24 * 60 * 60 * 1000;
 
-  const open = store.items
+  const openTasks = store.items
     .filter((task) => !task.completedAt)
     .sort((a, b) => {
       const left = a.dueAt ? new Date(a.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
@@ -704,15 +704,15 @@ export function PersistentTasksView({ onOpenRelatedMessage }: { onOpenRelatedMes
     });
   const completed = store.items.filter((task) => task.completedAt);
 
-  const todayTasks = open.filter((task) => {
+  const todayTasks = openTasks.filter((task) => {
     const due = task.dueAt ? new Date(task.dueAt).getTime() : NaN;
     return Number.isFinite(due) && due >= todayStart && due < tomorrowStart;
   });
-  const overdueTasks = open.filter((task) => {
+  const overdueTasks = openTasks.filter((task) => {
     const due = task.dueAt ? new Date(task.dueAt).getTime() : NaN;
     return Number.isFinite(due) && due < todayStart;
   });
-  const upcomingTasks = open.filter((task) => {
+  const upcomingTasks = openTasks.filter((task) => {
     const due = task.dueAt ? new Date(task.dueAt).getTime() : NaN;
     return Number.isFinite(due) && due >= tomorrowStart;
   });
@@ -723,7 +723,7 @@ export function PersistentTasksView({ onOpenRelatedMessage }: { onOpenRelatedMes
       ? overdueTasks
       : filter === "upcoming"
         ? upcomingTasks
-        : open;
+        : openTasks;
 
   async function quickAdd() {
     const title = draft.trim();
@@ -803,7 +803,7 @@ export function PersistentTasksView({ onOpenRelatedMessage }: { onOpenRelatedMes
     <Workspace title="Tarefas" eyebrow="MINHA AGENDA" action="Nova tarefa" onAction={() => setEditing(fresh())}>
       <div className="workspace-toolbar task-io-toolbar"><button className="secondary" onClick={()=>void importTasks()}><Icon name="upload" size={14}/> Importar</button><button className="secondary" disabled={store.items.length===0} onClick={()=>void exportTasks()}><Icon name="download" size={14}/> Exportar</button></div>
       <div className="task-filter-bar">
-        <button className={filter==="all"?"active":""} onClick={()=>setFilter("all")}>Todas <b>{open.length}</b></button>
+        <button className={filter==="all"?"active":""} onClick={()=>setFilter("all")}>Todas <b>{openTasks.length}</b></button>
         <button className={filter==="today"?"active":""} onClick={()=>setFilter("today")}>Hoje <b>{todayTasks.length}</b></button>
         <button className={filter==="overdue"?"active":""} onClick={()=>setFilter("overdue")}>Atrasadas <b>{overdueTasks.length}</b></button>
         <button className={filter==="upcoming"?"active":""} onClick={()=>setFilter("upcoming")}>Próximas <b>{upcomingTasks.length}</b></button>
