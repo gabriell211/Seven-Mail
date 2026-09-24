@@ -73,6 +73,8 @@ pub struct MailMessage {
     pub body_html: Option<String>,
     pub body_text: Option<String>,
     pub categories: Vec<String>,
+    #[serde(default)]
+    pub applied_rule_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
