@@ -8,7 +8,7 @@ use lettre::{
     transport::smtp::authentication::Credentials,
     Message, SmtpTransport, Transport,
 };
-use std::fs;
+use std::{fs, time::Duration};
 
 pub fn discover(email: &str) -> ProviderSettings {
     let domain = email
@@ -80,7 +80,8 @@ fn smtp_transport(account: &AccountProfile, password: String) -> Result<SmtpTran
     }
     .map_err(|error| error.to_string())?
     .port(settings.smtp_port)
-    .credentials(credentials);
+    .credentials(credentials)
+    .timeout(Some(Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300))));
 
     Ok(builder.build())
 }
