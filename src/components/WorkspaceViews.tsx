@@ -396,7 +396,7 @@ export function PersistentTasksView() {
           <label><span>Lista</span><input value={editing.listName} onChange={(event) => setEditing({ ...editing, listName: event.target.value })} /></label>
           <label><span>Prioridade</span><select value={editing.priority} onChange={(event) => setEditing({ ...editing, priority: event.target.value as TaskItem["priority"] })}><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option></select></label>
           <label><span>Vencimento</span><input type="datetime-local" value={editing.dueAt?.slice(0, 16) ?? ""} onChange={(event) => setEditing({ ...editing, dueAt: event.target.value || undefined })} /></label>
-          <label><span>Lembrete</span><input type="datetime-local" value={editing.reminderAt?.slice(0, 16) ?? ""} onChange={(event) => setEditing({ ...editing, reminderAt: event.target.value || undefined })} /></label>
+          <label><span>Lembrete</span><input type="datetime-local" value={editing.reminderAt?.slice(0, 16) ?? ""} onChange={(event) => setEditing({ ...editing, reminderAt: event.target.value || undefined, reminderNotifiedAt: undefined })} /></label>
           <label className="full"><span>Notas</span><textarea value={editing.notes} onChange={(event) => setEditing({ ...editing, notes: event.target.value })} /></label>
         </EditorModal>
       )}
