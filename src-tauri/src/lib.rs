@@ -1,4 +1,5 @@
 mod credentials;
+mod imap_sync;
 mod models;
 mod providers;
 mod storage;
@@ -39,6 +40,26 @@ fn test_smtp_connection(account_id: String) -> Result<bool, String> {
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
     providers::test_smtp(&account)
+}
+
+#[tauri::command]
+fn test_imap_connection(account_id: String) -> Result<bool, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    imap_sync::test(&account)
+}
+
+#[tauri::command]
+fn sync_inbox(account_id: String, limit: Option<u32>) -> Result<usize, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    imap_sync::sync_latest(&paths, &account, limit.unwrap_or(50))
 }
 
 #[tauri::command]
@@ -114,6 +135,8 @@ pub fn run() {
             store_secret,
             discover_provider,
             test_smtp_connection,
+            test_imap_connection,
+            sync_inbox,
             list_cached_messages,
             cache_message,
             queue_operation,

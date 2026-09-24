@@ -53,7 +53,7 @@ pub fn discover(email: &str) -> ProviderSettings {
     }
 }
 
-fn effective_settings(account: &AccountProfile) -> ProviderSettings {
+pub fn settings_for(account: &AccountProfile) -> ProviderSettings {
     let discovered = discover(&account.email);
     ProviderSettings {
         imap_host: account.imap_host.clone().unwrap_or(discovered.imap_host),
@@ -65,7 +65,7 @@ fn effective_settings(account: &AccountProfile) -> ProviderSettings {
 }
 
 fn smtp_transport(account: &AccountProfile, password: String) -> Result<SmtpTransport, String> {
-    let settings = effective_settings(account);
+    let settings = settings_for(account);
     let credentials = Credentials::new(
         account.username.clone().unwrap_or_else(|| account.email.clone()),
         password,

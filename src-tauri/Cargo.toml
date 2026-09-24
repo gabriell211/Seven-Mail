@@ -20,3 +20,9 @@ uuid = { version = "1", features = ["v4", "serde"] }
 dirs = "6"
 keyring = "3"
 lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "rustls", "ring", "webpki-roots"] }
+async-imap = "0.11.3"
+async-native-tls = "0.6.0"
+async-std = "1.13.2"
+futures = "0.3.31"
+mail-parser = "0.11.9"
+chrono = { version = "0.4.42", default-features = false, features = ["clock"] }

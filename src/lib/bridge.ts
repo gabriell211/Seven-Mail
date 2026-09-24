@@ -17,6 +17,8 @@ export const bridge = {
   storeSecret: (accountId: string, secret: string): Promise<void> => command("store_secret", { accountId, secret }),
   discoverProvider: (email: string): Promise<ProviderSettings> => command("discover_provider", { email }),
   testSmtpConnection: (accountId: string): Promise<boolean> => command("test_smtp_connection", { accountId }),
+  testImapConnection: (accountId: string): Promise<boolean> => command("test_imap_connection", { accountId }),
+  syncInbox: (accountId: string, limit = 50): Promise<number> => command("sync_inbox", { accountId, limit }),
   listCachedMessages: (accountId?: string): Promise<MailMessage[]> => command("list_cached_messages", { accountId: accountId ?? null }),
   queueOperation: (operation: QueueOperation): Promise<void> => command("queue_operation", { operation }),
   listQueue: (): Promise<QueueOperation[]> => command("list_queue"),

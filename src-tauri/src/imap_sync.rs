@@ -1,0 +1,185 @@
+use crate::{
+    credentials,
+    models::{AccountProfile, MailAddress, MailMessage},
+    providers,
+    storage::{self, AppPaths},
+};
+use async_imap::{types::Flag, Client};
+use async_native_tls::{TlsConnector, TlsStream};
+use async_std::net::TcpStream;
+use futures::TryStreamExt;
+use mail_parser::MessageParser;
+
+type SecureClient = Client<TlsStream<TcpStream>>;
+
+async fn connect(account: &AccountProfile) -> Result<SecureClient, String> {
+    let settings = providers::settings_for(account);
+    let address = format!("{}:{}", settings.imap_host, settings.imap_port);
+    let tcp = TcpStream::connect(&address)
+        .await
+        .map_err(|error| format!("Falha ao conectar ao IMAP {address}: {error}"))?;
+
+    let connector = TlsConnector::new().use_sni(true);
+
+    if settings.security_mode.eq_ignore_ascii_case("starttls") {
+        let mut client = Client::new(tcp);
+        client
+            .read_response()
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Servidor IMAP encerrou antes da saudação.".to_string())?;
+        client
+            .run_command_and_check_ok("STARTTLS", None)
+            .await
+            .map_err(|error| format!("STARTTLS IMAP falhou: {error}"))?;
+        let tcp = client.into_inner();
+        let tls = connector
+            .connect(settings.imap_host.as_str(), tcp)
+            .await
+            .map_err(|error| format!("TLS IMAP falhou: {error}"))?;
+        Ok(Client::new(tls))
+    } else {
+        let tls = connector
+            .connect(settings.imap_host.as_str(), tcp)
+            .await
+            .map_err(|error| format!("TLS IMAP falhou: {error}"))?;
+        let mut client = Client::new(tls);
+        client
+            .read_response()
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Servidor IMAP encerrou antes da saudação.".to_string())?;
+        Ok(client)
+    }
+}
+
+fn mail_address(address: Option<&mail_parser::Addr<'_>>) -> MailAddress {
+    MailAddress {
+        name: address.and_then(|value| value.name()).map(ToOwned::to_owned),
+        email: address
+            .and_then(|value| value.address())
+            .unwrap_or("desconhecido@localhost")
+            .to_owned(),
+    }
+}
+
+fn recipients(addresses: Option<&mail_parser::Address<'_>>) -> Vec<MailAddress> {
+    addresses
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| MailAddress {
+                    name: item.name().map(ToOwned::to_owned),
+                    email: item.address().unwrap_or("desconhecido@localhost").to_owned(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_message(
+    account: &AccountProfile,
+    fetch: &async_imap::types::Fetch,
+) -> Option<MailMessage> {
+    let raw = fetch.body()?;
+    let parsed = MessageParser::default().parse(raw)?;
+
+    let uid = fetch.uid.unwrap_or(fetch.message);
+    let flags: Vec<_> = fetch.flags().collect();
+    let is_read = flags.iter().any(|flag| matches!(flag, Flag::Seen));
+    let is_flagged = flags.iter().any(|flag| matches!(flag, Flag::Flagged));
+    let is_draft = flags.iter().any(|flag| matches!(flag, Flag::Draft));
+    let received_at = parsed
+        .date()
+        .map(|date| date.to_rfc3339())
+        .or_else(|| fetch.internal_date().map(|date| date.to_rfc3339()))
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+    let body_text = parsed.body_text(0).map(|value| value.into_owned());
+    let body_html = parsed.body_html(0).map(|value| value.into_owned());
+    let preview = parsed
+        .body_preview(180)
+        .map(|value| value.into_owned())
+        .unwrap_or_default();
+
+    Some(MailMessage {
+        id: format!("{}-inbox-{uid}", account.id),
+        account_id: account.id.clone(),
+        folder: if is_draft { "Rascunhos" } else { "Caixa de entrada" }.into(),
+        subject: parsed.subject().unwrap_or("(sem assunto)").to_owned(),
+        preview,
+        from: mail_address(parsed.from().and_then(|value| value.first())),
+        to: recipients(parsed.to()),
+        received_at,
+        is_read,
+        is_flagged,
+        is_pinned: false,
+        has_attachments: parsed.attachment(0).is_some(),
+        body_html,
+        body_text,
+        categories: Vec::new(),
+    })
+}
+
+async fn login(account: &AccountProfile) -> Result<async_imap::Session<TlsStream<TcpStream>>, String> {
+    let client = connect(account).await?;
+    let password = credentials::load(&account.id)?;
+    let username = account.username.as_deref().unwrap_or(&account.email);
+    client
+        .login(username, password)
+        .await
+        .map_err(|(error, _)| format!("Autenticação IMAP recusada: {error}"))
+}
+
+pub fn test(account: &AccountProfile) -> Result<bool, String> {
+    async_std::task::block_on(async {
+        let mut session = login(account).await?;
+        session
+            .select("INBOX")
+            .await
+            .map_err(|error| format!("Não foi possível abrir a caixa de entrada: {error}"))?;
+        session.logout().await.map_err(|error| error.to_string())?;
+        Ok(true)
+    })
+}
+
+pub fn sync_latest(paths: &AppPaths, account: &AccountProfile, limit: u32) -> Result<usize, String> {
+    let limit = limit.clamp(1, 200);
+
+    async_std::task::block_on(async {
+        let mut session = login(account).await?;
+        let mailbox = session
+            .select("INBOX")
+            .await
+            .map_err(|error| format!("Não foi possível abrir a caixa de entrada: {error}"))?;
+
+        if mailbox.exists == 0 {
+            session.logout().await.map_err(|error| error.to_string())?;
+            return Ok(0);
+        }
+
+        let end = mailbox.exists;
+        let start = end.saturating_sub(limit.saturating_sub(1)).max(1);
+        let sequence = format!("{start}:{end}");
+
+        let fetch_stream = session
+            .fetch(sequence, "(UID FLAGS INTERNALDATE RFC822)")
+            .await
+            .map_err(|error| format!("Falha ao buscar mensagens: {error}"))?;
+        let fetched: Vec<_> = fetch_stream
+            .try_collect()
+            .await
+            .map_err(|error| format!("Falha ao receber mensagens: {error}"))?;
+
+        let mut cached = 0usize;
+        for item in &fetched {
+            if let Some(message) = parse_message(account, item) {
+                storage::cache_message(paths, &message)?;
+                cached += 1;
+            }
+        }
+
+        session.logout().await.map_err(|error| error.to_string())?;
+        Ok(cached)
+    })
+}
