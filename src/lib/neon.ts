@@ -1,5 +1,5 @@
 import { createClient } from "@neondatabase/neon-js";
-import type { WorkspaceDocument, WorkspaceKind } from "../types";
+import type { AccountProfile, MailMessage, WorkspaceDocument, WorkspaceKind } from "../types";
 
 const databaseUrl = import.meta.env.VITE_NEON_DATABASE_URL?.trim();
 export const neonConfigured = Boolean(databaseUrl);
@@ -132,4 +132,174 @@ export async function deleteCloudDocument(kind: WorkspaceKind, id: string): Prom
     .eq("kind", kind);
 
   if (result.error) throw new Error(errorMessage(result.error));
+}
+
+
+interface CloudAccountRow {
+  id: string;
+  display_name: string;
+  email: string;
+  provider: AccountProfile["provider"];
+  color: string;
+  is_default: boolean;
+  username: string | null;
+  imap_host: string | null;
+  imap_port: number | null;
+  smtp_host: string | null;
+  smtp_port: number | null;
+  security_mode: AccountProfile["securityMode"] | null;
+  updated_at: string;
+}
+
+export async function pullCloudAccounts(): Promise<AccountProfile[]> {
+  if (!neonClient) return [];
+  const session = await getCloudSession();
+  if (!session?.session) return [];
+
+  const result = await neonClient
+    .from("desktop_mail_accounts")
+    .select("id, display_name, email, provider, color, is_default, username, imap_host, imap_port, smtp_host, smtp_port, security_mode, updated_at")
+    .is("deleted_at", null)
+    .order("updated_at", { ascending: false });
+
+  if (result.error) throw new Error(errorMessage(result.error));
+  const rows = (result.data ?? []) as unknown as CloudAccountRow[];
+  return rows.map((row) => ({
+    id: row.id,
+    displayName: row.display_name,
+    email: row.email,
+    provider: row.provider,
+    color: row.color,
+    isDefault: row.is_default,
+    username: row.username ?? undefined,
+    imapHost: row.imap_host ?? undefined,
+    imapPort: row.imap_port ?? undefined,
+    smtpHost: row.smtp_host ?? undefined,
+    smtpPort: row.smtp_port ?? undefined,
+    securityMode: row.security_mode ?? undefined,
+  }));
+}
+
+export async function pushCloudAccount(account: AccountProfile): Promise<void> {
+  if (!neonClient) return;
+  const session = await getCloudSession();
+  if (!session?.session) return;
+
+  const result = await neonClient.from("desktop_mail_accounts").upsert({
+    id: account.id,
+    display_name: account.displayName,
+    email: account.email,
+    provider: account.provider,
+    color: account.color,
+    is_default: account.isDefault,
+    username: account.username ?? null,
+    imap_host: account.imapHost ?? null,
+    imap_port: account.imapPort ?? null,
+    smtp_host: account.smtpHost ?? null,
+    smtp_port: account.smtpPort ?? null,
+    security_mode: account.securityMode ?? null,
+    updated_at: new Date().toISOString(),
+    deleted_at: null,
+  }, { onConflict: "id" });
+
+  if (result.error) throw new Error(errorMessage(result.error));
+}
+
+export async function pushCloudAccounts(accounts: AccountProfile[]): Promise<void> {
+  for (const account of accounts) {
+    await pushCloudAccount(account);
+  }
+}
+
+interface CloudMessageRow {
+  id: string;
+  account_id: string;
+  remote_id: string | null;
+  folder: string;
+  subject: string;
+  preview: string;
+  sender: MailMessage["from"];
+  recipients: MailMessage["to"];
+  received_at: string;
+  is_read: boolean;
+  is_flagged: boolean;
+  is_pinned: boolean;
+  has_attachments: boolean;
+  body_html: string | null;
+  body_text: string | null;
+  categories: string[];
+}
+
+function cloudRowToMessage(row: CloudMessageRow): MailMessage {
+  return {
+    id: row.id,
+    accountId: row.account_id,
+    remoteId: row.remote_id ?? undefined,
+    folder: row.folder,
+    subject: row.subject,
+    preview: row.preview,
+    from: row.sender,
+    to: row.recipients,
+    receivedAt: row.received_at,
+    isRead: row.is_read,
+    isFlagged: row.is_flagged,
+    isPinned: row.is_pinned,
+    hasAttachments: row.has_attachments,
+    bodyHtml: row.body_html ?? undefined,
+    bodyText: row.body_text ?? undefined,
+    categories: row.categories ?? [],
+  };
+}
+
+export async function pullCloudMessages(accountId: string, limit = 500): Promise<MailMessage[]> {
+  if (!neonClient) return [];
+  const session = await getCloudSession();
+  if (!session?.session) return [];
+
+  const result = await neonClient
+    .from("desktop_mail_messages")
+    .select("id, account_id, remote_id, folder, subject, preview, sender, recipients, received_at, is_read, is_flagged, is_pinned, has_attachments, body_html, body_text, categories")
+    .eq("account_id", accountId)
+    .is("deleted_at", null)
+    .order("received_at", { ascending: false })
+    .limit(Math.max(1, Math.min(limit, 2000)));
+
+  if (result.error) throw new Error(errorMessage(result.error));
+  return ((result.data ?? []) as unknown as CloudMessageRow[]).map(cloudRowToMessage);
+}
+
+export async function pushCloudMessage(message: MailMessage): Promise<void> {
+  if (!neonClient) return;
+  const session = await getCloudSession();
+  if (!session?.session) return;
+
+  const result = await neonClient.from("desktop_mail_messages").upsert({
+    id: message.id,
+    account_id: message.accountId,
+    remote_id: message.remoteId ?? null,
+    folder: message.folder,
+    subject: message.subject,
+    preview: message.preview,
+    sender: message.from,
+    recipients: message.to,
+    received_at: message.receivedAt,
+    is_read: message.isRead,
+    is_flagged: message.isFlagged,
+    is_pinned: message.isPinned,
+    has_attachments: message.hasAttachments,
+    body_html: message.bodyHtml ?? null,
+    body_text: message.bodyText ?? null,
+    categories: message.categories,
+    updated_at: new Date().toISOString(),
+    deleted_at: null,
+  }, { onConflict: "id" });
+
+  if (result.error) throw new Error(errorMessage(result.error));
+}
+
+export async function pushCloudMessages(messages: MailMessage[]): Promise<void> {
+  if (messages.length === 0) return;
+  for (const message of messages) {
+    await pushCloudMessage(message);
+  }
 }
