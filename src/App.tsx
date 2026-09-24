@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { disable as disableAutostart, enable as enableAutostart } from "@tauri-apps/plugin-autostart";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -61,6 +61,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoReplyBody: "",
   autoForwardEnabled: false,
   autoForwardAddress: "",
+  quickActions: ["archive","flag","read"],
+  conditionalMailRules: [],
   blockRemoteContent: true,
   remoteContentAllowedSenders: [],
   warnSuspiciousLinks: true,
@@ -270,6 +272,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
   const [priorityFilter,setPriorityFilter] = useState<"all"|"low"|"normal"|"high">("all");
   const [visibleCount,setVisibleCount] = useState<number>(settings.mailPageSize ?? 50);
   const [details,setDetails] = useState<{message:MailMessage;tab:"attachments"|"headers"|"source"}|null>(null);
+  const [collapsedGroups,setCollapsedGroups] = useState<string[]>([]);
   const selected = messages.find(m=>m.id===selectedId);
   const now = Date.now();
   const baseFolderMessages = messages.filter(message=>{
@@ -388,6 +391,53 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
   const favoriteCategories=categories.filter((item)=>item.favorite);
   const senderOptions=[...new Map(messages.map((message)=>[message.from.email.toLocaleLowerCase("pt-BR"),message.from])).values()]
     .sort((a,b)=>(a.name||a.email).localeCompare(b.name||b.email));
+  const messageGroups=useMemo(()=>{
+    const today=new Date();
+    const todayStart=new Date(today.getFullYear(),today.getMonth(),today.getDate()).getTime();
+    const yesterdayStart=todayStart-86_400_000;
+    const weekStart=todayStart-6*86_400_000;
+    const groups=new Map<string,MailMessage[]>();
+    for(const message of folderMessages){
+      const time=new Date(message.receivedAt).getTime();
+      const label=time>=todayStart?"Hoje":time>=yesterdayStart?"Ontem":time>=weekStart?"Esta semana":"Mais antigas";
+      groups.set(label,[...(groups.get(label)??[]),message]);
+    }
+    return ["Hoje","Ontem","Esta semana","Mais antigas"]
+      .map((label)=>({label,messages:groups.get(label)??[]}))
+      .filter((group)=>group.messages.length>0);
+  },[folderMessages]);
+
+  function conditionalAccent(message:MailMessage):string|undefined {
+    for(const rule of settings.conditionalMailRules??[]){
+      const value=rule.value.toLocaleLowerCase("pt-BR");
+      const match=rule.field==="from"
+        ? `${message.from.name??""} ${message.from.email}`.toLocaleLowerCase("pt-BR").includes(value)
+        : rule.field==="subject"
+          ? message.subject.toLocaleLowerCase("pt-BR").includes(value)
+          : rule.field==="category"
+            ? message.categories.some((item)=>item.toLocaleLowerCase("pt-BR").includes(value))
+            : (message.importance??"normal")===rule.value;
+      if(match) return rule.accent;
+    }
+    return undefined;
+  }
+
+  function runQuickAction(event:MouseEvent,message:MailMessage,action:NonNullable<AppSettings["quickActions"]>[number]){
+    event.preventDefault();
+    event.stopPropagation();
+    if(action==="flag") void act(message.id,message.isFlagged?"unflag":"flag");
+    else if(action==="read") void act(message.id,message.isRead?"unread":"read");
+    else if(action==="pin") void act(message.id,message.isPinned?"unpin":"pin");
+    else void act(message.id,action);
+  }
+
+  function quickActionIcon(action:NonNullable<AppSettings["quickActions"]>[number]):IconName {
+    if(action==="delete") return "trash";
+    if(action==="flag") return "flag";
+    if(action==="read") return "mail";
+    if(action==="pin") return "pin";
+    return "archive";
+  }
 
   async function act(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox") {
     const currentIndex=folderMessages.findIndex((message)=>message.id===messageId);
@@ -489,11 +539,15 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
             <span className="message-copy"><span className="message-meta"><b>Rascunho local</b><time>autosave</time></span><strong>{draft.subject||"(sem assunto)"}</strong><small>{draft.to?`Para: ${draft.to}`:(draft.bodyText||"Comece a escrever...")}</small></span>
             {draft.attachments.length>0&&<span className="draft-attachment-count"><Icon name="paperclip" size={13}/>{draft.attachments.length}</span>}
           </button>)}
-          {folderMessages.map(message=><button key={message.id} className={"message "+(selectedId===message.id?"selected ":"")+(!message.isRead?"unread ":"")+(message.isPhishing?"phishing ":"")+(message.isImportant?"important ":"")+(isBlocked(message)?"blocked ":"")} onClick={()=>{setSelectedId(message.id);if(!message.isRead){window.setTimeout(()=>void act(message.id,"read"),settings.markReadDelayMs);}}}>
-            {settings.showSenderPhotos!==false&&<span className="avatar">{(message.from.name||message.from.email)[0].toUpperCase()}</span>}
-            <span className="message-copy"><span className="message-meta"><b>{message.from.name||message.from.email}</b><time>{new Date(message.receivedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</time></span><strong>{message.subject||"(sem assunto)"}{conversationView&&(conversationCounts.get(conversationKey(message))??0)>1&&<em className="conversation-count"> {conversationCounts.get(conversationKey(message))}</em>}</strong><small>{message.preview}</small>{message.categories.length>0&&<span className="message-category-dots">{message.categories.slice(0,4).map(name=>{const category=categories.find(item=>item.name===name);return <i key={name} title={name} style={{background:category?.color||"#888"}}/>;})}</span>}</span>
-            <span className="message-indicators">{message.isImportant&&<Icon name="star" size={13}/>} {message.isMuted&&<Icon name="moon" size={13}/>} {message.isPinned&&<Icon name="pin" size={13}/>} {message.hasAttachments&&<Icon name="paperclip" size={14}/>}</span>
-          </button>)}
+          {messageGroups.map((group)=><section className="message-date-group" key={group.label}>
+            <button className="message-group-header" onClick={()=>setCollapsedGroups((current)=>current.includes(group.label)?current.filter((item)=>item!==group.label):[...current,group.label])}><Icon name="chevron" size={12}/><b>{group.label}</b><span>{group.messages.length}</span></button>
+            {!collapsedGroups.includes(group.label)&&group.messages.map(message=>{const accent=conditionalAccent(message);return <button key={message.id} style={accent?{borderLeftColor:accent}:undefined} className={"message "+(accent?"conditional ":"")+(selectedId===message.id?"selected ":"")+(!message.isRead?"unread ":"")+(message.isPhishing?"phishing ":"")+(message.isImportant?"important ":"")+(isBlocked(message)?"blocked ":"")} onClick={()=>{setSelectedId(message.id);if(!message.isRead){window.setTimeout(()=>void act(message.id,"read"),settings.markReadDelayMs);}}}>
+              {settings.showSenderPhotos!==false&&<span className="avatar">{(message.from.name||message.from.email)[0].toUpperCase()}</span>}
+              <span className="message-copy"><span className="message-meta"><b>{message.from.name||message.from.email}</b><time>{new Date(message.receivedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</time></span><strong>{message.subject||"(sem assunto)"}{conversationView&&(conversationCounts.get(conversationKey(message))??0)>1&&<em className="conversation-count"> {conversationCounts.get(conversationKey(message))}</em>}</strong><small>{message.preview}</small>{message.categories.length>0&&<span className="message-category-dots">{message.categories.slice(0,4).map(name=>{const category=categories.find(item=>item.name===name);return <i key={name} title={name} style={{background:category?.color||"#888"}}/>;})}</span>}</span>
+              <span className="message-indicators">{message.isImportant&&<Icon name="star" size={13}/>} {message.isMuted&&<Icon name="moon" size={13}/>} {message.isPinned&&<Icon name="pin" size={13}/>} {message.hasAttachments&&<Icon name="paperclip" size={14}/>}</span>
+              <span className="message-quick-actions">{(settings.quickActions??["archive","flag","read"]).map((action)=><span role="button" tabIndex={0} title={action} key={action} onClick={(event)=>runQuickAction(event,message,action)} onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();runQuickAction(event as unknown as MouseEvent,message,action);}}}><Icon name={quickActionIcon(action)} size={12}/></span>)}</span>
+            </button>})}
+          </section>)}
           {displayMessages.length>folderMessages.length&&<button className="load-more-mail" onClick={()=>setVisibleCount(value=>value+(settings.mailPageSize??50))}>Carregar mais · {displayMessages.length-folderMessages.length} restantes</button>}
         </div>
       }
@@ -644,9 +698,24 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
     window.location.reload();
   }
 
-  return <Workspace title="Configurações" eyebrow="PREFERÊNCIAS">
+  function toggleQuickAction(action:NonNullable<AppSettings["quickActions"]>[number]){
+    const current=settings.quickActions??[];
+    set("quickActions",current.includes(action)?current.filter((item)=>item!==action):[...current,action].slice(-4));
+  }
+
+  function addConditionalMailRule(){
+    const field=window.prompt("Campo: from, subject, category ou priority","from")?.trim() as "from"|"subject"|"category"|"priority"|undefined;
+    if(!field||!["from","subject","category","priority"].includes(field)) return;
+    const value=window.prompt("Valor a destacar")?.trim();
+    if(!value) return;
+    const accent=window.prompt("Cor (hex ou CSS)","#6f60f4")?.trim()||"#6f60f4";
+    set("conditionalMailRules",[...(settings.conditionalMailRules??[]),{id:crypto.randomUUID(),field,value,accent}]);
+  }
+
+    return <Workspace title="Configurações" eyebrow="PREFERÊNCIAS">
     <div className="settings-row brand-settings-row"><div><h3>Sobre o Seven Mail</h3><p>Identidade e informações do aplicativo.</p></div><div className="brand-about-card"><BrandLogo variant="about"/><div><strong>Seven Mail</strong><span>Cliente desktop local-first</span><small>Windows · Linux</small></div></div></div>
     <div className="settings-row"><div><h3>Aparência</h3><p>Tema, densidade e pré-visualização da lista.</p></div><div className="appearance-settings"><div className="choices">{(["system","light","dark"] as const).map(t=><button className={settings.theme===t?"choice active":"choice"} key={t} onClick={()=>set("theme",t)}><Icon name={t==="dark"?"moon":"sun"} size={16}/>{t==="system"?"Sistema":t==="light"?"Claro":"Escuro"}</button>)}</div><label><input type="checkbox" checked={settings.compact} onChange={e=>set("compact",e.target.checked)}/> Lista compacta</label><label><span>Linhas de prévia</span><select value={settings.previewLines} onChange={e=>set("previewLines",Number(e.target.value) as AppSettings["previewLines"])}><option value={1}>1 linha</option><option value={2}>2 linhas</option></select></label></div></div>
+    <div className="settings-row"><div><h3>Lista de mensagens</h3><p>Escolha ações rápidas e destaques condicionais.</p></div><div className="inbox-preferences"><div><b>Ações rápidas</b>{(["archive","delete","flag","read","pin"] as const).map((action)=><label key={action}><input type="checkbox" checked={(settings.quickActions??[]).includes(action)} onChange={()=>toggleQuickAction(action)}/>{action==="archive"?"Arquivar":action==="delete"?"Excluir":action==="flag"?"Sinalizar":action==="read"?"Lida/não lida":"Fixar"}</label>)}</div><div className="conditional-rules"><header><b>Formatação condicional</b><button className="secondary" onClick={addConditionalMailRule}><Icon name="plus" size={12}/> Regra</button></header>{(settings.conditionalMailRules??[]).map((rule)=><span key={rule.id}><i style={{background:rule.accent}}/>{rule.field}: {rule.value}<button aria-label="Excluir regra" onClick={()=>set("conditionalMailRules",(settings.conditionalMailRules??[]).filter((item)=>item.id!==rule.id))}><Icon name="x" size={10}/></button></span>)}</div></div></div>
     <div className="settings-row"><div><h3>Acessibilidade e escala</h3><p>Controles visuais globais, foco de teclado e redução de movimento.</p></div><div className="appearance-settings"><label><span>Tamanho da fonte</span><select value={settings.fontSize??"medium"} onChange={e=>set("fontSize",e.target.value as AppSettings["fontSize"])}><option value="small">Pequena</option><option value="medium">Média</option><option value="large">Grande</option></select></label><label><span>Escala da interface</span><select value={settings.uiScale??1} onChange={e=>set("uiScale",Number(e.target.value) as AppSettings["uiScale"])}><option value={0.9}>90%</option><option value={1}>100%</option><option value={1.1}>110%</option><option value={1.2}>120%</option></select></label><label><input type="checkbox" checked={Boolean(settings.highContrast)} onChange={e=>set("highContrast",e.target.checked)}/> Alto contraste</label><label><input type="checkbox" checked={Boolean(settings.reduceMotion)} onChange={e=>set("reduceMotion",e.target.checked)}/> Reduzir animações</label><small>Atalhos: Alt+1 E-mail · Alt+2 Calendário · Alt+3 Contatos · Alt+4 Tarefas · Ctrl/Cmd+K Pesquisa · Ctrl/Cmd+N Novo e-mail</small></div></div>
     <div className="settings-row"><div><h3>Painel de leitura</h3><p>Posição padrão e tempo para marcar mensagens como lidas.</p></div><div className="appearance-settings"><select value={settings.readingPane} onChange={e=>set("readingPane",e.target.value as AppSettings["readingPane"])}><option value="right">À direita</option><option value="bottom">Abaixo</option><option value="off">Desativado</option></select><label><span>Marcar como lida</span><select value={settings.markReadDelayMs} onChange={e=>set("markReadDelayMs",Number(e.target.value))}><option value={0}>Imediatamente</option><option value={500}>Após 0,5 s</option><option value={1200}>Após 1,2 s</option><option value={3000}>Após 3 s</option></select></label></div></div>
     <div className="settings-row"><div><h3>Lista de mensagens</h3><p>Caixa prioritária, paginação e comportamento após ações.</p></div><div className="toggles"><label><input type="checkbox" checked={settings.focusInboxEnabled!==false} onChange={e=>set("focusInboxEnabled",e.target.checked)}/> Usar Prioritária e Outros</label><label><input type="checkbox" checked={settings.showSenderPhotos!==false} onChange={e=>set("showSenderPhotos",e.target.checked)}/> Mostrar fotos/iniciais dos remetentes</label><label><input type="checkbox" checked={settings.openNextAfterDelete!==false} onChange={e=>set("openNextAfterDelete",e.target.checked)}/> Abrir próxima mensagem após mover/excluir</label><label><span>Mensagens por página</span><select value={settings.mailPageSize??50} onChange={e=>set("mailPageSize",Number(e.target.value) as AppSettings["mailPageSize"])}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label><label><span>Limite por anexo</span><select value={settings.maxAttachmentMb??25} onChange={e=>set("maxAttachmentMb",Number(e.target.value) as AppSettings["maxAttachmentMb"])}><option value={10}>10 MB</option><option value={25}>25 MB</option><option value={50}>50 MB</option><option value={100}>100 MB</option></select></label></div></div>
