@@ -240,6 +240,7 @@ interface CloudMessageRow {
   id: string;
   account_id: string;
   remote_id: string | null;
+  remote_folder: string | null;
   folder: string;
   subject: string;
   preview: string;
@@ -260,6 +261,7 @@ function cloudRowToMessage(row: CloudMessageRow): MailMessage {
     id: row.id,
     accountId: row.account_id,
     remoteId: row.remote_id ?? undefined,
+    remoteFolder: row.remote_folder ?? undefined,
     folder: row.folder,
     subject: row.subject,
     preview: row.preview,
@@ -283,7 +285,7 @@ export async function pullCloudMessages(accountId: string, limit = 500): Promise
 
   const result = await neonClient
     .from("desktop_mail_messages")
-    .select("id, account_id, remote_id, folder, subject, preview, sender, recipients, received_at, is_read, is_flagged, is_pinned, has_attachments, body_html, body_text, categories")
+    .select("id, account_id, remote_id, remote_folder, folder, subject, preview, sender, recipients, received_at, is_read, is_flagged, is_pinned, has_attachments, body_html, body_text, categories")
     .eq("account_id", accountId)
     .is("deleted_at", null)
     .order("received_at", { ascending: false })
@@ -302,6 +304,7 @@ export async function pushCloudMessage(message: MailMessage): Promise<void> {
     id: message.id,
     account_id: message.accountId,
     remote_id: message.remoteId ?? null,
+    remote_folder: message.remoteFolder ?? null,
     folder: message.folder,
     subject: message.subject,
     preview: message.preview,
