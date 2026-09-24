@@ -548,6 +548,11 @@ export default function App() {
           // A conta pode estar offline, sem credencial ou exigir nova autenticação.
         }
       }
+
+      if (!disposed && unified) {
+        const unifiedMessages = await bridge.listCachedMessages().catch(() => [] as MailMessage[]);
+        if (!disposed) setMessages(unifiedMessages);
+      }
     };
 
     const intervalMs = settings.syncIntervalMinutes * 60_000;
@@ -559,7 +564,30 @@ export default function App() {
       window.clearInterval(timer);
       window.removeEventListener("online",online);
     };
-  },[accounts,activeAccount?.id,settings.notificationsEnabled,settings.syncIntervalMinutes]);
+  },[accounts,activeAccount?.id,unified,settings.notificationsEnabled,settings.syncIntervalMinutes]);
+
+  useEffect(()=>{
+    const onKeyDown = (event: KeyboardEvent) => {
+      const modifier = event.ctrlKey || event.metaKey;
+      if (!modifier) return;
+
+      if (event.key.toLowerCase()==="k") {
+        event.preventDefault();
+        const input = document.querySelector<HTMLInputElement>(".search input");
+        input?.focus();
+        input?.select();
+        return;
+      }
+
+      if (event.key.toLowerCase()==="n" && accounts.length>0) {
+        event.preventDefault();
+        startNewMessage();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return ()=>window.removeEventListener("keydown", onKeyDown);
+  },[accounts.length]);
 
   async function syncNow() {
     if (accounts.length===0 || syncState==="syncing") return;
