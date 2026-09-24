@@ -2,10 +2,11 @@ use crate::{
     credentials,
     local_crypto,
     models::{AccountProfile, ProviderSettings, QueueOperation, QueuedAttachment},
+    oauth,
 };
 use lettre::{
     message::{header::{ContentType, HeaderName, HeaderValue}, Attachment, Mailbox, MessageBuilder, MultiPart, SinglePart},
-    transport::smtp::authentication::Credentials,
+    transport::smtp::authentication::{Credentials, Mechanism},
     Message, SmtpTransport, Transport,
 };
 use std::{fs, time::Duration};
@@ -66,12 +67,15 @@ pub fn settings_for(account: &AccountProfile) -> ProviderSettings {
     }
 }
 
-fn smtp_transport(account: &AccountProfile, password: String) -> Result<SmtpTransport, String> {
+fn smtp_transport(account: &AccountProfile) -> Result<SmtpTransport, String> {
     let settings = settings_for(account);
-    let credentials = Credentials::new(
-        account.username.clone().unwrap_or_else(|| account.email.clone()),
-        password,
-    );
+    let username = account.username.clone().unwrap_or_else(|| account.email.clone());
+    let secret = if account.oauth_enabled {
+        oauth::access_token(account)?
+    } else {
+        credentials::load(&account.id)?
+    };
+    let credentials = Credentials::new(username, secret);
 
     let builder = if settings.security_mode.eq_ignore_ascii_case("starttls") {
         SmtpTransport::starttls_relay(&settings.smtp_host)
@@ -81,14 +85,14 @@ fn smtp_transport(account: &AccountProfile, password: String) -> Result<SmtpTran
     .map_err(|error| error.to_string())?
     .port(settings.smtp_port)
     .credentials(credentials)
+    .authentication(if account.oauth_enabled { vec![Mechanism::Xoauth2] } else { vec![Mechanism::Plain, Mechanism::Login] })
     .timeout(Some(Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300))));
 
     Ok(builder.build())
 }
 
 pub fn test_smtp(account: &AccountProfile) -> Result<bool, String> {
-    let password = credentials::load(&account.id)?;
-    smtp_transport(account, password)?
+    smtp_transport(account)?
         .test_connection()
         .map_err(|error| error.to_string())
 }
@@ -303,8 +307,7 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
 
     let message = builder.multipart(mixed).map_err(|error| error.to_string())?;
 
-    let password = credentials::load(&account.id)?;
-    smtp_transport(account, password)?
+    smtp_transport(account)?
         .send(&message)
         .map_err(|error| error.to_string())?;
 
