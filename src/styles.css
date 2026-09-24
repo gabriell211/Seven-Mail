@@ -611,3 +611,14 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .conditional-rules>span i{width:8px;height:8px;border-radius:50%}
 .conditional-rules>span button{display:grid;place-items:center;background:transparent;color:var(--muted)}
 @media(max-width:920px){.inbox-preferences{grid-template-columns:1fr}}
+
+
+/* Composer assists */
+.composer-link-preview{display:flex;align-items:flex-start;gap:10px;margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--soft)}
+.link-preview-glyph{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-weight:900}
+.composer-link-preview>div{min-width:0;display:flex;flex-direction:column;gap:2px}
+.composer-link-preview b{font-size:9px}.composer-link-preview small{font-size:8px;color:var(--muted)}.composer-link-preview code{font-size:8px;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+.dictionary-editor{display:flex;flex-direction:column;align-items:flex-start;gap:7px}
+.dictionary-editor>b{font-size:9px}.dictionary-editor>div{display:flex;flex-wrap:wrap;gap:5px}
+.dictionary-editor span{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:999px;background:var(--soft);border:1px solid var(--line);font-size:8px}
+.dictionary-editor span button{display:grid;place-items:center;background:transparent;color:var(--muted)}
