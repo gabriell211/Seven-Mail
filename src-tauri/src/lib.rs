@@ -59,6 +59,26 @@ fn store_secret(account_id: String, secret: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn has_app_lock() -> Result<bool, String> {
+    credentials::has_app_lock()
+}
+
+#[tauri::command]
+fn set_app_lock(pin: String) -> Result<(), String> {
+    credentials::set_app_lock(&pin)
+}
+
+#[tauri::command]
+fn verify_app_lock(pin: String) -> Result<bool, String> {
+    credentials::verify_app_lock(&pin)
+}
+
+#[tauri::command]
+fn clear_app_lock() -> Result<(), String> {
+    credentials::clear_app_lock()
+}
+
+#[tauri::command]
 fn discover_provider(email: String) -> ProviderSettings {
     providers::discover(&email)
 }
@@ -517,6 +537,10 @@ pub fn run() {
             set_default_account,
             delete_account,
             store_secret,
+            has_app_lock,
+            set_app_lock,
+            verify_app_lock,
+            clear_app_lock,
             discover_provider,
             test_smtp_connection,
             test_imap_connection,
