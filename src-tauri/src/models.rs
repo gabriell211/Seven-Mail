@@ -104,3 +104,12 @@ pub struct MailFolder {
     pub path: String,
     pub role: String,
 }
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedAttachment {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+}
