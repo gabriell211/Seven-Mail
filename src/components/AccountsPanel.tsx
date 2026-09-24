@@ -43,8 +43,8 @@ export function AccountsPanel({
     setBusyId(account.id);
     setStatus((current) => ({ ...current, [account.id]: "Testando IMAP e SMTP..." }));
     try {
-      await bridge.testImap(account.id);
-      await bridge.testSmtp(account.id);
+      await bridge.testImapConnection(account.id);
+      await bridge.testSmtpConnection(account.id);
       setStatus((current) => ({ ...current, [account.id]: "IMAP e SMTP conectados" }));
     } catch (reason) {
       setStatus((current) => ({
