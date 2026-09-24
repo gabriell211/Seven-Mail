@@ -137,7 +137,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Reenviar mensagem
 - [ ] Recuperar/recolher mensagem enviada quando suportado pelo provedor
 - [ ] Reações em mensagens quando suportadas
-- [ ] Arrastar mensagens entre pastas
+- [x] Arrastar mensagens entre pastas
 - [ ] Arrastar mensagens entre contas quando suportado
 - [x] Criar evento a partir de um e-mail
 - [x] Criar tarefa a partir de um e-mail
@@ -207,13 +207,13 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 ### Produtividade de e-mail
 
-- [ ] Ações rápidas compostas por múltiplas etapas
-- [ ] Atalhos para ações rápidas
+- [x] Ações rápidas compostas por múltiplas etapas
+- [x] Atalhos para ações rápidas
 - [x] Limpeza automática por remetente
 - [x] Ignorar e limpar conversas
 - [x] Respostas automáticas / ausência temporária
 - [x] Encaminhamento automático
-- [ ] Mala direta / envio personalizado em massa
+- [x] Mala direta / envio personalizado em massa
 - [x] Leitura em voz alta
 - [x] Modo de leitura imersiva
 - [x] Abrir e salvar EML
@@ -774,7 +774,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Abrir calendário
 - [x] Abrir contatos
 - [x] Abrir tarefas
-- [ ] Atalhos personalizáveis
+- [x] Atalhos personalizáveis
 
 ---
 
@@ -1047,7 +1047,7 @@ A aplicação deverá utilizar:
 - [x] Reenvio e recuperação de mensagens quando suportados
 - [x] Leitura em voz alta
 - [x] Leitura imersiva
-- [ ] Mala direta
+- [x] Mala direta
 
 ## 0.9.0 — Segurança e migração
 
