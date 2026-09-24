@@ -39,6 +39,7 @@ export interface MailMessage {
   id: string;
   accountId: string;
   remoteId?: string;
+  remoteFolder?: string;
   folder: string;
   subject: string;
   preview: string;
@@ -138,4 +139,11 @@ export interface RuleItem {
   operator: "contains" | "equals";
   value: string;
   action: "archive" | "delete" | "spam" | "flag" | "read";
+}
+
+
+export interface MailFolder {
+  name: string;
+  path: string;
+  role: "inbox" | "sent" | "drafts" | "archive" | "spam" | "trash" | "flagged" | "custom";
 }
