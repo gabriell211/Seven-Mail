@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AccountProfile, MailMessage, ProviderSettings, QueueOperation, RuntimeInfo, WorkspaceDocument, WorkspaceKind } from "../types";
+import type { AccountProfile, MailFolder, MailMessage, ProviderSettings, QueueOperation, RuntimeInfo, WorkspaceDocument, WorkspaceKind } from "../types";
 
 const hasTauri = () => "__TAURI_INTERNALS__" in window;
 
@@ -19,6 +19,8 @@ export const bridge = {
   testSmtpConnection: (accountId: string): Promise<boolean> => command("test_smtp_connection", { accountId }),
   testImapConnection: (accountId: string): Promise<boolean> => command("test_imap_connection", { accountId }),
   syncInbox: (accountId: string, limit = 50): Promise<number> => command("sync_inbox", { accountId, limit }),
+  listFolders: (accountId: string): Promise<MailFolder[]> => command("list_mail_folders", { accountId }),
+  syncFolder: (accountId: string, path: string, label: string, limit = 50): Promise<number> => command("sync_mail_folder", { accountId, path, label, limit }),
   flushMailActions: (accountId: string): Promise<number> => command("flush_mail_actions", { accountId }),
   listCachedMessages: (accountId?: string): Promise<MailMessage[]> => command("list_cached_messages", { accountId: accountId ?? null }),
   cacheMessage: (message: MailMessage): Promise<void> => command("cache_message", { message }),
