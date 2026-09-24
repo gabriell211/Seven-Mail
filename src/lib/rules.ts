@@ -15,6 +15,9 @@ function fieldValue(message: MailMessage, field: RuleItem["field"]): string {
 
   if (field === "subject") return message.subject;
   if (field === "body") return `${message.bodyText ?? ""} ${message.preview}`;
+  if (field === "size") return String(message.sizeBytes ?? 0);
+  if (field === "attachment") return (message.attachmentNames ?? []).join(" ");
+  if (field === "priority") return message.importance ?? "normal";
 
   const domain = message.from.email.split("@")[1] ?? "";
   return domain;
@@ -25,6 +28,15 @@ export function ruleMatchesMessage(rule: RuleItem, message: MailMessage): boolea
 
   const actual = normalize(fieldValue(message, rule.field));
   const expected = normalize(rule.value);
+
+  if (rule.field === "size") {
+    const actualSize = Number(actual);
+    const expectedSize = Number(expected.replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(actualSize) || !Number.isFinite(expectedSize)) return false;
+    if (rule.operator === "greater") return actualSize > expectedSize;
+    if (rule.operator === "less") return actualSize < expectedSize;
+    return actualSize === expectedSize;
+  }
 
   if (rule.operator === "equals") {
     return actual === expected;
