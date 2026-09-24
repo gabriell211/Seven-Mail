@@ -203,6 +203,22 @@ fn stage_attachments(
 }
 
 #[tauri::command]
+fn stage_message_as_eml(
+    operation_id: String,
+    account_id: String,
+    message_id: String,
+    suggested_name: String,
+) -> Result<QueuedAttachment, String> {
+    storage::stage_message_as_eml(
+        &AppPaths::resolve()?,
+        &operation_id,
+        &account_id,
+        &message_id,
+        &suggested_name,
+    )
+}
+
+#[tauri::command]
 fn cancel_operation(operation_id: String) -> Result<bool, String> {
     storage::cancel_operation(&AppPaths::resolve()?, &operation_id)
 }
@@ -487,6 +503,7 @@ pub fn run() {
             cache_message,
             queue_operation,
             stage_attachments,
+            stage_message_as_eml,
             cancel_operation,
             list_queue,
             flush_outbox,
