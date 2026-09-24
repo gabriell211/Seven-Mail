@@ -652,3 +652,14 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .attachment-upload-progress progress::-webkit-progress-value{background:var(--accent);border-radius:999px}
 .attachment-upload-progress>.secondary{grid-column:2;grid-row:1/3}
 @media(max-width:720px){.immersive-reader{padding:24px}.immersive-reader>article{font-size:16px}.immersive-reader h1{font-size:23px}}
+
+
+/* Application lock */
+.app-lock-screen{position:fixed;inset:0;z-index:15000;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 22% 18%,rgba(50,157,255,.16),transparent 32%),radial-gradient(circle at 78% 82%,rgba(113,83,255,.16),transparent 34%),color-mix(in srgb,var(--bg) 94%,#071126 6%);backdrop-filter:blur(18px)}
+.app-lock-card{width:min(390px,100%);display:flex;flex-direction:column;align-items:center;gap:12px;padding:34px 32px;border:1px solid var(--line);border-radius:24px;background:color-mix(in srgb,var(--solid) 94%,transparent);box-shadow:0 30px 90px rgba(8,24,64,.22)}
+.app-lock-card h1{margin:4px 0 0;font-size:23px;letter-spacing:-.035em}
+.app-lock-card>p{max-width:310px;margin:0 0 10px;text-align:center;color:var(--muted);font-size:10px;line-height:1.6}
+.app-lock-field{width:100%;height:46px;display:flex;align-items:center;gap:10px;padding:0 13px;border:1px solid var(--line);border-radius:12px;background:var(--soft);color:var(--muted)}
+.app-lock-field:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.app-lock-field input{flex:1;min-width:0;border:0!important;background:transparent!important;outline:0!important;font-size:15px;letter-spacing:.12em;color:var(--text)}
+.app-lock-submit{width:100%;min-height:42px;margin-top:4px}
