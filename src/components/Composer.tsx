@@ -777,7 +777,7 @@ export function Composer({
 
         {showMerge&&<div className="mail-merge-panel">
           <header><div><span className="eyebrow">MALA DIRETA</span><b>Envio personalizado por CSV</b></div><button className="icon-button" onClick={()=>setShowMerge(false)}><Icon name="x" size={14}/></button></header>
-          <p>Use placeholders como <code>{{nome}}</code> ou <code>{{empresa}}</code> no assunto e no corpo da mensagem.</p>
+          <p>Use placeholders como <code>{"{{nome}}"}</code> ou <code>{"{{empresa}}"}</code> no assunto e no corpo da mensagem.</p>
           <div className="mail-merge-controls">
             <button className="secondary" onClick={()=>void pickMergeCsv()}><Icon name="upload" size={14}/>{mergeFileName||"Selecionar CSV"}</button>
             {mergeHeaders.length>0&&<label><span>Coluna de e-mail</span><select value={mergeEmailColumn} onChange={(event)=>setMergeEmailColumn(event.target.value)}>{mergeHeaders.map((header)=><option key={header} value={header}>{header}</option>)}</select></label>}
