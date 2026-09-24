@@ -97,9 +97,9 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Pré-visualização da mensagem
 - [x] Uma ou duas linhas de pré-visualização configuráveis
 - [x] Ordenação por remetente, assunto, data, tamanho e status
-- [ ] Formatação condicional da lista de mensagens
-- [ ] Cabeçalhos recolhíveis na lista
-- [ ] Ações rápidas configuráveis na lista
+- [x] Formatação condicional da lista de mensagens
+- [x] Cabeçalhos recolhíveis na lista
+- [x] Ações rápidas configuráveis na lista
 - [x] Painel de leitura configurável
 - [x] Abrir mensagem em nova janela
 - [x] Abrir múltiplas mensagens simultaneamente
@@ -161,7 +161,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Campo De selecionável
 - [x] Envio usando aliases
 - [x] Corretor ortográfico
-- [ ] Correção automática
+- [x] Correção automática
 - [x] Capitalização automática
 - [x] Dicionários por idioma
 - [ ] Ditado por voz quando disponível no sistema
@@ -178,7 +178,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Atraso padrão antes do envio
 - [x] Desfazer envio
 - [x] Modelos de mensagem
-- [ ] Modelos baseados em arquivo quando suportado
+- [x] Modelos baseados em arquivo quando suportado
 - [x] Reutilização de blocos de conteúdo
 - [x] Pré-visualização de links
 - [x] Verificação de destinatários
@@ -209,9 +209,9 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 - [ ] Ações rápidas compostas por múltiplas etapas
 - [ ] Atalhos para ações rápidas
-- [ ] Limpeza automática por remetente
-- [ ] Ignorar e limpar conversas
-- [ ] Respostas automáticas / ausência temporária
+- [x] Limpeza automática por remetente
+- [x] Ignorar e limpar conversas
+- [x] Respostas automáticas / ausência temporária
 - [x] Encaminhamento automático
 - [ ] Mala direta / envio personalizado em massa
 - [ ] Leitura em voz alta
@@ -343,9 +343,9 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Bloqueio por domínio
 - [x] Liberação de remetente
 - [x] Denúncia de phishing
-- [ ] Visualização segura de links
-- [ ] Bloqueio de conteúdo remoto
-- [ ] Permissão de imagens por remetente
+- [x] Visualização segura de links
+- [x] Bloqueio de conteúdo remoto
+- [x] Permissão de imagens por remetente
 
 ---
 
@@ -653,7 +653,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Arquivos EML
 - [ ] Arquivos MSG quando tecnicamente viável
 - [ ] Arquivos OFT quando tecnicamente viável
-- [ ] Arquivos MBOX
+- [x] Arquivos MBOX
 - [ ] Arquivos PST quando tecnicamente disponível
 - [x] CSV
 - [x] ICS
@@ -665,14 +665,14 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 ## Exportação
 
 - [x] EML
-- [ ] MBOX
+- [x] MBOX
 - [x] CSV
 - [x] ICS
 - [x] vCard
 - [x] Regras
 - [x] Configurações
 - [x] Perfis
-- [ ] Backup completo do perfil
+- [x] Backup completo do perfil
 - [ ] Backup criptografado
 
 ---
@@ -684,15 +684,15 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] OAuth 2.0
 - [x] TLS
 - [x] Validação de certificado
-- [ ] Proteção contra conteúdo remoto
-- [ ] Proteção contra rastreamento por pixels
+- [x] Proteção contra conteúdo remoto
+- [x] Proteção contra rastreamento por pixels
 - [x] Sanitização de HTML
 - [x] Proteção contra XSS
-- [ ] Bloqueio de URLs perigosas
-- [ ] Avisos para links suspeitos
-- [ ] Aviso de remetente externo
+- [x] Bloqueio de URLs perigosas
+- [x] Avisos para links suspeitos
+- [x] Aviso de remetente externo
 - [x] Bloqueio de anexos perigosos
-- [ ] Exibição de resultados SPF, DKIM e DMARC quando disponíveis
+- [x] Exibição de resultados SPF, DKIM e DMARC quando disponíveis
 - [ ] Suporte a autenticação em duas etapas do provedor
 - [ ] Criptografia do armazenamento local
 - [ ] Bloqueio do aplicativo
@@ -721,13 +721,13 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Densidade confortável
 - [x] Densidade compacta
 - [x] Tamanho da fonte
-- [ ] Personalização da lista de mensagens
+- [x] Personalização da lista de mensagens
 - [x] Painel de leitura à direita
 - [x] Painel de leitura abaixo
 - [x] Painel de leitura desativado
 - [ ] Personalização do menu lateral
-- [ ] Personalização de ações rápidas
-- [ ] Personalização do painel de pastas
+- [x] Personalização de ações rápidas
+- [x] Personalização do painel de pastas
 - [x] Mostrar/ocultar fotos dos remetentes
 
 ## Comportamento
@@ -754,7 +754,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Verificação ortográfica
 - [x] Autocorreção
 - [x] Capitalização automática
-- [ ] Dicionários personalizados
+- [x] Dicionários personalizados
 
 ---
 
@@ -797,20 +797,20 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 # Desempenho
 
-- [ ] Inicialização rápida
+- [x] Inicialização rápida
 - [x] Carregamento incremental
 - [ ] Virtualização da lista de mensagens
 - [x] Cache inteligente
 - [ ] Sincronização incremental
-- [ ] Paginação
+- [x] Paginação
 - [ ] Indexação local
-- [ ] Busca rápida
+- [x] Busca rápida
 - [x] Processamento de mensagens em background
 - [ ] Limite de concorrência
 - [ ] Retry com backoff
 - [ ] Economia de memória
 - [ ] Economia de bateria
-- [ ] Suporte a caixas com grande volume de mensagens
+- [x] Suporte a caixas com grande volume de mensagens
 
 ---
 
@@ -821,7 +821,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Push quando suportado
 - [x] Sincronização manual
 - [x] Sincronização por pasta
-- [ ] Estado por conta
+- [x] Estado por conta
 - [x] Indicador de erros
 - [x] Retentativas automáticas
 - [x] Reconexão
@@ -851,7 +851,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Arrastar arquivos para composição
 - [ ] Arrastar anexos para área de trabalho
 - [ ] Arrastar anexos para outros aplicativos
-- [ ] Múltiplas janelas
+- [x] Múltiplas janelas
 - [ ] Atualizações automáticas
 
 ---
@@ -974,9 +974,9 @@ A aplicação deverá utilizar:
 - [x] Favoritos
 - [x] Spam
 - [x] Regras
-- [ ] Caixa prioritária
-- [ ] Ações rápidas
-- [ ] Limpeza automática
+- [x] Caixa prioritária
+- [x] Ações rápidas
+- [x] Limpeza automática
 - [x] Respostas automáticas
 
 ## 0.3.0 — Múltiplas contas
@@ -985,7 +985,7 @@ A aplicação deverá utilizar:
 - [ ] OAuth
 - [x] Gmail
 - [x] Yahoo
-- [ ] iCloud
+- [x] iCloud
 - [x] Microsoft 365
 - [x] Configuração manual
 - [x] Perfis
