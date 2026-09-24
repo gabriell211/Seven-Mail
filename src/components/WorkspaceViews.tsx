@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Icon, type IconName } from "../icons";
 import { bridge } from "../lib/bridge";
 import type {
@@ -392,7 +392,7 @@ export function PersistentNotesView({ query = "" }: { query?: string }) {
       {filtered.length === 0 ? <Empty icon="note" title="Nenhuma nota" text="Crie notas locais, fixe as importantes e encontre tudo pela pesquisa." /> : (
         <div className="notes">
           {filtered.map((note) => (
-            <article className="note note-live" key={note.id} style={{ "--note-accent": note.color } as React.CSSProperties}>
+            <article className="note note-live" key={note.id} style={{ "--note-accent": note.color } as CSSProperties}>
               <div className="note-top"><i>●</i><button className={note.pinned ? "icon-button active" : "icon-button"} onClick={() => void store.save({ ...note, pinned: !note.pinned })}><Icon name="pin" size={14} /></button></div>
               <button className="note-content" onClick={() => setEditing(note)}><h3>{note.title || "Sem título"}</h3><p>{note.body || "Nota vazia"}</p></button>
               <footer><small>Salva localmente</small><button className="icon-button" onClick={() => void store.remove(note.id)}><Icon name="trash" size={13} /></button></footer>
