@@ -24,6 +24,19 @@ fn save_account(account: AccountProfile) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn set_default_account(account_id: String) -> Result<Vec<AccountProfile>, String> {
+    storage::set_default_account(&AppPaths::resolve()?, &account_id)
+}
+
+#[tauri::command]
+fn delete_account(account_id: String) -> Result<Vec<AccountProfile>, String> {
+    let paths = AppPaths::resolve()?;
+    let accounts = storage::delete_account(&paths, &account_id)?;
+    credentials::delete(&account_id)?;
+    Ok(accounts)
+}
+
+#[tauri::command]
 fn store_secret(account_id: String, secret: String) -> Result<(), String> {
     credentials::store(&account_id, &secret)
 }
@@ -198,6 +211,8 @@ pub fn run() {
             runtime_info,
             list_accounts,
             save_account,
+            set_default_account,
+            delete_account,
             store_secret,
             discover_provider,
             test_smtp_connection,
