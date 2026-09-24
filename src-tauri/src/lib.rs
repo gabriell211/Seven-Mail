@@ -187,8 +187,19 @@ fn queue_operation(operation: QueueOperation) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn stage_attachments(operation_id: String, sources: Vec<String>) -> Result<Vec<QueuedAttachment>, String> {
-    storage::stage_attachments(&AppPaths::resolve()?, &operation_id, &sources)
+fn stage_attachments(
+    operation_id: String,
+    sources: Vec<String>,
+    max_file_mb: Option<u64>,
+    max_total_mb: Option<u64>,
+) -> Result<Vec<QueuedAttachment>, String> {
+    storage::stage_attachments(
+        &AppPaths::resolve()?,
+        &operation_id,
+        &sources,
+        max_file_mb.unwrap_or(25),
+        max_total_mb.unwrap_or(100),
+    )
 }
 
 #[tauri::command]
