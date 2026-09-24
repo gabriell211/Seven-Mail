@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AccountProfile, MailMessage, ProviderSettings, QueueOperation, RuntimeInfo } from "../types";
+import type { AccountProfile, MailMessage, ProviderSettings, QueueOperation, RuntimeInfo, WorkspaceDocument, WorkspaceKind } from "../types";
 
 const hasTauri = () => "__TAURI_INTERNALS__" in window;
 
@@ -26,5 +26,11 @@ export const bridge = {
   flushOutbox: (): Promise<number> => command("flush_outbox"),
   messageAction: (accountId: string, messageId: string, action: "read" | "unread" | "flag" | "unflag" | "archive" | "delete" | "spam" | "inbox"): Promise<MailMessage> =>
     command("message_action", { accountId, messageId, action }),
-  clearCache: (): Promise<void> => command("clear_cache")
+  clearCache: (): Promise<void> => command("clear_cache"),
+  listWorkspace: <T = Record<string, unknown>>(kind: WorkspaceKind): Promise<Array<WorkspaceDocument<T>>> => command("list_workspace", { kind }),
+  upsertWorkspace: <T = Record<string, unknown>>(document: WorkspaceDocument<T>): Promise<WorkspaceDocument<T>> => command("upsert_workspace", { document }),
+  deleteWorkspace: (kind: WorkspaceKind, id: string): Promise<void> => command("delete_workspace", { kind, id }),
+  searchWorkspace: (query: string): Promise<WorkspaceDocument[]> => command("search_workspace", { query }),
+  exportWorkspace: (): Promise<WorkspaceDocument[]> => command("export_workspace"),
+  importWorkspace: (documents: WorkspaceDocument[]): Promise<number> => command("import_workspace", { documents })
 };
