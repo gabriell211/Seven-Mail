@@ -178,7 +178,7 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,activeAccount,onCompose,onAdd}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;onCompose:()=>void;onAdd:()=>void}) {
+function MailView({accounts,messages,activeAccount,onCompose,onAdd,onRefresh,syncing}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;syncing:boolean}) {
   const [folder,setFolder] = useState("Caixa de entrada");
   const [selectedId,setSelectedId] = useState<string>();
   const selected = messages.find(m=>m.id===selectedId);
@@ -200,7 +200,7 @@ function MailView({accounts,messages,activeAccount,onCompose,onAdd}:{accounts:Ac
     <section className="message-pane">
       <header className="pane-header">
         <div><span className="eyebrow">{folder.toUpperCase()}</span><h2>{folder}</h2></div>
-        <div className="icon-group"><button className="icon-button"><Icon name="filter"/></button><button className="icon-button"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div>
+        <div className="icon-group"><button className="icon-button"><Icon name="filter"/></button><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={!activeAccount||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div>
       </header>
       <div className="segmented"><button className="active">Prioritários</button><button>Outros</button></div>
       {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : messages.length===0 ? <div className="empty-state small"><div className="empty-symbol"><Icon name="inbox" size={30}/></div><h3>Tudo limpo</h3><p>As mensagens sincronizadas aparecerão aqui.</p></div> :
@@ -292,6 +292,7 @@ export default function App() {
   const [composeOpen,setComposeOpen] = useState(false);
   const [accountOpen,setAccountOpen] = useState(false);
   const [search,setSearch] = useState("");
+  const [syncState,setSyncState] = useState<"idle"|"syncing"|"error">("idle");
   const [settings,setSettings] = useState<AppSettings>(()=>{
     try { return {...DEFAULT_SETTINGS,...JSON.parse(localStorage.getItem("seven-mail:settings")||"{}")}; } catch { return DEFAULT_SETTINGS; }
   });
@@ -310,6 +311,20 @@ export default function App() {
     document.documentElement.dataset.density=settings.compact?"compact":"comfortable";
   },[settings]);
 
+  async function syncNow() {
+    if (!activeAccount || syncState==="syncing") return;
+    setSyncState("syncing");
+    try {
+      await bridge.syncInbox(activeAccount.id, 50);
+      const refreshed = await bridge.listCachedMessages(activeAccount.id);
+      setMessages(refreshed);
+      setSyncState("idle");
+    } catch (reason) {
+      console.error(reason);
+      setSyncState("error");
+    }
+  }
+
   const filtered = useMemo(()=>{
     const q=search.trim().toLowerCase();
     return q ? messages.filter(m=>[m.subject,m.preview,m.from.name,m.from.email].filter(Boolean).some(v=>v!.toLowerCase().includes(q))) : messages;
@@ -325,10 +340,10 @@ export default function App() {
       <header className="topbar" data-tauri-drag-region>
         <div className="product"><strong>Seven Mail</strong><span>{NAV.find(n=>n.id===section)?.label}</span></div>
         <label className="search"><Icon name="search" size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Pesquisar e-mails, pessoas, eventos..."/><kbd>Ctrl K</kbd></label>
-        <div className="top-actions"><span className="sync"><i/> Sincronizado</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
+        <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} onCompose={()=>setComposeOpen(true)} onAdd={()=>setAccountOpen(true)}/>}
+        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} onCompose={()=>setComposeOpen(true)} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} syncing={syncState==="syncing"}/>} 
         {section==="calendar"&&<CalendarView/>}
         {section==="people"&&<PeopleView/>}
         {section==="tasks"&&<TasksView/>}
