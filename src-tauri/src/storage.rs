@@ -424,6 +424,8 @@ pub fn stage_attachments(
             name,
             path: staged_path.display().to_string(),
             size: metadata.len(),
+            inline: false,
+            content_id: None,
         });
     }
 
@@ -460,6 +462,8 @@ pub fn stage_message_as_eml(
         name: base,
         path: staged_path.display().to_string(),
         size: raw.len() as u64,
+        inline: false,
+        content_id: None,
     })
 }
 
