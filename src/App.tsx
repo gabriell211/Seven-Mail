@@ -280,6 +280,9 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
   const [displayName,setDisplayName] = useState("");
   const [email,setEmail] = useState("");
   const [secret,setSecret] = useState("");
+  const [incomingProtocol,setIncomingProtocol] = useState<"imap"|"pop3">("imap");
+  const [pop3Host,setPop3Host] = useState("");
+  const [pop3Port,setPop3Port] = useState(995);
   const [server,setServer] = useState<ProviderSettings>({
     imapHost:"",
     imapPort:993,
@@ -314,6 +317,10 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
         email: email.trim(),
         username: email.trim(),
         provider,
+        incomingProtocol,
+        pop3Host: incomingProtocol==="pop3" ? (pop3Host.trim() || `pop.${email.trim().split("@")[1]??""}`) : undefined,
+        pop3Port: incomingProtocol==="pop3" ? (pop3Port || 995) : undefined,
+        connectionTimeoutSeconds:30,
         color: COLORS[Math.floor(Math.random()*COLORS.length)],
         isDefault: false,
         ...settings
@@ -349,10 +356,16 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
         <label className="full"><span>Senha / senha de aplicativo</span><input type="password" value={secret} onChange={e=>setSecret(e.target.value)} placeholder="Armazenada no Windows Credential Manager / Keyring"/></label>
       </div>
       {provider==="imap"&&<div className="server-grid">
-        <label><span>IMAP</span><input value={server.imapHost} onChange={e=>setServer(v=>({...v,imapHost:e.target.value}))} placeholder="imap.dominio.com"/></label>
-        <label><span>Porta</span><input type="number" value={server.imapPort} onChange={e=>setServer(v=>({...v,imapPort:Number(e.target.value)}))}/></label>
+        <label className="full"><span>Protocolo de entrada</span><select value={incomingProtocol} onChange={e=>setIncomingProtocol(e.target.value as "imap"|"pop3")}><option value="imap">IMAP</option><option value="pop3">POP3 (TLS)</option></select></label>
+        {incomingProtocol==="imap"?<>
+          <label><span>IMAP</span><input value={server.imapHost} onChange={e=>setServer(v=>({...v,imapHost:e.target.value}))} placeholder="imap.dominio.com"/></label>
+          <label><span>Porta IMAP</span><input type="number" value={server.imapPort} onChange={e=>setServer(v=>({...v,imapPort:Number(e.target.value)}))}/></label>
+        </>:<>
+          <label><span>POP3</span><input value={pop3Host} onChange={e=>setPop3Host(e.target.value)} placeholder="pop.dominio.com"/></label>
+          <label><span>Porta POP</span><input type="number" value={pop3Port} onChange={e=>setPop3Port(Number(e.target.value))}/></label>
+        </>}
         <label><span>SMTP</span><input value={server.smtpHost} onChange={e=>setServer(v=>({...v,smtpHost:e.target.value}))} placeholder="smtp.dominio.com"/></label>
-        <label><span>Porta</span><input type="number" value={server.smtpPort} onChange={e=>setServer(v=>({...v,smtpPort:Number(e.target.value)}))}/></label>
+        <label><span>Porta SMTP</span><input type="number" value={server.smtpPort} onChange={e=>setServer(v=>({...v,smtpPort:Number(e.target.value)}))}/></label>
         <label className="full"><span>Segurança SMTP</span><select value={server.securityMode} onChange={e=>setServer(v=>({...v,securityMode:e.target.value as "tls"|"starttls"}))}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
       </div>}
       <div className="secure-note"><Icon name="lock" size={16}/><span>A credencial nunca é gravada no cache. A fila offline contém somente a operação e o conteúdo necessário para reenvio.</span></div>
