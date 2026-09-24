@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AccountProfile, MailAttachmentInfo, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument, WorkspaceKind } from "../types";
+import type { AccountProfile, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument, WorkspaceKind } from "../types";
 
 const hasTauri = () => "__TAURI_INTERNALS__" in window;
 
@@ -47,6 +47,8 @@ export const bridge = {
   importEml: (accountId: string, path: string): Promise<MailMessage> => command("import_eml", { accountId, path }),
   readMessageSource: (accountId: string, messageId: string): Promise<string> => command("read_message_source", { accountId, messageId }),
   listMessageAttachments: (accountId: string, messageId: string): Promise<MailAttachmentInfo[]> => command("list_message_attachments", { accountId, messageId }),
+  previewMessageAttachment: (accountId: string, messageId: string, index: number): Promise<MailAttachmentPreview> =>
+    command("preview_message_attachment", { accountId, messageId, index }),
   stageMessageAttachments: (operationId: string, accountId: string, messageId: string): Promise<QueuedAttachment[]> =>
     command("stage_message_attachments", { operationId, accountId, messageId }),
   saveMessageAttachment: (accountId: string, messageId: string, index: number, destination: string): Promise<void> => command("save_message_attachment", { accountId, messageId, index, destination }),
