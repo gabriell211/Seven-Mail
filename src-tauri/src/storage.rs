@@ -505,6 +505,55 @@ pub fn apply_message_action(
     Ok(message)
 }
 
+pub fn move_message_to_folder(
+    paths: &AppPaths,
+    account_id: &str,
+    message_id: &str,
+    target_path: &str,
+    target_label: &str,
+) -> Result<MailMessage, String> {
+    safe_component(account_id)?;
+    safe_component(message_id)?;
+
+    if target_path.trim().is_empty() || target_label.trim().is_empty() {
+        return Err("A pasta de destino é inválida.".to_string());
+    }
+
+    let path = paths
+        .message_cache
+        .join(account_id)
+        .join(format!("{}.json", message_id));
+
+    if !path.exists() {
+        return Err("Mensagem não encontrada no cache local.".to_string());
+    }
+
+    let mut message = read_json::<MailMessage>(&path)?;
+    let source_mailbox = message.remote_folder.clone().unwrap_or_else(|| "INBOX".to_string());
+
+    message.folder = target_label.trim().to_string();
+    message.remote_folder = Some(target_path.trim().to_string());
+    write_json(&path, &message)?;
+
+    queue_operation(
+        paths,
+        &QueueOperation {
+            id: uuid::Uuid::new_v4().to_string(),
+            kind: "move".to_string(),
+            account_id: account_id.to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            attempts: 0,
+            payload: serde_json::json!({
+                "remoteId": message.remote_id,
+                "mailbox": source_mailbox,
+                "targetMailbox": target_path.trim(),
+            }),
+        },
+    )?;
+
+    Ok(message)
+}
+
 pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
     if paths.message_cache.exists() {
         fs::remove_dir_all(&paths.message_cache).map_err(io_error)?;
