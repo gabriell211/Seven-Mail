@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Seven Mail",
+  "version": "0.1.0",
+  "identifier": "com.sevenmail.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{
+      "title": "Seven Mail",
+      "width": 1440,
+      "height": 900,
+      "minWidth": 980,
+      "minHeight": 680,
+      "center": true,
+      "resizable": true
+    }],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "Cliente de e-mail moderno e multiplataforma."
+  }
+}

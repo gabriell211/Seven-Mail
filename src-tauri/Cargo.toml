@@ -1,0 +1,20 @@
+[package]
+name = "seven-mail"
+version = "0.1.0"
+description = "Seven Mail desktop client"
+authors = ["gabriell211"]
+edition = "2021"
+
+[lib]
+name = "seven_mail_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.5", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+dirs = "6"
