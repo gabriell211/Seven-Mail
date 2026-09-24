@@ -362,18 +362,29 @@ async fn apply_remote_action(
                 .map_err(|error| format!("Falha ao confirmar sinalização: {error}"))?;
         }
         "move" => {
-            let target = operation
+            let explicit_mailbox = operation
                 .payload
-                .get("target")
+                .get("targetMailbox")
                 .and_then(|value| value.as_str())
-                .unwrap_or("archive");
-            let mailbox = match target {
-                "archive" => folders.archive.as_deref().unwrap_or("Archive"),
-                "trash" => folders.trash.as_deref().unwrap_or("Trash"),
-                "spam" => folders.junk.as_deref().unwrap_or("Junk"),
-                "inbox" => "INBOX",
-                _ => return Err("Destino IMAP não suportado.".to_string()),
+                .filter(|value| !value.trim().is_empty());
+
+            let mailbox = if let Some(mailbox) = explicit_mailbox {
+                mailbox
+            } else {
+                let target = operation
+                    .payload
+                    .get("target")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("archive");
+                match target {
+                    "archive" => folders.archive.as_deref().unwrap_or("Archive"),
+                    "trash" => folders.trash.as_deref().unwrap_or("Trash"),
+                    "spam" => folders.junk.as_deref().unwrap_or("Junk"),
+                    "inbox" => "INBOX",
+                    _ => return Err("Destino IMAP não suportado.".to_string()),
+                }
             };
+
             session
                 .uid_mv(remote_id, mailbox)
                 .await
@@ -383,6 +394,68 @@ async fn apply_remote_action(
     }
 
     Ok(())
+}
+
+fn validate_folder_name(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    if value.is_empty() || value.len() > 200 || value.chars().any(char::is_control) {
+        return Err("Nome de pasta inválido.".to_string());
+    }
+    Ok(value.to_string())
+}
+
+pub fn create_folder(account: &AccountProfile, name: &str) -> Result<(), String> {
+    let name = validate_folder_name(name)?;
+    async_std::task::block_on(async {
+        let mut session = login(account).await?;
+        let result = session
+            .create(&name)
+            .await
+            .map_err(|error| format!("Falha ao criar pasta: {error}"));
+        let logout = session.logout().await.map_err(|error| error.to_string());
+        result?;
+        logout?;
+        Ok(())
+    })
+}
+
+pub fn rename_folder(account: &AccountProfile, from: &str, to: &str) -> Result<(), String> {
+    let from = validate_folder_name(from)?;
+    let to = validate_folder_name(to)?;
+    if from.eq_ignore_ascii_case("INBOX") {
+        return Err("A Caixa de entrada não pode ser renomeada pelo Seven Mail.".to_string());
+    }
+
+    async_std::task::block_on(async {
+        let mut session = login(account).await?;
+        let result = session
+            .rename(&from, &to)
+            .await
+            .map_err(|error| format!("Falha ao renomear pasta: {error}"));
+        let logout = session.logout().await.map_err(|error| error.to_string());
+        result?;
+        logout?;
+        Ok(())
+    })
+}
+
+pub fn delete_folder(account: &AccountProfile, path: &str) -> Result<(), String> {
+    let path = validate_folder_name(path)?;
+    if path.eq_ignore_ascii_case("INBOX") {
+        return Err("A Caixa de entrada não pode ser excluída.".to_string());
+    }
+
+    async_std::task::block_on(async {
+        let mut session = login(account).await?;
+        let result = session
+            .delete(&path)
+            .await
+            .map_err(|error| format!("Falha ao excluir pasta: {error}"));
+        let logout = session.logout().await.map_err(|error| error.to_string());
+        result?;
+        logout?;
+        Ok(())
+    })
 }
 
 pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize, String> {
