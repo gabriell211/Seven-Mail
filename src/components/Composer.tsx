@@ -149,9 +149,11 @@ export function Composer({
   const [contentBlocks, setContentBlocks] = useState<ContentBlockItem[]>([]);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [dictating,setDictating]=useState(false);
+  const [uploadProgress,setUploadProgress]=useState<{done:number;total:number;name:string}|null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const finishedRef = useRef(false);
   const recognitionRef=useRef<SpeechRecognitionLike|null>(null);
+  const cancelUploadRef=useRef(false);
 
   const linkPreview=useMemo(()=>{
     const match=draft.bodyText.match(/https?:\/\/[^\s<>"']+/i);
@@ -322,12 +324,30 @@ export function Composer({
   async function stageFiles(sources: string[]) {
     if (sources.length === 0) return;
     setError("");
+    cancelUploadRef.current=false;
+    const added:QueuedAttachment[]=[];
     try {
       const perFile = settings.maxAttachmentMb ?? 25;
-      const staged = await bridge.stageAttachments(draft.id, sources, perFile, Math.min(perFile * 4, 500));
-      setDraft((current) => ({ ...current, attachments: [...current.attachments, ...staged] }));
+      for(let index=0;index<sources.length;index+=1){
+        if(cancelUploadRef.current) break;
+        const source=sources[index];
+        const name=source.split(/[\\/]/).pop()||`arquivo ${index+1}`;
+        setUploadProgress({done:index,total:sources.length,name});
+        const staged=await bridge.stageAttachments(draft.id,[source],perFile,Math.min(perFile*4,500));
+        added.push(...staged);
+        setUploadProgress({done:index+1,total:sources.length,name});
+      }
+      if(added.length){
+        setDraft((current)=>({...current,attachments:[...current.attachments,...added]}));
+      }
+      if(cancelUploadRef.current){
+        setError("Upload de anexos cancelado. Os arquivos já concluídos foram mantidos.");
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setUploadProgress(null);
+      cancelUploadRef.current=false;
     }
   }
 
@@ -635,7 +655,12 @@ export function Composer({
           </div>
         )}
 
-        {error && <div className="form-error composer-error">{error}</div>}
+        {uploadProgress&&<div className="attachment-upload-progress">
+          <div><span><b>{uploadProgress.done}/{uploadProgress.total}</b> {uploadProgress.name}</span><small>{Math.round((uploadProgress.done/uploadProgress.total)*100)}%</small></div>
+          <progress max={uploadProgress.total} value={uploadProgress.done}/>
+          <button className="secondary" onClick={()=>{cancelUploadRef.current=true;}}>Cancelar upload</button>
+        </div>}
+        {error && <div className="form-error composer-error">{error}</div>
 
         <footer className="compose-footer composer-footer">
           <div>
