@@ -207,6 +207,7 @@ fn import_workspace(documents: Vec<WorkspaceDocument>) -> Result<usize, String> 
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             runtime_info,
             list_accounts,
