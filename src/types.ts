@@ -25,6 +25,9 @@ export interface AccountProfile {
   pop3Port?: number;
   caldavUrl?: string;
   carddavUrl?: string;
+  ldapUrl?: string;
+  ldapBaseDn?: string;
+  ldapFilter?: string;
   smtpHost?: string;
   smtpPort?: number;
   securityMode?: "tls" | "starttls";
