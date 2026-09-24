@@ -125,6 +125,7 @@ fn parse_message(
         body_html,
         body_text,
         categories: Vec::new(),
+        applied_rule_ids: Vec::new(),
     })
 }
 
