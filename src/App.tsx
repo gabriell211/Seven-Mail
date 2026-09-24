@@ -215,7 +215,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,on
   return <div className="mail-layout">
     <aside className="folder-pane">
       <button className="compose-button" onClick={onCompose}><Icon name="plus" size={17}/> Novo e-mail</button>
-      <div className="account-line"><i style={{background:activeAccount?.color||"#7868ff"}}/><span>{activeAccount?.email||"Nenhuma conta"}</span></div>
+      <div className="account-line"><i style={{background:activeAccount?.color||"#7868ff"}}/><span>{activeAccount?.email||(accounts.length?"Todas as contas":"Nenhuma conta")}</span></div>
       <nav className="folders">
         {visibleFolders.map(item=>{
           const unread = messages.filter(message=>message.folder===item.name&&!message.isRead).length;
@@ -232,7 +232,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,on
     <section className="message-pane">
       <header className="pane-header">
         <div><span className="eyebrow">{folder.name.toUpperCase()}</span><h2>{folder.name}</h2></div>
-        <div className="icon-group"><button className="icon-button"><Icon name="filter"/></button><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={!activeAccount||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div>
+        <div className="icon-group"><button className="icon-button"><Icon name="filter"/></button><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div>
       </header>
       <div className="segmented"><button className="active">Prioritários</button><button>Outros</button></div>
       {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : folderMessages.length===0 && (folder.role!=="drafts" || localDrafts.length===0) ? <div className="empty-state small"><div className="empty-symbol"><Icon name={folder.role==="drafts"?"draft":"inbox"} size={30}/></div><h3>{folder.role==="drafts"?"Nenhum rascunho":"Tudo limpo"}</h3><p>{folder.role==="drafts"?"Mensagens em edição aparecerão aqui automaticamente.":"As mensagens sincronizadas aparecerão aqui."}</p></div> :
@@ -352,7 +352,9 @@ export default function App() {
     try { return {...DEFAULT_SETTINGS,...JSON.parse(localStorage.getItem("seven-mail:settings")||"{}")}; } catch { return DEFAULT_SETTINGS; }
   });
 
-  const activeAccount = accounts.find(a=>a.id===activeId)||accounts[0];
+  const unified = activeId==="__all__";
+  const activeAccount = unified ? undefined : (accounts.find(a=>a.id===activeId)||accounts[0]);
+  const composeAccount = activeAccount ?? accounts.find((account)=>account.isDefault) ?? accounts[0];
 
   async function refreshDrafts() {
     const documents = await bridge.listWorkspace<ComposeDraft>("draft").catch(() => []);
@@ -408,22 +410,25 @@ export default function App() {
   },[]);
 
   useEffect(()=>{
-    if (!activeAccount) {
+    if (accounts.length===0) {
       setMessages([]);
       return;
     }
 
     let cancelled = false;
     const loadMessages = async () => {
-      const local = await bridge.listCachedMessages(activeAccount.id).catch(() => [] as MailMessage[]);
+      const local = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id).catch(() => [] as MailMessage[]);
       const merged = new Map(local.map((message) => [message.id, message]));
 
       try {
-        const cloud = await pullCloudMessages(activeAccount.id);
-        for (const message of cloud) {
-          if (!merged.has(message.id)) {
-            await bridge.cacheMessage(message);
-            merged.set(message.id, message);
+        const targets = unified ? accounts : (activeAccount ? [activeAccount] : []);
+        for (const account of targets) {
+          const cloud = await pullCloudMessages(account.id);
+          for (const message of cloud) {
+            if (!merged.has(message.id)) {
+              await bridge.cacheMessage(message);
+              merged.set(message.id, message);
+            }
           }
         }
         void pushCloudMessages(local).catch(() => undefined);
@@ -443,10 +448,10 @@ export default function App() {
       cancelled = true;
       window.removeEventListener("seven-mail:cloud-session", onCloudSession);
     };
-  },[activeAccount?.id]);
+  },[activeAccount?.id,unified,accounts.length]);
 
   useEffect(()=>{
-    if (!activeAccount) {
+    if (unified || !activeAccount) {
       setMailFolders(FALLBACK_FOLDERS);
       setSelectedFolder(FALLBACK_FOLDERS[0]);
       return;
@@ -462,7 +467,7 @@ export default function App() {
       .catch(()=>undefined);
 
     return ()=>{cancelled=true;};
-  },[activeAccount?.id]);
+  },[activeAccount?.id,unified]);
 
   useEffect(()=>{
     if (selectedFolder.role==="drafts") {
@@ -557,12 +562,17 @@ export default function App() {
   },[accounts,activeAccount?.id,settings.notificationsEnabled,settings.syncIntervalMinutes]);
 
   async function syncNow() {
-    if (!activeAccount || syncState==="syncing") return;
+    if (accounts.length===0 || syncState==="syncing") return;
     setSyncState("syncing");
     try {
-      await bridge.flushMailActions(activeAccount.id).catch(() => 0);
-      await bridge.syncFolder(activeAccount.id, selectedFolder.path, selectedFolder.name, 50);
-      const refreshed = await bridge.listCachedMessages(activeAccount.id);
+      const targets = unified ? accounts : (activeAccount ? [activeAccount] : []);
+      for (const account of targets) {
+        await bridge.flushMailActions(account.id).catch(() => 0);
+        const path = unified ? "INBOX" : selectedFolder.path;
+        const label = unified ? "Caixa de entrada" : selectedFolder.name;
+        await bridge.syncFolder(account.id, path, label, 50);
+      }
+      const refreshed = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id);
       setMessages(refreshed);
       void pushCloudMessages(refreshed).catch(() => undefined);
       setSyncState("idle");
@@ -573,11 +583,13 @@ export default function App() {
   }
 
   async function applyMessageAction(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox") {
-    if (!activeAccount) return;
-    const updated = await bridge.messageAction(activeAccount.id, messageId, action);
-    setMessages(await bridge.listCachedMessages(activeAccount.id));
+    const message = messages.find((item)=>item.id===messageId);
+    const accountId = activeAccount?.id ?? message?.accountId;
+    if (!accountId) return;
+    const updated = await bridge.messageAction(accountId, messageId, action);
+    setMessages(await bridge.listCachedMessages(unified ? undefined : accountId));
     void pushCloudMessage(updated).catch(() => undefined);
-    void bridge.flushMailActions(activeAccount.id).catch(() => undefined);
+    void bridge.flushMailActions(accountId).catch(() => undefined);
   }
 
   function handleQueuedSend(info: QueuedSendInfo) {
@@ -616,11 +628,12 @@ export default function App() {
     <main className="main">
       <header className="topbar" data-tauri-drag-region>
         <div className="product"><strong>Seven Mail</strong><span>{NAV.find(n=>n.id===section)?.label}</span></div>
+        {section==="mail"&&accounts.length>0&&<select className="account-switcher" value={unified?"__all__":(activeAccount?.id??"")} onChange={e=>setActiveId(e.target.value)} aria-label="Selecionar conta"><option value="__all__">Todas as contas</option>{accounts.map(account=><option key={account.id} value={account.id}>{account.email}</option>)}</select>}
         <label className="search"><Icon name="search" size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Pesquisar e-mails, pessoas, eventos..."/><kbd>Ctrl K</kbd></label>
         <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} onOpenDraft={openDraft} onFolderChange={(next)=>{setSelectedFolder(next);queueMicrotask(()=>void bridge.syncFolder(activeAccount?.id??"",next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount?.id)).then(setMessages).catch(()=>undefined));}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"}/>} 
+        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} onOpenDraft={openDraft} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"}/>} 
         {section==="calendar"&&<PersistentCalendarView/>}
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView/>}
@@ -629,7 +642,7 @@ export default function App() {
         {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime} accounts={accounts} onAccountsChange={(next)=>{setAccounts(next);if(!next.some((account)=>account.id===activeId)){setActiveId(next.find((account)=>account.isDefault)?.id??next[0]?.id);}}}/>}
       </div>
     </main>
-    {composeOpen&&<Composer accounts={accounts} initialAccountId={activeAccount?.id} initialDraft={draftToOpen} settings={settings} onClose={closeComposer} onQueued={(info)=>{handleQueuedSend(info);void refreshDrafts();}}/>}
+    {composeOpen&&<Composer accounts={accounts} initialAccountId={composeAccount?.id} initialDraft={draftToOpen} settings={settings} onClose={closeComposer} onQueued={(info)=>{handleQueuedSend(info);void refreshDrafts();}}/>}
     {undoSend&&<div className="undo-send" role="status"><span><Icon name="send" size={16}/><b>Mensagem na fila</b><small>Envio em instantes</small></span><button onClick={()=>void undoQueuedSend()}>Desfazer</button></div>}
     {accountOpen&&<AddAccountModal onClose={()=>setAccountOpen(false)} onAdded={account=>{setAccounts(v=>[...v,account]);setActiveId(account.id);void pushCloudAccount(account).catch(()=>undefined);}}/>}
   </div>;
