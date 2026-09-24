@@ -3,6 +3,8 @@ name: Desktop Release
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - "v*"
 
@@ -68,15 +70,17 @@ jobs:
           tagName: v__VERSION__
           releaseName: "Seven Mail v__VERSION__"
           releaseBody: |
-            Instaladores oficiais do Seven Mail.
+            Seven Mail 0.2.0 amplia o cliente desktop local-first com:
 
-            Windows:
-            - MSI
-            - NSIS (.exe)
+            - Pesquisa avançada e filtros rápidos de mensagens
+            - Regras automáticas e execução manual por prioridade
+            - Lembretes nativos de tarefas
+            - Conversão de e-mail em tarefa e navegação de volta à mensagem
+            - Melhorias na caixa unificada, sincronização e experiência desktop
 
-            Linux:
-            - DEB
-            - AppImage
+            Instaladores:
+            - Windows: MSI e NSIS (.exe)
+            - Linux: DEB e AppImage
           releaseDraft: false
           prerelease: false
           args: --bundles ${{ matrix.bundles }}
