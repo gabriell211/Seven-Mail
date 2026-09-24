@@ -1,39 +1,26 @@
-import { createAuthClient } from "@neondatabase/auth";
-import { fetchWithToken, NeonPostgrestClient } from "@neondatabase/postgrest-js";
+import { BetterAuthVanillaAdapter, createClient } from "@neondatabase/neon-js";
 import type { AccountProfile, MailMessage, WorkspaceDocument, WorkspaceKind } from "../types";
 
 const authUrl = import.meta.env.VITE_NEON_AUTH_URL?.trim();
 const dataApiUrl = import.meta.env.VITE_NEON_DATA_API_URL?.trim();
 
 export const neonConfigured = Boolean(authUrl && dataApiUrl);
-export const neonAuth = authUrl ? createAuthClient(authUrl) : null;
 
-async function accessToken(): Promise<string | null> {
-  if (!neonAuth) return null;
-  return (await neonAuth.getJWTToken?.()) ?? null;
-}
-
-export const neonClient = dataApiUrl
-  ? new NeonPostgrestClient({
-      dataApiUrl,
-      options: {
-        global: {
-          fetch: fetchWithToken(accessToken),
-        },
+export const neonClient = authUrl && dataApiUrl
+  ? createClient({
+      auth: {
+        adapter: BetterAuthVanillaAdapter(),
+        url: authUrl,
+      },
+      dataApi: {
+        url: dataApiUrl,
       },
     })
   : null;
 
-function requireAuth() {
-  if (!neonAuth) {
-    throw new Error("Neon Auth não configurado. Defina VITE_NEON_AUTH_URL.");
-  }
-  return neonAuth;
-}
-
 function requireClient() {
   if (!neonClient) {
-    throw new Error("Neon Data API não configurada. Defina VITE_NEON_DATA_API_URL.");
+    throw new Error("Neon não configurado. Defina VITE_NEON_AUTH_URL e VITE_NEON_DATA_API_URL.");
   }
   return neonClient;
 }
@@ -47,29 +34,29 @@ function errorMessage(error: unknown): string {
 }
 
 export async function getCloudSession() {
-  if (!neonAuth) return null;
-  const result = await neonAuth.getSession();
+  if (!neonClient) return null;
+  const result = await neonClient.auth.getSession();
   if (result.error) throw new Error(errorMessage(result.error));
   return result.data ?? null;
 }
 
 export async function signInCloud(email: string, password: string) {
-  const result = await requireAuth().signIn.email({ email, password });
+  const result = await requireClient().auth.signIn.email({ email, password });
   if (result.error) throw new Error(errorMessage(result.error));
   window.dispatchEvent(new Event("seven-mail:cloud-session"));
   return result.data;
 }
 
 export async function signUpCloud(name: string, email: string, password: string) {
-  const result = await requireAuth().signUp.email({ name, email, password });
+  const result = await requireClient().auth.signUp.email({ name, email, password });
   if (result.error) throw new Error(errorMessage(result.error));
   window.dispatchEvent(new Event("seven-mail:cloud-session"));
   return result.data;
 }
 
 export async function signOutCloud() {
-  if (!neonAuth) return;
-  const result = await neonAuth.signOut();
+  if (!neonClient) return;
+  const result = await neonClient.auth.signOut();
   if (result.error) throw new Error(errorMessage(result.error));
   window.dispatchEvent(new Event("seven-mail:cloud-session"));
 }
