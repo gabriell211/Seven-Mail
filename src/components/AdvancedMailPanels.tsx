@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { Icon } from "../icons";
 import { bridge } from "../lib/bridge";
-import type { AppSettings, MailAttachmentInfo, MailMessage } from "../types";
+import type { AppSettings, MailAttachmentInfo, MailAttachmentPreview, MailMessage } from "../types";
 
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -22,6 +22,8 @@ export function MessageDetailsModal({
   const [tab, setTab] = useState(initialTab);
   const [source, setSource] = useState("");
   const [attachments, setAttachments] = useState<MailAttachmentInfo[]>([]);
+  const [preview, setPreview] = useState<MailAttachmentPreview | null>(null);
+  const [previewBusy,setPreviewBusy] = useState(false);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
 
@@ -61,6 +63,18 @@ export function MessageDetailsModal({
     window.alert(count === 1 ? "1 anexo salvo." : `${count} anexos salvos.`);
   }
 
+  async function previewOne(item: MailAttachmentInfo) {
+    setPreviewBusy(true);
+    setError("");
+    try{
+      setPreview(await bridge.previewMessageAttachment(message.accountId,message.id,item.index));
+    }catch(reason){
+      setError(reason instanceof Error?reason.message:String(reason));
+    }finally{
+      setPreviewBusy(false);
+    }
+  }
+
   return <div className="modal-backdrop" onMouseDown={onClose}>
     <section className="modal message-details-modal" role="dialog" aria-modal="true" onMouseDown={(event)=>event.stopPropagation()}>
       <header className="modal-header compact-header">
@@ -80,8 +94,13 @@ export function MessageDetailsModal({
             {attachments.map((item)=><article key={item.index} className="attachment-browser-row">
               <span className="attachment-file-icon"><Icon name="paperclip" size={17}/></span>
               <span><b>{item.name}</b><small>{item.mime} · {humanSize(item.size)}{item.inline ? " · inline" : ""}</small></span>
-              <button className="secondary" onClick={()=>void saveOne(item)}><Icon name="download" size={14}/> Salvar</button>
+              <div className="attachment-row-actions"><button className="secondary" onClick={()=>void previewOne(item)}>Visualizar</button><button className="secondary" onClick={()=>void saveOne(item)}><Icon name="download" size={14}/> Salvar</button></div>
             </article>)}
+            {(previewBusy||preview)&&<div className="attachment-preview">
+              <header><b>{preview?.name??"Carregando..."}</b>{preview&&<small>{preview.mime} · {humanSize(preview.size)}</small>}<button className="icon-button" aria-label="Fechar pré-visualização" onClick={()=>setPreview(null)}><Icon name="x" size={13}/></button></header>
+              {previewBusy?<div className="mini-empty">Preparando pré-visualização...</div>:preview?.kind==="image"&&preview.dataUrl?<img src={preview.dataUrl} alt={preview.name}/>:preview?.kind==="pdf"&&preview.dataUrl?<iframe title={preview.name} src={preview.dataUrl}/>:<pre>{preview?.text??"Pré-visualização indisponível."}</pre>}
+            </div>}
+          </div> : <div className="mini-empty">Nenhum anexo disponível na fonte local. Mensagens antigas podem precisar ser sincronizadas novamente.</div>
           </div> : <div className="mini-empty">Nenhum anexo disponível na fonte local. Mensagens antigas podem precisar ser sincronizadas novamente.</div>
         )}
         {!busy && tab==="headers" && <pre className="message-source">{headers || "Cabeçalhos originais indisponíveis. Sincronize a mensagem novamente."}</pre>}
