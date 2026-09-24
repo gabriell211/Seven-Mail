@@ -622,3 +622,14 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .dictionary-editor>b{font-size:9px}.dictionary-editor>div{display:flex;flex-wrap:wrap;gap:5px}
 .dictionary-editor span{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:999px;background:var(--soft);border:1px solid var(--line);font-size:8px}
 .dictionary-editor span button{display:grid;place-items:center;background:transparent;color:var(--muted)}
+
+
+/* Message authentication status */
+.auth-results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.auth-results article{display:flex;flex-direction:column;gap:4px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--soft)}
+.auth-results article b{font-size:9px;letter-spacing:.08em}.auth-results article span{font-size:16px;font-weight:850}.auth-results article small{font-size:8px;color:var(--muted);line-height:1.45}
+.auth-results article.pass{border-color:rgba(49,166,112,.28);background:rgba(49,166,112,.07)}.auth-results article.pass span{color:#2f9d6d}
+.auth-results article.fail{border-color:rgba(220,82,82,.28);background:rgba(220,82,82,.07)}.auth-results article.fail span{color:#d65a5a}
+.auth-results article.neutral span{color:var(--muted)}
+.auth-results details{grid-column:1/-1}.auth-results summary{cursor:pointer;font-size:9px;color:var(--muted);padding:7px 0}
+@media(max-width:720px){.auth-results{grid-template-columns:1fr}}
