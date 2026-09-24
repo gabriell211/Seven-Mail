@@ -318,3 +318,25 @@ export async function pushCloudMessages(messages: MailMessage[]): Promise<void> 
     await pushCloudMessage(message);
   }
 }
+
+
+export async function deleteCloudAccount(accountId: string): Promise<void> {
+  if (!neonClient) return;
+  const session = await getCloudSession();
+  if (!session?.session) return;
+
+  const deletedAt = new Date().toISOString();
+  const accountResult = await neonClient
+    .from("desktop_mail_accounts")
+    .update({ deleted_at: deletedAt, updated_at: deletedAt })
+    .eq("id", accountId);
+
+  if (accountResult.error) throw new Error(errorMessage(accountResult.error));
+
+  const messagesResult = await neonClient
+    .from("desktop_mail_messages")
+    .update({ deleted_at: deletedAt, updated_at: deletedAt })
+    .eq("account_id", accountId);
+
+  if (messagesResult.error) throw new Error(errorMessage(messagesResult.error));
+}
