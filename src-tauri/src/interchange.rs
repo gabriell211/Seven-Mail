@@ -186,7 +186,7 @@ pub fn save_message_attachment(
         .parse(&raw)
         .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
     let part = parsed
-        .attachment(index)
+        .attachment(index as u32)
         .ok_or_else(|| "Anexo não encontrado.".to_string())?;
     let destination = Path::new(destination);
     if let Some(parent) = destination.parent() {
