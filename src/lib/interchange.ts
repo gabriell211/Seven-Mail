@@ -235,8 +235,10 @@ export function contactsFromVcard(raw: string): ContactItem[] {
       continue;
     }
     if (line === "END:VCARD" && current) {
+      const rawId = current.UID || current.EMAIL || crypto.randomUUID();
+      const stableId = `carddav-${rawId.toLocaleLowerCase("pt-BR").replace(/[^a-z0-9._-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,90) || crypto.randomUUID()}`;
       contacts.push({
-        id: crypto.randomUUID(),
+        id: stableId,
         displayName: unescapeText(current.FN || current.N || current.EMAIL || "Contato importado"),
         email: current.EMAIL || "",
         phone: current.TEL || "",
