@@ -75,6 +75,8 @@ export interface AppSettings {
   startWithSystem: boolean;
   minimizeToTray: boolean;
   sendDelaySeconds: 0 | 5 | 10 | 20 | 30;
+  notificationsEnabled: boolean;
+  syncIntervalMinutes: 1 | 5 | 10 | 15 | 30;
 }
 
 
