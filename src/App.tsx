@@ -224,12 +224,22 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
   const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread"|"size"|"status">("newest");
   const [focusTab,setFocusTab] = useState<"focused"|"other">("focused");
   const [conversationView,setConversationView] = useState(true);
+  const [periodFilter,setPeriodFilter] = useState<"all"|"today"|"7d"|"30d">("all");
+  const [senderFilter,setSenderFilter] = useState("");
+  const [priorityFilter,setPriorityFilter] = useState<"all"|"low"|"normal"|"high">("all");
   const [visibleCount,setVisibleCount] = useState(settings.mailPageSize ?? 50);
   const [details,setDetails] = useState<{message:MailMessage;tab:"attachments"|"headers"|"source"}|null>(null);
   const selected = messages.find(m=>m.id===selectedId);
   const now = Date.now();
   const baseFolderMessages = messages.filter(message=>{
     if (message.folder!==folder.name || !matchesQuickFilter(message,quickFilter)) return false;
+    if(senderFilter&&message.from.email.toLocaleLowerCase("pt-BR")!==senderFilter) return false;
+    if(priorityFilter!=="all"&&(message.importance??"normal")!==priorityFilter) return false;
+    if(periodFilter!=="all"){
+      const age=now-new Date(message.receivedAt).getTime();
+      const max=periodFilter==="today"?24*60*60*1000:periodFilter==="7d"?7*24*60*60*1000:30*24*60*60*1000;
+      if(!Number.isFinite(age)||age<0||age>max) return false;
+    }
     if (message.snoozedUntil) {
       const until = new Date(message.snoozedUntil).getTime();
       if (Number.isFinite(until) && until > now) return false;
@@ -335,6 +345,8 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
   const favoriteFolderPaths=settings.favoriteFolders?.[folderPrefKey]??[];
   const favoriteFolders=visibleFolders.filter((item)=>favoriteFolderPaths.includes(item.path));
   const favoriteCategories=categories.filter((item)=>item.favorite);
+  const senderOptions=[...new Map(messages.map((message)=>[message.from.email.toLocaleLowerCase("pt-BR"),message.from])).values()]
+    .sort((a,b)=>(a.name||a.email).localeCompare(b.name||b.email));
 
   async function act(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox") {
     const currentIndex=folderMessages.findIndex((message)=>message.id===messageId);
@@ -402,7 +414,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
       {favoriteFolders.map((item)=><button className={folder.path===item.path?"folder active":"folder"} key={`fav-${item.path}`} onClick={()=>onFolderChange(item)}><Icon name={folderIcon(item.role)} size={16}/><span>{item.name}</span></button>)}
       {favoriteCategories.map((category)=><button className="folder" key={`catfav-${category.id}`} onClick={()=>onUseSavedSearch({id:category.id,name:category.name,query:`category:"${category.name}"`})}><i className="category-dot" style={{background:category.color}}/><span>{category.name}</span></button>)}
       {savedSearches.length>0&&<>
-        <div className="group-title"><span>PESQUISAS SALVAS</span></div>
+        <div className="group-title"><span>PASTAS DE PESQUISA</span></div>
         <div className="organizer-list">{savedSearches.map(item=><div className="organizer-row" key={item.id}><button className="folder" onClick={()=>onUseSavedSearch(item)}><Icon name="search" size={15}/><span>{item.name}</span></button><button className="organizer-delete" aria-label={`Excluir pesquisa ${item.name}`} onClick={()=>onDeleteSavedSearch(item)}><Icon name="x" size={12}/></button></div>)}</div>
       </>}
       <div className="group-title"><span>CATEGORIAS</span><button className="group-add" aria-label="Nova categoria" onClick={onCreateCategory}><Icon name="plus" size={13}/></button></div>
@@ -422,6 +434,12 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
         <button className={quickFilter==="flagged"?"active":""} onClick={()=>setQuickFilter("flagged")}>Sinalizadas</button>
         <button className={quickFilter==="pinned"?"active":""} onClick={()=>setQuickFilter("pinned")}>Fixadas</button>
         <button className={quickFilter==="attachments"?"active":""} onClick={()=>setQuickFilter("attachments")}>Anexos</button>
+      </div>
+      <div className="mail-advanced-filters">
+        <select value={periodFilter} onChange={(event)=>setPeriodFilter(event.target.value as typeof periodFilter)} aria-label="Filtrar por período"><option value="all">Qualquer período</option><option value="today">Últimas 24h</option><option value="7d">Últimos 7 dias</option><option value="30d">Últimos 30 dias</option></select>
+        <select value={senderFilter} onChange={(event)=>setSenderFilter(event.target.value)} aria-label="Filtrar por remetente"><option value="">Qualquer remetente</option>{senderOptions.map((sender)=><option key={sender.email} value={sender.email.toLocaleLowerCase("pt-BR")}>{sender.name||sender.email}</option>)}</select>
+        <select value={priorityFilter} onChange={(event)=>setPriorityFilter(event.target.value as typeof priorityFilter)} aria-label="Filtrar por prioridade"><option value="all">Qualquer prioridade</option><option value="high">Alta</option><option value="normal">Normal</option><option value="low">Baixa</option></select>
+        {(periodFilter!=="all"||senderFilter||priorityFilter!=="all")&&<button className="ghost" onClick={()=>{setPeriodFilter("all");setSenderFilter("");setPriorityFilter("all");}}>Limpar</button>}
       </div>
       {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : folderMessages.length===0 && (folder.role!=="drafts" || localDrafts.length===0) ? <div className="empty-state small"><div className="empty-symbol"><Icon name={folder.role==="drafts"?"draft":"inbox"} size={30}/></div><h3>{folder.role==="drafts"?"Nenhum rascunho":"Tudo limpo"}</h3><p>{folder.role==="drafts"?"Mensagens em edição aparecerão aqui automaticamente.":"As mensagens sincronizadas aparecerão aqui."}</p></div> :
         <div className="message-list">
