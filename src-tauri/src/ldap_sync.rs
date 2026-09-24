@@ -47,7 +47,7 @@ pub fn sync(account: &AccountProfile) -> Result<Vec<DirectoryContact>, String> {
     ldap.with_timeout(Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300)));
 
     let username = account.username.as_deref().unwrap_or(&account.email);
-    let password = credentials::load(&account.id)?;
+    let password = credentials::load(account.credential_account_id())?;
     ldap.simple_bind(username, &password)
         .map_err(|error| format!("Falha no bind LDAP: {error}"))?
         .success()
