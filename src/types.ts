@@ -147,3 +147,10 @@ export interface MailFolder {
   path: string;
   role: "inbox" | "sent" | "drafts" | "archive" | "spam" | "trash" | "flagged" | "custom";
 }
+
+
+export interface QueuedAttachment {
+  name: string;
+  path: string;
+  size: number;
+}
