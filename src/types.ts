@@ -54,11 +54,18 @@ export interface MailMessage {
   bodyText?: string;
   categories: string[];
   appliedRuleIds?: string[];
+  sizeBytes?: number;
+  attachmentNames?: string[];
+  importance?: "low" | "normal" | "high";
+  snoozedUntil?: string;
+  isMuted?: boolean;
+  isPhishing?: boolean;
+  isImportant?: boolean;
 }
 
 export interface QueueOperation {
   id: string;
-  kind: "send" | "move" | "delete" | "flag" | "read" | "draft";
+  kind: "send" | "move" | "copy" | "delete" | "flag" | "read" | "draft";
   accountId: string;
   createdAt: string;
   attempts: number;
@@ -78,10 +85,18 @@ export interface AppSettings {
   sendDelaySeconds: 0 | 5 | 10 | 20 | 30;
   notificationsEnabled: boolean;
   syncIntervalMinutes: 1 | 5 | 10 | 15 | 30;
+  focusInboxEnabled?: boolean;
+  mailPageSize?: 25 | 50 | 100;
+  maxAttachmentMb?: 10 | 25 | 50 | 100;
+  openNextAfterDelete?: boolean;
+  showSenderPhotos?: boolean;
+  blockedSenders?: string[];
+  trustedSenders?: string[];
+  blockedDomains?: string[];
 }
 
 
-export type WorkspaceKind = "calendar" | "contact" | "task" | "note" | "rule" | "category" | "saved-search" | "signature" | "settings" | "draft";
+export type WorkspaceKind = "calendar" | "contact" | "task" | "note" | "rule" | "category" | "saved-search" | "signature" | "settings" | "draft" | "template" | "content-block" | "folder-pref" | "profile";
 
 export interface WorkspaceDocument<T = Record<string, unknown>> {
   id: string;
@@ -134,6 +149,7 @@ export interface CategoryItem {
   id: string;
   name: string;
   color: string;
+  favorite?: boolean;
 }
 
 export interface SavedSearchItem {
@@ -183,4 +199,28 @@ export interface QueuedAttachment {
   name: string;
   path: string;
   size: number;
+}
+
+
+export interface MailAttachmentInfo {
+  index: number;
+  name: string;
+  size: number;
+  mime: string;
+  inline: boolean;
+}
+
+export interface MailTemplateItem {
+  id: string;
+  name: string;
+  subject: string;
+  bodyText: string;
+  bodyHtml: string;
+}
+
+export interface ContentBlockItem {
+  id: string;
+  name: string;
+  bodyText: string;
+  bodyHtml: string;
 }
