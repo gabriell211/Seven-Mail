@@ -1,14 +1,39 @@
-import { createClient } from "@neondatabase/neon-js";
+import { createAuthClient } from "@neondatabase/auth";
+import { fetchWithToken, NeonPostgrestClient } from "@neondatabase/postgrest-js";
 import type { AccountProfile, MailMessage, WorkspaceDocument, WorkspaceKind } from "../types";
 
-const databaseUrl = import.meta.env.VITE_NEON_DATABASE_URL?.trim();
-export const neonConfigured = Boolean(databaseUrl);
+const authUrl = import.meta.env.VITE_NEON_AUTH_URL?.trim();
+const dataApiUrl = import.meta.env.VITE_NEON_DATA_API_URL?.trim();
 
-export const neonClient = databaseUrl ? createClient(databaseUrl) : null;
+export const neonConfigured = Boolean(authUrl && dataApiUrl);
+export const neonAuth = authUrl ? createAuthClient(authUrl) : null;
+
+async function accessToken(): Promise<string | null> {
+  if (!neonAuth) return null;
+  return (await neonAuth.getJWTToken?.()) ?? null;
+}
+
+export const neonClient = dataApiUrl
+  ? new NeonPostgrestClient({
+      dataApiUrl,
+      options: {
+        global: {
+          fetch: fetchWithToken(accessToken),
+        },
+      },
+    })
+  : null;
+
+function requireAuth() {
+  if (!neonAuth) {
+    throw new Error("Neon Auth não configurado. Defina VITE_NEON_AUTH_URL.");
+  }
+  return neonAuth;
+}
 
 function requireClient() {
   if (!neonClient) {
-    throw new Error("Neon não configurado. Defina os endpoints públicos no build do Seven Mail.");
+    throw new Error("Neon Data API não configurada. Defina VITE_NEON_DATA_API_URL.");
   }
   return neonClient;
 }
@@ -22,8 +47,8 @@ function errorMessage(error: unknown): string {
 }
 
 export async function getCloudSession() {
-  if (!neonClient) return null;
-  const result = await neonClient.auth.getSession();
+  if (!neonAuth) return null;
+  const result = await neonAuth.getSession();
   if (result.error) throw new Error(errorMessage(result.error));
   return result.data ?? null;
 }
@@ -43,8 +68,8 @@ export async function signUpCloud(name: string, email: string, password: string)
 }
 
 export async function signOutCloud() {
-  if (!neonClient) return;
-  const result = await neonClient.auth.signOut();
+  if (!neonAuth) return;
+  const result = await neonAuth.signOut();
   if (result.error) throw new Error(errorMessage(result.error));
   window.dispatchEvent(new Event("seven-mail:cloud-session"));
 }
