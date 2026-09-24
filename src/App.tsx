@@ -203,11 +203,13 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,onOpenDraft,onComposeFromMessage,onCreateTaskFromMessage,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,markReadDelayMs}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"forward")=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;markReadDelayMs:number}) {
+function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,onOpenDraft,onComposeFromMessage,onCreateTaskFromMessage,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,markReadDelayMs,readingPane,previewLines}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"forward")=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;markReadDelayMs:number;readingPane:AppSettings["readingPane"];previewLines:AppSettings["previewLines"]}) {
   const [selectedId,setSelectedId] = useState<string>();
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
   const selected = messages.find(m=>m.id===selectedId);
-  const folderMessages = messages.filter(message=>message.folder===folder.name && matchesQuickFilter(message,quickFilter));
+  const folderMessages = messages
+    .filter(message=>message.folder===folder.name && matchesQuickFilter(message,quickFilter))
+    .sort((a,b)=>Number(b.isPinned)-Number(a.isPinned)||b.receivedAt.localeCompare(a.receivedAt));
 
   useEffect(()=>{
     if (focusMessageId && messages.some((message)=>message.id===focusMessageId)) {
@@ -216,12 +218,12 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,on
   },[focusMessageId,messages]);
   const visibleFolders = folders.length ? folders : FALLBACK_FOLDERS;
 
-  async function act(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox") {
+  async function act(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox") {
     await onMessageAction(messageId, action);
     if (["archive","delete","spam","inbox"].includes(action)) setSelectedId(undefined);
   }
 
-  return <div className="mail-layout">
+  return <div className={`mail-layout reading-${readingPane} preview-${previewLines}`}>
     <aside className="folder-pane">
       <button className="compose-button" onClick={onCompose}><Icon name="plus" size={17}/> Novo e-mail</button>
       <div className="account-line"><i style={{background:activeAccount?.color||"#7868ff"}}/><span>{activeAccount?.email||(accounts.length?"Todas as contas":"Nenhuma conta")}</span></div>
@@ -247,6 +249,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,on
         <button className={quickFilter==="all"?"active":""} onClick={()=>setQuickFilter("all")}>Todas</button>
         <button className={quickFilter==="unread"?"active":""} onClick={()=>setQuickFilter("unread")}>Não lidas</button>
         <button className={quickFilter==="flagged"?"active":""} onClick={()=>setQuickFilter("flagged")}>Sinalizadas</button>
+        <button className={quickFilter==="pinned"?"active":""} onClick={()=>setQuickFilter("pinned")}>Fixadas</button>
         <button className={quickFilter==="attachments"?"active":""} onClick={()=>setQuickFilter("attachments")}>Anexos</button>
       </div>
       {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : folderMessages.length===0 && (folder.role!=="drafts" || localDrafts.length===0) ? <div className="empty-state small"><div className="empty-symbol"><Icon name={folder.role==="drafts"?"draft":"inbox"} size={30}/></div><h3>{folder.role==="drafts"?"Nenhum rascunho":"Tudo limpo"}</h3><p>{folder.role==="drafts"?"Mensagens em edição aparecerão aqui automaticamente.":"As mensagens sincronizadas aparecerão aqui."}</p></div> :
@@ -259,7 +262,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,on
           {folderMessages.map(message=><button key={message.id} className={"message "+(selectedId===message.id?"selected ":"")+(!message.isRead?"unread":"")} onClick={()=>{setSelectedId(message.id);if(!message.isRead){window.setTimeout(()=>void act(message.id,"read"),markReadDelayMs);}}}>
             <span className="avatar">{(message.from.name||message.from.email)[0].toUpperCase()}</span>
             <span className="message-copy"><span className="message-meta"><b>{message.from.name||message.from.email}</b><time>{new Date(message.receivedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</time></span><strong>{message.subject||"(sem assunto)"}</strong><small>{message.preview}</small></span>
-            {message.hasAttachments&&<Icon name="paperclip" size={14}/>}
+            <span className="message-indicators">{message.isPinned&&<Icon name="pin" size={13}/>} {message.hasAttachments&&<Icon name="paperclip" size={14}/>}</span>
           </button>)}
         </div>
       }
@@ -268,6 +271,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,on
     <section className="reading-pane">
       {selected ? <>
         <header className="reading-header"><div><span className="eyebrow">MENSAGEM</span><h1>{selected.subject}</h1></div><div className="icon-group">
+  <button className={selected.isPinned?"icon-button active":"icon-button"} title={selected.isPinned?"Desafixar":"Fixar"} onClick={()=>void act(selected.id,selected.isPinned?"unpin":"pin")}><Icon name="pin"/></button>
   <button className="icon-button" title={selected.isFlagged?"Remover sinalização":"Sinalizar"} onClick={()=>void act(selected.id,selected.isFlagged?"unflag":"flag")}><Icon name="flag"/></button>
   <button className="icon-button" title="Arquivar" onClick={()=>void act(selected.id,"archive")}><Icon name="archive"/></button>
   <button className="icon-button" title="Excluir" onClick={()=>void act(selected.id,"delete")}><Icon name="trash"/></button>
@@ -331,8 +335,8 @@ function RulesView() {
 function SettingsView({settings,onChange,runtime,accounts,onAccountsChange}:{settings:AppSettings;onChange:(s:AppSettings)=>void;runtime?:RuntimeInfo;accounts:AccountProfile[];onAccountsChange:(accounts:AccountProfile[])=>void}) {
   const set = <K extends keyof AppSettings>(key:K,value:AppSettings[K])=>onChange({...settings,[key]:value});
   return <Workspace title="Configurações" eyebrow="PREFERÊNCIAS">
-    <div className="settings-row"><div><h3>Aparência</h3><p>Tema e densidade da interface.</p></div><div className="choices">{(["system","light","dark"] as const).map(t=><button className={settings.theme===t?"choice active":"choice"} key={t} onClick={()=>set("theme",t)}><Icon name={t==="dark"?"moon":"sun"} size={16}/>{t==="system"?"Sistema":t==="light"?"Claro":"Escuro"}</button>)}</div></div>
-    <div className="settings-row"><div><h3>Painel de leitura</h3><p>Posição padrão para mensagens.</p></div><select value={settings.readingPane} onChange={e=>set("readingPane",e.target.value as AppSettings["readingPane"])}><option value="right">À direita</option><option value="bottom">Abaixo</option><option value="off">Desativado</option></select></div>
+    <div className="settings-row"><div><h3>Aparência</h3><p>Tema, densidade e pré-visualização da lista.</p></div><div className="appearance-settings"><div className="choices">{(["system","light","dark"] as const).map(t=><button className={settings.theme===t?"choice active":"choice"} key={t} onClick={()=>set("theme",t)}><Icon name={t==="dark"?"moon":"sun"} size={16}/>{t==="system"?"Sistema":t==="light"?"Claro":"Escuro"}</button>)}</div><label><input type="checkbox" checked={settings.compact} onChange={e=>set("compact",e.target.checked)}/> Lista compacta</label><label><span>Linhas de prévia</span><select value={settings.previewLines} onChange={e=>set("previewLines",Number(e.target.value) as AppSettings["previewLines"])}><option value={1}>1 linha</option><option value={2}>2 linhas</option></select></label></div></div>
+    <div className="settings-row"><div><h3>Painel de leitura</h3><p>Posição padrão e tempo para marcar mensagens como lidas.</p></div><div className="appearance-settings"><select value={settings.readingPane} onChange={e=>set("readingPane",e.target.value as AppSettings["readingPane"])}><option value="right">À direita</option><option value="bottom">Abaixo</option><option value="off">Desativado</option></select><label><span>Marcar como lida</span><select value={settings.markReadDelayMs} onChange={e=>set("markReadDelayMs",Number(e.target.value))}><option value={0}>Imediatamente</option><option value={500}>Após 0,5 s</option><option value={1200}>Após 1,2 s</option><option value={3000}>Após 3 s</option></select></label></div></div>
     <div className="settings-row"><div><h3>Envio</h3><p>Defina o atraso usado para desfazer um envio e a confirmação antes de colocar a mensagem na fila.</p></div><div className="send-settings"><select value={settings.sendDelaySeconds} onChange={e=>set("sendDelaySeconds",Number(e.target.value) as AppSettings["sendDelaySeconds"])}><option value={0}>Imediato</option><option value={5}>Desfazer por 5 s</option><option value={10}>Desfazer por 10 s</option><option value={20}>Desfazer por 20 s</option><option value={30}>Desfazer por 30 s</option></select><label><input type="checkbox" checked={settings.confirmBeforeSend} onChange={e=>set("confirmBeforeSend",e.target.checked)}/> Confirmar antes de enviar</label></div></div>
     <div className="settings-row"><div><h3>Sincronização e notificações</h3><p>Atualização automática da caixa de entrada em segundo plano.</p></div><div className="send-settings"><select value={settings.syncIntervalMinutes} onChange={e=>set("syncIntervalMinutes",Number(e.target.value) as AppSettings["syncIntervalMinutes"])}><option value={1}>A cada 1 minuto</option><option value={5}>A cada 5 minutos</option><option value={10}>A cada 10 minutos</option><option value={15}>A cada 15 minutos</option><option value={30}>A cada 30 minutos</option></select><label><input type="checkbox" checked={settings.notificationsEnabled} onChange={e=>set("notificationsEnabled",e.target.checked)}/> Notificações nativas de novas mensagens</label></div></div>
     <div className="settings-row"><div><h3>Dados locais</h3><p>Cache pode ser limpo sem tocar na fila de saída.</p></div><div className="paths"><span><b>Dados</b>{runtime?.dataDir||"Carregando..."}</span><span><b>Cache</b>{runtime?.cacheDir||"Carregando..."}</span><span><b>Fila</b>{runtime?.queueDir||"Carregando..."}</span><button className="secondary" onClick={()=>bridge.clearCache()}>Limpar apenas cache</button></div></div>
@@ -770,7 +774,7 @@ export default function App() {
     }
   }
 
-  async function applyMessageAction(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox") {
+  async function applyMessageAction(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox") {
     if (action==="delete" && settings.confirmBeforeDelete && !window.confirm("Excluir esta mensagem?")) return;
     const message = messages.find((item)=>item.id===messageId);
     const accountId = activeAccount?.id ?? message?.accountId;
@@ -822,7 +826,7 @@ export default function App() {
         <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} markReadDelayMs={settings.markReadDelayMs}/>} 
+        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} markReadDelayMs={settings.markReadDelayMs} readingPane={settings.readingPane} previewLines={settings.previewLines}/>} 
         {section==="calendar"&&<PersistentCalendarView/>}
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
