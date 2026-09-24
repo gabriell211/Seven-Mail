@@ -74,3 +74,68 @@ export interface AppSettings {
   startWithSystem: boolean;
   minimizeToTray: boolean;
 }
+
+
+export type WorkspaceKind = "calendar" | "contact" | "task" | "note" | "rule" | "category" | "saved-search" | "settings";
+
+export interface WorkspaceDocument<T = Record<string, unknown>> {
+  id: string;
+  kind: WorkspaceKind;
+  updatedAt: string;
+  payload: T;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string;
+  location: string;
+  startAt: string;
+  endAt: string;
+  allDay: boolean;
+  color: string;
+  participants: string[];
+}
+
+export interface ContactItem {
+  id: string;
+  displayName: string;
+  email: string;
+  phone: string;
+  company: string;
+  jobTitle: string;
+  notes: string;
+  favorite: boolean;
+}
+
+export interface TaskItem {
+  id: string;
+  title: string;
+  notes: string;
+  priority: "low" | "normal" | "high";
+  listName: string;
+  startsAt?: string;
+  dueAt?: string;
+  reminderAt?: string;
+  completedAt?: string;
+  relatedMessageId?: string;
+}
+
+export interface NoteItem {
+  id: string;
+  title: string;
+  body: string;
+  pinned: boolean;
+  color: string;
+}
+
+export interface RuleItem {
+  id: string;
+  name: string;
+  enabled: boolean;
+  priority: number;
+  field: "from" | "to" | "subject" | "body" | "domain";
+  operator: "contains" | "equals";
+  value: string;
+  action: "archive" | "delete" | "spam" | "flag" | "read";
+}
