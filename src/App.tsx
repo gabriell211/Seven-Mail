@@ -4,7 +4,7 @@ import { bridge } from "./lib/bridge";
 import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, PersistentRulesView, PersistentTasksView } from "./components/WorkspaceViews";
 import { CloudPanel } from "./components/CloudPanel";
 import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudMessage, pushCloudMessages } from "./lib/neon";
-import type { AccountProfile, AppSection, AppSettings, MailMessage, ProviderSettings, RuntimeInfo } from "./types";
+import type { AccountProfile, AppSection, AppSettings, MailFolder, MailMessage, ProviderSettings, RuntimeInfo } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
@@ -28,14 +28,27 @@ const NAV: Array<{id:AppSection;label:string;icon:IconName}> = [
   {id:"settings",label:"Configurações",icon:"settings"}
 ];
 
-const FOLDERS: Array<{name:string;icon:IconName}> = [
-  {name:"Caixa de entrada",icon:"inbox"},
-  {name:"Rascunhos",icon:"draft"},
-  {name:"Enviados",icon:"send"},
-  {name:"Arquivados",icon:"archive"},
-  {name:"Spam",icon:"spam"},
-  {name:"Lixeira",icon:"trash"}
+const FALLBACK_FOLDERS: MailFolder[] = [
+  {name:"Caixa de entrada",path:"INBOX",role:"inbox"},
+  {name:"Rascunhos",path:"Drafts",role:"drafts"},
+  {name:"Enviados",path:"Sent",role:"sent"},
+  {name:"Arquivados",path:"Archive",role:"archive"},
+  {name:"Spam",path:"Junk",role:"spam"},
+  {name:"Lixeira",path:"Trash",role:"trash"}
 ];
+
+function folderIcon(role: MailFolder["role"]): IconName {
+  switch (role) {
+    case "inbox": return "inbox";
+    case "drafts": return "draft";
+    case "sent": return "send";
+    case "archive": return "archive";
+    case "spam": return "spam";
+    case "trash": return "trash";
+    case "flagged": return "flag";
+    default: return "mail";
+  }
+}
 
 const COLORS = ["#7868ff","#21a6a1","#ef7350","#cb59d8","#3d83f6"];
 
@@ -181,11 +194,11 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,activeAccount,onCompose,onAdd,onRefresh,onMessageAction,syncing}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean}) {
-  const [folder,setFolder] = useState("Caixa de entrada");
+function MailView({accounts,messages,activeAccount,folders,folder,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean}) {
   const [selectedId,setSelectedId] = useState<string>();
   const selected = messages.find(m=>m.id===selectedId);
-  const folderMessages = messages.filter(message=>message.folder===folder);
+  const folderMessages = messages.filter(message=>message.folder===folder.name);
+  const visibleFolders = folders.length ? folders : FALLBACK_FOLDERS;
 
   async function act(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox") {
     await onMessageAction(messageId, action);
@@ -197,9 +210,12 @@ function MailView({accounts,messages,activeAccount,onCompose,onAdd,onRefresh,onM
       <button className="compose-button" onClick={onCompose}><Icon name="plus" size={17}/> Novo e-mail</button>
       <div className="account-line"><i style={{background:activeAccount?.color||"#7868ff"}}/><span>{activeAccount?.email||"Nenhuma conta"}</span></div>
       <nav className="folders">
-        {FOLDERS.map(item=><button key={item.name} className={folder===item.name?"folder active":"folder"} onClick={()=>setFolder(item.name)}>
-          <Icon name={item.icon} size={17}/><span>{item.name}</span>{item.name==="Caixa de entrada"&&messages.some(m=>!m.isRead)&&<b>{messages.filter(m=>!m.isRead).length}</b>}
-        </button>)}
+        {visibleFolders.map(item=>{
+          const unread = messages.filter(message=>message.folder===item.name&&!message.isRead).length;
+          return <button key={item.path} className={folder.path===item.path?"folder active":"folder"} onClick={()=>onFolderChange(item)}>
+            <Icon name={folderIcon(item.role)} size={17}/><span>{item.name}</span>{unread>0&&<b>{unread}</b>}
+          </button>;
+        })}
       </nav>
       <div className="group-title"><span>FAVORITOS</span><Icon name="plus" size={13}/></div>
       <button className="folder"><Icon name="star" size={17}/><span>Importantes</span></button>
@@ -208,7 +224,7 @@ function MailView({accounts,messages,activeAccount,onCompose,onAdd,onRefresh,onM
 
     <section className="message-pane">
       <header className="pane-header">
-        <div><span className="eyebrow">{folder.toUpperCase()}</span><h2>{folder}</h2></div>
+        <div><span className="eyebrow">{folder.name.toUpperCase()}</span><h2>{folder.name}</h2></div>
         <div className="icon-group"><button className="icon-button"><Icon name="filter"/></button><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={!activeAccount||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div>
       </header>
       <div className="segmented"><button className="active">Prioritários</button><button>Outros</button></div>
@@ -305,6 +321,8 @@ export default function App() {
   const [accounts,setAccounts] = useState<AccountProfile[]>([]);
   const [activeId,setActiveId] = useState<string>();
   const [messages,setMessages] = useState<MailMessage[]>([]);
+  const [mailFolders,setMailFolders] = useState<MailFolder[]>(FALLBACK_FOLDERS);
+  const [selectedFolder,setSelectedFolder] = useState<MailFolder>(FALLBACK_FOLDERS[0]);
   const [runtime,setRuntime] = useState<RuntimeInfo>();
   const [composeOpen,setComposeOpen] = useState(false);
   const [accountOpen,setAccountOpen] = useState(false);
@@ -384,6 +402,26 @@ export default function App() {
       window.removeEventListener("seven-mail:cloud-session", onCloudSession);
     };
   },[activeAccount?.id]);
+
+  useEffect(()=>{
+    if (!activeAccount) {
+      setMailFolders(FALLBACK_FOLDERS);
+      setSelectedFolder(FALLBACK_FOLDERS[0]);
+      return;
+    }
+
+    let cancelled = false;
+    bridge.listFolders(activeAccount.id)
+      .then((folders)=>{
+        if (cancelled || folders.length===0) return;
+        setMailFolders(folders);
+        setSelectedFolder(folders.find((item)=>item.role==="inbox") ?? folders[0]);
+      })
+      .catch(()=>undefined);
+
+    return ()=>{cancelled=true;};
+  },[activeAccount?.id]);
+
   useEffect(()=>{
     localStorage.setItem("seven-mail:settings",JSON.stringify(settings));
     const theme = settings.theme==="system" ? (matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light") : settings.theme;
@@ -396,7 +434,7 @@ export default function App() {
     setSyncState("syncing");
     try {
       await bridge.flushMailActions(activeAccount.id).catch(() => 0);
-      await bridge.syncInbox(activeAccount.id, 50);
+      await bridge.syncFolder(activeAccount.id, selectedFolder.path, selectedFolder.name, 50);
       const refreshed = await bridge.listCachedMessages(activeAccount.id);
       setMessages(refreshed);
       void pushCloudMessages(refreshed).catch(() => undefined);
@@ -433,7 +471,7 @@ export default function App() {
         <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} onCompose={()=>setComposeOpen(true)} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"}/>} 
+        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} onFolderChange={(next)=>{setSelectedFolder(next);queueMicrotask(()=>void bridge.syncFolder(activeAccount?.id??"",next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount?.id)).then(setMessages).catch(()=>undefined));}} onCompose={()=>setComposeOpen(true)} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"}/>} 
         {section==="calendar"&&<PersistentCalendarView/>}
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView/>}
