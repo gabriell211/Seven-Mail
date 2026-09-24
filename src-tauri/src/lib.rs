@@ -1,6 +1,7 @@
 mod credentials;
 mod imap_sync;
 mod interchange;
+mod local_crypto;
 mod models;
 mod providers;
 mod storage;
