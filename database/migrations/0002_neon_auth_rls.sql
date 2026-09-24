@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS workspace_documents (
   id uuid PRIMARY KEY,
   owner_id text NOT NULL DEFAULT (auth.user_id()),
   kind text NOT NULL CHECK (kind IN (
-    'calendar','contact','task','note','rule','category','saved-search','settings'
+    'calendar','contact','task','note','rule','category','saved-search','settings','draft'
   )),
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   updated_at timestamptz NOT NULL DEFAULT now(),
