@@ -196,6 +196,37 @@ pub fn save_message_attachment(
         .map_err(|error| format!("Não foi possível salvar o anexo: {error}"))
 }
 
+pub fn stage_message_attachments(
+    paths: &AppPaths,
+    operation_id: &str,
+    account_id: &str,
+    message_id: &str,
+) -> Result<Vec<crate::models::QueuedAttachment>, String> {
+    let raw = storage::read_raw_message(paths, account_id, message_id)?;
+    let parsed = MessageParser::default()
+        .parse(&raw)
+        .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
+
+    let directory = paths.queue_attachments.join(operation_id);
+    fs::create_dir_all(&directory).map_err(|error| format!("Não foi possível preparar anexos: {error}"))?;
+
+    let mut output = Vec::new();
+    for index in 0..parsed.attachment_count() {
+        let Some(part) = parsed.attachment(index as u32) else { continue; };
+        let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
+        let staged_name = format!("{index:03}-{name}");
+        let path = directory.join(staged_name);
+        fs::write(&path, part.contents())
+            .map_err(|error| format!("Não foi possível preparar o anexo {name}: {error}"))?;
+        output.push(crate::models::QueuedAttachment {
+            name,
+            path: path.display().to_string(),
+            size: part.len() as u64,
+        });
+    }
+    Ok(output)
+}
+
 pub fn save_all_message_attachments(
     paths: &AppPaths,
     account_id: &str,
