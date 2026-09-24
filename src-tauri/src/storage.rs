@@ -122,6 +122,68 @@ pub fn save_account(paths: &AppPaths, account: AccountProfile) -> Result<(), Str
     write_json(&paths.config.join("accounts-cache.json"), &accounts)
 }
 
+pub fn set_default_account(paths: &AppPaths, account_id: &str) -> Result<Vec<AccountProfile>, String> {
+    safe_component(account_id)?;
+    let mut accounts = list_accounts(paths)?;
+    if !accounts.iter().any(|account| account.id == account_id) {
+        return Err("Conta não encontrada.".to_string());
+    }
+
+    for account in &mut accounts {
+        account.is_default = account.id == account_id;
+    }
+
+    write_json(&paths.config.join("accounts-cache.json"), &accounts)?;
+    Ok(accounts)
+}
+
+fn remove_account_operations(dir: &Path, account_id: &str) -> Result<(), String> {
+    if !dir.exists() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(dir).map_err(io_error)? {
+        let path = entry.map_err(io_error)?.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        if let Ok(operation) = read_json::<QueueOperation>(&path) {
+            if operation.account_id == account_id {
+                fs::remove_file(path).map_err(io_error)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn delete_account(paths: &AppPaths, account_id: &str) -> Result<Vec<AccountProfile>, String> {
+    safe_component(account_id)?;
+    let mut accounts = list_accounts(paths)?;
+    let removed_default = accounts
+        .iter()
+        .find(|account| account.id == account_id)
+        .map(|account| account.is_default)
+        .unwrap_or(false);
+
+    accounts.retain(|account| account.id != account_id);
+    if removed_default && !accounts.is_empty() && !accounts.iter().any(|account| account.is_default) {
+        accounts[0].is_default = true;
+    }
+
+    write_json(&paths.config.join("accounts-cache.json"), &accounts)?;
+
+    let message_dir = paths.message_cache.join(account_id);
+    if message_dir.exists() {
+        fs::remove_dir_all(message_dir).map_err(io_error)?;
+    }
+
+    for dir in [&paths.pending, &paths.processing, &paths.completed, &paths.failed] {
+        remove_account_operations(dir, account_id)?;
+    }
+
+    Ok(accounts)
+}
+
 pub fn cache_message(paths: &AppPaths, message: &MailMessage) -> Result<(), String> {
     safe_component(&message.account_id)?;
     safe_component(&message.id)?;
