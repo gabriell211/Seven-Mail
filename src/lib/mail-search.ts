@@ -1,10 +1,10 @@
 import type { MailMessage } from "../types";
 
-export type MailQuickFilter = "all" | "unread" | "flagged" | "attachments";
+export type MailQuickFilter = "all" | "unread" | "flagged" | "pinned" | "attachments";
 
 type SearchToken =
   | { kind: "text"; value: string }
-  | { kind: "field"; field: "from" | "to" | "subject" | "body" | "folder"; value: string }
+  | { kind: "field"; field: "from" | "to" | "subject" | "body" | "folder" | "category"; value: string }
   | { kind: "state"; value: "read" | "unread" | "flagged" | "unflagged" }
   | { kind: "has"; value: "attachment" | "attachments" }
   | { kind: "after" | "before"; value: string };
@@ -33,10 +33,10 @@ function parseToken(raw: string): SearchToken {
   const key = normalize(token.slice(0, separator));
   const value = unquote(token.slice(separator + 1));
 
-  if (["from", "to", "subject", "body", "folder"].includes(key) && value) {
+  if (["from", "to", "subject", "body", "folder", "category"].includes(key) && value) {
     return {
       kind: "field",
-      field: key as "from" | "to" | "subject" | "body" | "folder",
+      field: key as "from" | "to" | "subject" | "body" | "folder" | "category",
       value,
     };
   }
@@ -98,6 +98,7 @@ function matchesToken(message: MailMessage, token: SearchToken): boolean {
       if (token.field === "to") return includes(recipients(message), value);
       if (token.field === "subject") return includes(message.subject, value);
       if (token.field === "body") return includes(`${message.bodyText ?? ""} ${message.preview}`, value);
+      if (token.field === "category") return message.categories.some((category) => includes(category, value));
       return includes(`${message.folder} ${message.remoteFolder ?? ""}`, value);
     }
     case "state":
@@ -129,6 +130,7 @@ export function matchesMailQuery(message: MailMessage, query: string): boolean {
 export function matchesQuickFilter(message: MailMessage, filter: MailQuickFilter): boolean {
   if (filter === "unread") return !message.isRead;
   if (filter === "flagged") return message.isFlagged;
+  if (filter === "pinned") return message.isPinned;
   if (filter === "attachments") return message.hasAttachments;
   return true;
 }
