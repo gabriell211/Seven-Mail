@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Icon } from "../icons";
 import { bridge } from "../lib/bridge";
-import type { AccountProfile, AppSettings, QueuedAttachment, WorkspaceDocument } from "../types";
+import type { AccountProfile, AppSettings, QueuedAttachment, SignatureItem, WorkspaceDocument } from "../types";
 
 export interface QueuedSendInfo {
   id: string;
@@ -45,6 +45,12 @@ function sanitizeOutgoingHtml(raw: string): string {
   return documentNode.body.innerHTML;
 }
 
+function plainTextToHtml(value: string): string {
+  const node = document.createElement("div");
+  node.textContent = value;
+  return node.innerHTML.replace(/\n/g, "<br>");
+}
+
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -53,6 +59,7 @@ function humanSize(bytes: number): string {
 
 export function Composer({
   accounts,
+  signatures,
   initialAccountId,
   settings,
   initialDraft,
@@ -60,24 +67,34 @@ export function Composer({
   onQueued,
 }: {
   accounts: AccountProfile[];
+  signatures: SignatureItem[];
   initialAccountId?: string;
   settings: AppSettings;
   initialDraft?: ComposeDraft;
   onClose: () => void;
   onQueued: (info: QueuedSendInfo) => void;
 }) {
-  const [draft, setDraft] = useState<ComposeDraft>(() => initialDraft ? { ...initialDraft } : ({
-    id: crypto.randomUUID(),
-    accountId: initialAccountId ?? accounts.find((account) => account.isDefault)?.id ?? accounts[0]?.id ?? "",
-    to: "",
-    cc: "",
-    bcc: "",
-    subject: "",
-    bodyText: "",
-    bodyHtml: "",
-    mode: "rich",
-    attachments: [],
-  }));
+  const [draft, setDraft] = useState<ComposeDraft>(() => {
+    if (initialDraft) return { ...initialDraft };
+
+    const accountId = initialAccountId ?? accounts.find((account) => account.isDefault)?.id ?? accounts[0]?.id ?? "";
+    const signature = signatures.find((item) => item.accountId === accountId && item.isDefault)
+      ?? signatures.find((item) => item.accountId === accountId);
+    const signatureText = signature?.bodyText.trim() ?? "";
+
+    return {
+      id: crypto.randomUUID(),
+      accountId,
+      to: "",
+      cc: "",
+      bcc: "",
+      subject: "",
+      bodyText: signatureText ? `\n\n${signatureText}` : "",
+      bodyHtml: signatureText ? `<br><br>${plainTextToHtml(signatureText)}` : "",
+      mode: "rich",
+      attachments: [],
+    };
+  });
   const [showCc, setShowCc] = useState(false);
   const [showBcc, setShowBcc] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
@@ -89,6 +106,11 @@ export function Composer({
   const account = useMemo(
     () => accounts.find((item) => item.id === draft.accountId) ?? accounts[0],
     [accounts, draft.accountId],
+  );
+
+  const accountSignatures = useMemo(
+    () => signatures.filter((item) => item.accountId === draft.accountId),
+    [draft.accountId, signatures],
   );
 
   useEffect(() => {
@@ -126,6 +148,24 @@ export function Composer({
     editorRef.current?.focus();
     document.execCommand(command, false, value);
     syncEditor();
+  }
+
+  function insertSignature(signatureId: string) {
+    const signature = accountSignatures.find((item) => item.id === signatureId);
+    if (!signature?.bodyText.trim()) return;
+
+    const signatureText = signature.bodyText.trim();
+    setDraft((current) => {
+      const textSeparator = current.bodyText.trim() ? "\n\n" : "";
+      const htmlSeparator = current.bodyHtml.trim() ? "<br><br>" : "";
+      return {
+        ...current,
+        bodyText: `${current.bodyText.trimEnd()}${textSeparator}${signatureText}`,
+        bodyHtml: current.mode === "rich"
+          ? `${current.bodyHtml}${htmlSeparator}${plainTextToHtml(signatureText)}`
+          : "",
+      };
+    });
   }
 
   async function addLink() {
@@ -350,6 +390,7 @@ export function Composer({
         <footer className="compose-footer composer-footer">
           <div>
             <button className="icon-button attachment-button" title="Anexar arquivo" onClick={() => void pickAttachments()}><Icon name="paperclip" /></button>
+            {accountSignatures.length > 0 && <select className="signature-picker" aria-label="Inserir assinatura" defaultValue="" onChange={(event) => { if (event.target.value) insertSignature(event.target.value); event.currentTarget.value = ""; }}><option value="">Assinatura</option>{accountSignatures.map((signature) => <option key={signature.id} value={signature.id}>{signature.name}{signature.isDefault ? " · padrão" : ""}</option>)}</select>}
             <button className={showSchedule ? "ghost active" : "ghost"} onClick={() => setShowSchedule((value) => !value)}><Icon name="clock" size={15} /> Programar</button>
             <span className="send-delay">{settings.sendDelaySeconds > 0 ? `Desfazer por ${settings.sendDelaySeconds}s` : "Envio imediato"}</span>
           </div>
