@@ -252,3 +252,10 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .pane-tools{display:flex;align-items:center;gap:6px}
 .mail-sort{max-width:126px;height:31px;border:1px solid var(--line);border-radius:8px;background:var(--solid);color:var(--muted);padding:0 8px;font-size:9px}
 .mail-sort:focus{border-color:var(--accent)}
+.folder-group-title{padding-top:10px}
+.folder-organizer{grid-template-columns:minmax(0,1fr) 50px}
+.folder-actions{display:flex;align-items:center}
+.folder-organizer:hover .organizer-delete,.folder-organizer .organizer-delete:focus-visible{opacity:1}
+.folder-edit:hover{color:var(--accent);background:var(--accent-soft)}
+.move-folder-row{display:flex;align-items:center;gap:9px;padding:0 25px 16px;color:var(--muted);font-size:9px}
+.move-folder-row select{height:30px;max-width:240px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--text);padding:0 8px;font-size:9px}
