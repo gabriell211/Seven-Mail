@@ -14,6 +14,8 @@ export const bridge = {
     : { platform:"browser", dataDir:"%APPDATA%\\Seven Mail", cacheDir:"%APPDATA%\\Seven Mail\\cache", queueDir:"%APPDATA%\\Seven Mail\\queue", version:"web-preview" },
   listAccounts: (): Promise<AccountProfile[]> => command("list_accounts"),
   saveAccount: (account: AccountProfile): Promise<void> => command("save_account", { account }),
+  setDefaultAccount: (accountId: string): Promise<AccountProfile[]> => command("set_default_account", { accountId }),
+  deleteAccount: (accountId: string): Promise<AccountProfile[]> => command("delete_account", { accountId }),
   storeSecret: (accountId: string, secret: string): Promise<void> => command("store_secret", { accountId, secret }),
   discoverProvider: (email: string): Promise<ProviderSettings> => command("discover_provider", { email }),
   testSmtpConnection: (accountId: string): Promise<boolean> => command("test_smtp_connection", { accountId }),
