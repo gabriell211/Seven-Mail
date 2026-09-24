@@ -672,13 +672,49 @@ export function PersistentRulesView({ onRunRules }: { onRunRules?: () => Promise
     }
   }
 
+  async function exportRules() {
+    const destination = await saveDialog({
+      defaultPath:"seven-mail-rules.json",
+      filters:[{name:"Regras Seven Mail",extensions:["json"]}],
+    });
+    if(!destination) return;
+    await bridge.writeTextFile(destination,JSON.stringify({
+      format:"seven-mail-rules",
+      version:1,
+      exportedAt:new Date().toISOString(),
+      rules:store.items,
+    },null,2));
+  }
+
+  async function importRules() {
+    const selected=await open({
+      multiple:false,
+      directory:false,
+      filters:[{name:"Regras Seven Mail",extensions:["json"]}],
+    });
+    if(!selected||Array.isArray(selected)) return;
+    const raw=await bridge.readTextFile(selected);
+    const parsed=JSON.parse(raw) as {format?:string;rules?:RuleItem[]};
+    if(parsed.format!=="seven-mail-rules"||!Array.isArray(parsed.rules)){
+      window.alert("Arquivo de regras inválido.");
+      return;
+    }
+    for(const rule of parsed.rules){
+      if(!rule?.id||!rule.name) continue;
+      await store.save({...rule,id:crypto.randomUUID()});
+    }
+    setRunResult(`${parsed.rules.length} regra(s) importada(s)`);
+  }
+
   return (
     <Workspace title="Regras" eyebrow="AUTOMAÇÕES" action="Nova regra" onAction={() => setEditing(fresh())}>
       <div className="rules-toolbar">
         <button className="secondary" disabled={!onRunRules || running || store.items.length === 0} onClick={() => void runRulesNow()}>
           <Icon name="refresh" size={14} /> {running ? "Executando..." : "Executar regras agora"}
         </button>
-        {runResult && <span>{runResult}</span>}
+        <button className="secondary" onClick={()=>void importRules()}><Icon name="upload" size={14}/> Importar</button>
+        <button className="secondary" disabled={store.items.length===0} onClick={()=>void exportRules()}><Icon name="download" size={14}/> Exportar</button>
+        {runResult && <span>{runResult}</span>
       </div>
       {store.items.length === 0 ? (
         <div className="rule-card">
@@ -693,7 +729,7 @@ export function PersistentRulesView({ onRunRules }: { onRunRules?: () => Promise
               <button className="rule-toggle" onClick={() => void store.save({ ...rule, enabled: !rule.enabled })}><i /></button>
               <button className="rule-copy" onClick={() => setEditing(rule)}>
                 <b>{rule.name}</b>
-                <span>SE <strong>{rule.field}</strong> {rule.operator === "contains" ? "contém" : "é"} <em>{rule.value}</em> → <strong>{rule.action}</strong></span>
+                <span>SE <strong>{rule.field}</strong> {rule.operator === "contains" ? "contém" : rule.operator === "equals" ? "é" : rule.operator === "greater" ? ">" : "<"} <em>{rule.value}</em> → <strong>{rule.action}</strong>{rule.target ? ` · ${rule.target}` : ""}</span>
               </button>
               <span className="rule-order">#{rule.priority}</span>
               <button className="icon-button" onClick={() => void store.remove(rule.id)}><Icon name="trash" size={14} /></button>
@@ -704,11 +740,12 @@ export function PersistentRulesView({ onRunRules }: { onRunRules?: () => Promise
       {editing && (
         <EditorModal title={editing.name || "Nova regra"} eyebrow="REGRA" onClose={() => setEditing(null)} onSave={() => store.save(editing)} disabled={!editing.name.trim() || !editing.value.trim()}>
           <label className="full"><span>Nome</span><input autoFocus value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label>
-          <label><span>Campo</span><select value={editing.field} onChange={(event) => setEditing({ ...editing, field: event.target.value as RuleItem["field"] })}><option value="from">Remetente</option><option value="to">Destinatário</option><option value="subject">Assunto</option><option value="body">Corpo</option><option value="domain">Domínio</option></select></label>
-          <label><span>Operador</span><select value={editing.operator} onChange={(event) => setEditing({ ...editing, operator: event.target.value as RuleItem["operator"] })}><option value="contains">Contém</option><option value="equals">É exatamente</option></select></label>
+          <label><span>Campo</span><select value={editing.field} onChange={(event) => setEditing({ ...editing, field: event.target.value as RuleItem["field"], operator: event.target.value==="size" ? "greater" : editing.operator })}><option value="from">Remetente</option><option value="to">Destinatário</option><option value="subject">Assunto</option><option value="body">Corpo</option><option value="domain">Domínio</option><option value="size">Tamanho (bytes)</option><option value="attachment">Nome do anexo</option><option value="priority">Prioridade</option></select></label>
+          <label><span>Operador</span><select value={editing.operator} onChange={(event) => setEditing({ ...editing, operator: event.target.value as RuleItem["operator"] })}><option value="contains">Contém</option><option value="equals">É exatamente</option>{editing.field==="size"&&<><option value="greater">Maior que</option><option value="less">Menor que</option></>}</select></label>
           <label className="full"><span>Valor</span><input value={editing.value} onChange={(event) => setEditing({ ...editing, value: event.target.value })} /></label>
-          <label><span>Ação</span><select value={editing.action} onChange={(event) => setEditing({ ...editing, action: event.target.value as RuleItem["action"] })}><option value="archive">Arquivar</option><option value="delete">Excluir</option><option value="spam">Marcar como spam</option><option value="flag">Sinalizar</option><option value="read">Marcar como lida</option></select></label>
+          <label><span>Ação</span><select value={editing.action} onChange={(event) => setEditing({ ...editing, action: event.target.value as RuleItem["action"], target: undefined })}><option value="archive">Arquivar</option><option value="delete">Excluir</option><option value="spam">Marcar como spam</option><option value="flag">Sinalizar</option><option value="read">Marcar como lida</option><option value="move">Mover para pasta</option><option value="copy">Copiar para pasta</option><option value="category">Adicionar categoria</option><option value="forward">Encaminhar para</option></select></label>
           <label><span>Prioridade</span><input type="number" min={1} value={editing.priority} onChange={(event) => setEditing({ ...editing, priority: Math.max(1, Number(event.target.value) || 1) })} /></label>
+          {["move","copy","category","forward"].includes(editing.action)&&<label className="full"><span>{editing.action==="category"?"Categoria":editing.action==="forward"?"E-mail de destino":"Pasta IMAP de destino"}</span><input value={editing.target??""} onChange={(event)=>setEditing({...editing,target:event.target.value})} placeholder={editing.action==="forward"?"destino@dominio.com":editing.action==="category"?"Financeiro":"Archive/Projetos"}/></label>}
           <label className="inline-check"><input type="checkbox" checked={editing.enabled} onChange={(event) => setEditing({ ...editing, enabled: event.target.checked })} /> Regra ativa</label>
           <label className="inline-check"><input type="checkbox" checked={Boolean(editing.stopProcessing)} onChange={(event) => setEditing({ ...editing, stopProcessing: event.target.checked })} /> Parar após esta regra</label>
         </EditorModal>
