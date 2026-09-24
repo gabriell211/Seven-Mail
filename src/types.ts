@@ -24,6 +24,7 @@ export interface AccountProfile {
   smtpPort?: number;
   securityMode?: "tls" | "starttls";
   aliases?: string[];
+  muted?: boolean;
 }
 
 export interface ProviderSettings {
@@ -166,6 +167,11 @@ export interface AppSettings {
   autoCapitalizeEnabled?: boolean;
   composeLanguage?: string;
   customDictionary?: string[];
+  connectionTimeoutSeconds?: 10 | 20 | 30 | 60 | 120;
+  localRetentionDays?: 7 | 14 | 30 | 90 | 180 | 365 | 0;
+  maxConcurrentSyncs?: 1 | 2 | 3 | 4;
+  batterySaverEnabled?: boolean;
+  memorySaverEnabled?: boolean;
 }
 
 
