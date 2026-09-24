@@ -54,14 +54,14 @@ export async function getCloudSession() {
 }
 
 export async function signInCloud(email: string, password: string) {
-  const result = await requireClient().auth.signIn.email({ email, password });
+  const result = await requireAuth().signIn.email({ email, password });
   if (result.error) throw new Error(errorMessage(result.error));
   window.dispatchEvent(new Event("seven-mail:cloud-session"));
   return result.data;
 }
 
 export async function signUpCloud(name: string, email: string, password: string) {
-  const result = await requireClient().auth.signUp.email({ name, email, password });
+  const result = await requireAuth().signUp.email({ name, email, password });
   if (result.error) throw new Error(errorMessage(result.error));
   window.dispatchEvent(new Event("seven-mail:cloud-session"));
   return result.data;
