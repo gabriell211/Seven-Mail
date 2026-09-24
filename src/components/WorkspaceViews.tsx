@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { Icon, type IconName } from "../icons";
 import { bridge } from "../lib/bridge";
 import { pushCloudDocument } from "../lib/neon";
 import { syncWorkspaceCollection } from "../lib/workspace-sync";
+import {
+  contactsFromCsv,
+  contactsFromVcard,
+  contactsToCsv,
+  contactsToVcard,
+  eventsFromIcs,
+  eventsToIcs,
+} from "../lib/interchange";
 import type {
   CalendarEvent,
   ContactItem,
@@ -196,6 +205,32 @@ export function PersistentCalendarView() {
     };
   }
 
+  async function importIcs() {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "Calendário ICS", extensions: ["ics"] }],
+    });
+    if (!selected || Array.isArray(selected)) return;
+    const raw = await bridge.readTextFile(selected);
+    const events = eventsFromIcs(raw);
+    if (events.length === 0) {
+      window.alert("Nenhum evento válido foi encontrado no arquivo ICS.");
+      return;
+    }
+    for (const event of events) await store.save(event);
+    window.alert(events.length === 1 ? "1 evento importado." : `${events.length} eventos importados.`);
+  }
+
+  async function exportIcs() {
+    const destination = await saveDialog({
+      defaultPath: "seven-mail-calendar.ics",
+      filters: [{ name: "Calendário ICS", extensions: ["ics"] }],
+    });
+    if (!destination) return;
+    await bridge.writeTextFile(destination, eventsToIcs(store.items));
+  }
+
   return (
     <Workspace
       title={month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
@@ -204,7 +239,11 @@ export function PersistentCalendarView() {
       onAction={() => setEditing(fresh())}
     >
       <div className="calendar-toolbar">
-        <button className="secondary" onClick={() => setMonth(new Date())}>Hoje</button>
+        <div className="toolbar-actions">
+          <button className="secondary" onClick={() => setMonth(new Date())}>Hoje</button>
+          <button className="secondary" onClick={() => void importIcs()}><Icon name="upload" size={14}/> Importar ICS</button>
+          <button className="secondary" disabled={store.items.length===0} onClick={() => void exportIcs()}><Icon name="download" size={14}/> Exportar ICS</button>
+        </div>
         <div className="icon-group">
           <button className="icon-button" aria-label="Mês anterior" onClick={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}><Icon name="chevron" size={16} /></button>
           <button className="icon-button next-chevron" aria-label="Próximo mês" onClick={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}><Icon name="chevron" size={16} /></button>
@@ -287,8 +326,46 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
     return { id: crypto.randomUUID(), displayName: "", email: "", phone: "", company: "", jobTitle: "", notes: "", favorite: false };
   }
 
+  async function importContacts() {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      filters: [
+        { name: "Contatos", extensions: ["csv", "vcf", "vcard"] },
+      ],
+    });
+    if (!selected || Array.isArray(selected)) return;
+    const raw = await bridge.readTextFile(selected);
+    const lower = selected.toLowerCase();
+    const contacts = lower.endsWith(".csv") ? contactsFromCsv(raw) : contactsFromVcard(raw);
+    if (contacts.length === 0) {
+      window.alert("Nenhum contato válido foi encontrado.");
+      return;
+    }
+    for (const contact of contacts) await store.save(contact);
+    window.alert(contacts.length === 1 ? "1 contato importado." : `${contacts.length} contatos importados.`);
+  }
+
+  async function exportContacts(format: "csv" | "vcf") {
+    const destination = await saveDialog({
+      defaultPath: format === "csv" ? "seven-mail-contacts.csv" : "seven-mail-contacts.vcf",
+      filters: [{
+        name: format === "csv" ? "Contatos CSV" : "vCard",
+        extensions: [format],
+      }],
+    });
+    if (!destination) return;
+    const content = format === "csv" ? contactsToCsv(store.items) : contactsToVcard(store.items);
+    await bridge.writeTextFile(destination, content);
+  }
+
   return (
     <Workspace title="Contatos" eyebrow="PESSOAS" action="Novo contato" onAction={() => setEditing(fresh())}>
+      <div className="workspace-toolbar">
+        <button className="secondary" onClick={() => void importContacts()}><Icon name="upload" size={14}/> Importar</button>
+        <button className="secondary" disabled={store.items.length===0} onClick={() => void exportContacts("csv")}><Icon name="download" size={14}/> CSV</button>
+        <button className="secondary" disabled={store.items.length===0} onClick={() => void exportContacts("vcf")}><Icon name="download" size={14}/> vCard</button>
+      </div>
       {store.loading ? <Empty icon="people" title="Carregando contatos" text="Lendo o cache local..." /> : filtered.length === 0 ? (
         <Empty icon="people" title="Nenhum contato ainda" text="Crie contatos locais; a sincronização em nuvem mantém a mesma identidade em outros dispositivos." />
       ) : (
