@@ -1,4 +1,4 @@
-use crate::{models::{AccountProfile, MailAddress, MailAttachmentInfo, MailAttachmentPreview, MailMessage}, storage::{self, AppPaths}};
+use crate::{local_crypto, models::{AccountProfile, MailAddress, MailAttachmentInfo, MailAttachmentPreview, MailMessage}, storage::{self, AppPaths}};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use mail_parser::{MessageParser, MimeHeaders};
 use std::{fs, io::{Cursor, Read}, path::Path};
@@ -375,7 +375,7 @@ pub fn stage_message_attachments(
         let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
         let staged_name = format!("{index:03}-{name}");
         let path = directory.join(staged_name);
-        fs::write(&path, part.contents())
+        local_crypto::write(&path, part.contents())
             .map_err(|error| format!("Não foi possível preparar o anexo {name}: {error}"))?;
         output.push(crate::models::QueuedAttachment {
             name,
