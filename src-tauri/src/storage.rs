@@ -505,6 +505,68 @@ pub fn apply_message_action(
     Ok(message)
 }
 
+pub fn rename_cached_folder(
+    paths: &AppPaths,
+    account_id: &str,
+    old_path: &str,
+    old_label: &str,
+    new_path: &str,
+    new_label: &str,
+) -> Result<usize, String> {
+    safe_component(account_id)?;
+    let directory = paths.message_cache.join(account_id);
+    if !directory.exists() {
+        return Ok(0);
+    }
+
+    let mut updated = 0usize;
+    for entry in fs::read_dir(&directory).map_err(io_error)? {
+        let path = entry.map_err(io_error)?.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(mut message) = read_json::<MailMessage>(&path) else {
+            continue;
+        };
+        if message.remote_folder.as_deref() == Some(old_path) || message.folder == old_label {
+            message.remote_folder = Some(new_path.to_string());
+            message.folder = new_label.to_string();
+            write_json(&path, &message)?;
+            updated += 1;
+        }
+    }
+    Ok(updated)
+}
+
+pub fn remove_cached_folder(
+    paths: &AppPaths,
+    account_id: &str,
+    remote_path: &str,
+    label: &str,
+) -> Result<usize, String> {
+    safe_component(account_id)?;
+    let directory = paths.message_cache.join(account_id);
+    if !directory.exists() {
+        return Ok(0);
+    }
+
+    let mut removed = 0usize;
+    for entry in fs::read_dir(&directory).map_err(io_error)? {
+        let path = entry.map_err(io_error)?.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(message) = read_json::<MailMessage>(&path) else {
+            continue;
+        };
+        if message.remote_folder.as_deref() == Some(remote_path) || message.folder == label {
+            fs::remove_file(&path).map_err(io_error)?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 pub fn move_message_to_folder(
     paths: &AppPaths,
     account_id: &str,
