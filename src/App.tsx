@@ -7,6 +7,7 @@ import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { SignaturesPanel } from "./components/SignaturesPanel";
 import { BrandLogo } from "./components/BrandLogo";
+import { LaunchScreen } from "./components/LaunchScreen";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
 import { ensureNotificationPermission, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
 import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
@@ -392,6 +393,12 @@ export default function App() {
   const [savedSearches,setSavedSearches] = useState<SavedSearchItem[]>([]);
   const [signatures,setSignatures] = useState<SignatureItem[]>([]);
   const [syncState,setSyncState] = useState<"idle"|"syncing"|"error">("idle");
+  const [bootState,setBootState] = useState({
+    runtime: false,
+    accounts: false,
+    workspace: false,
+    messages: false,
+  });
   const [settings,setSettings] = useState<AppSettings>(()=>{
     try { return {...DEFAULT_SETTINGS,...JSON.parse(localStorage.getItem("seven-mail:settings")||"{}")}; } catch { return DEFAULT_SETTINGS; }
   });
@@ -399,6 +406,7 @@ export default function App() {
   const unified = activeId==="__all__";
   const activeAccount = unified ? undefined : (accounts.find(a=>a.id===activeId)||accounts[0]);
   const composeAccount = activeAccount ?? accounts.find((account)=>account.isDefault) ?? accounts[0];
+  const bootReady = bootState.runtime && bootState.accounts && bootState.workspace && bootState.messages;
 
   async function loadWorkspaceCollection<T>(kind: WorkspaceKind): Promise<T[]> {
     const documents = await syncWorkspaceCollection<T>(kind).catch(() => []);
@@ -687,12 +695,25 @@ export default function App() {
 
 
   useEffect(()=>{
-    bridge.runtimeInfo().then(setRuntime).catch(console.error);
+    let disposed = false;
 
-    const loadAccounts = async () => {
+    void bridge.runtimeInfo()
+      .then((info)=>{ if (!disposed) setRuntime(info); })
+      .catch(console.error)
+      .finally(()=>{
+        if (!disposed) setBootState((current)=>({...current,runtime:true}));
+      });
+
+    const loadAccounts = async (initial = false) => {
       const local = await bridge.listAccounts().catch(() => [] as AccountProfile[]);
-      const merged = new Map(local.map((account) => [account.id, account]));
 
+      if (!disposed) {
+        setAccounts(local);
+        setActiveId((current) => current || local.find((account) => account.isDefault)?.id || local[0]?.id);
+        if (initial) setBootState((current)=>({...current,accounts:true}));
+      }
+
+      const merged = new Map(local.map((account) => [account.id, account]));
       try {
         const cloud = await pullCloudAccounts();
         for (const account of cloud) {
@@ -706,35 +727,71 @@ export default function App() {
         // Offline or signed out: local account metadata remains available.
       }
 
-      const list = [...merged.values()];
-      setAccounts(list);
-      setActiveId((current) => current || list.find((account) => account.isDefault)?.id || list[0]?.id);
+      if (!disposed) {
+        const list = [...merged.values()];
+        setAccounts(list);
+        setActiveId((current) => current || list.find((account) => account.isDefault)?.id || list[0]?.id);
+      }
     };
 
-    void loadAccounts();
-    const onCloudSession = () => void loadAccounts();
+    void loadAccounts(true);
+    const onCloudSession = () => void loadAccounts(false);
     window.addEventListener("seven-mail:cloud-session", onCloudSession);
-    return () => window.removeEventListener("seven-mail:cloud-session", onCloudSession);
+    return () => {
+      disposed = true;
+      window.removeEventListener("seven-mail:cloud-session", onCloudSession);
+    };
   },[]);
 
   useEffect(()=>{
-    void refreshMailOrganization();
+    let disposed = false;
+
+    const loadInitialWorkspace = async () => {
+      const [categoryDocs,searchDocs,signatureDocs] = await Promise.all([
+        bridge.listWorkspace<CategoryItem>("category").catch(() => []),
+        bridge.listWorkspace<SavedSearchItem>("saved-search").catch(() => []),
+        bridge.listWorkspace<SignatureItem>("signature").catch(() => []),
+      ]);
+
+      if (!disposed) {
+        setCategories(categoryDocs.map((document)=>document.payload));
+        setSavedSearches(searchDocs.map((document)=>document.payload));
+        setSignatures(signatureDocs.map((document)=>document.payload));
+        setBootState((current)=>({...current,workspace:true}));
+      }
+
+      void refreshMailOrganization();
+    };
+
+    void loadInitialWorkspace();
     const onCloudSession = () => void refreshMailOrganization();
     window.addEventListener("seven-mail:cloud-session",onCloudSession);
-    return ()=>window.removeEventListener("seven-mail:cloud-session",onCloudSession);
+    return ()=>{
+      disposed = true;
+      window.removeEventListener("seven-mail:cloud-session",onCloudSession);
+    };
   },[]);
 
   useEffect(()=>{
+    if (!bootState.accounts) return;
+
     if (accounts.length===0) {
       setMessages([]);
+      setBootState((current)=>({...current,messages:true}));
       return;
     }
 
     let cancelled = false;
     const loadMessages = async () => {
       const local = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id).catch(() => [] as MailMessage[]);
-      const merged = new Map(local.map((message) => [message.id, message]));
+      const sortedLocal = [...local].sort((a,b)=>b.receivedAt.localeCompare(a.receivedAt));
 
+      if (!cancelled) {
+        setMessages(sortedLocal);
+        setBootState((current)=>({...current,messages:true}));
+      }
+
+      const merged = new Map(local.map((message) => [message.id, message]));
       try {
         const targets = unified ? accounts : (activeAccount ? [activeAccount] : []);
         for (const account of targets) {
@@ -763,7 +820,7 @@ export default function App() {
       cancelled = true;
       window.removeEventListener("seven-mail:cloud-session", onCloudSession);
     };
-  },[activeAccount?.id,unified,accounts.length]);
+  },[activeAccount?.id,unified,accounts.length,bootState.accounts]);
 
   useEffect(()=>{
     if (unified || !activeAccount) {
@@ -1044,7 +1101,7 @@ export default function App() {
     [messages,search],
   );
 
-  return <div className="app-shell">
+  return <><LaunchScreen ready={bootReady}/><div className="app-shell">
     <aside className="nav-rail">
       <div className="rail-brand"><BrandLogo variant="rail"/></div>
       <nav>{NAV.map(item=><button key={item.id} className={section===item.id?"nav-item active":"nav-item"} title={item.label} onClick={()=>setSection(item.id)}><Icon name={item.icon}/><span>{item.label}</span></button>)}</nav>
@@ -1070,5 +1127,5 @@ export default function App() {
     {composeOpen&&<Composer accounts={accounts} signatures={signatures} initialAccountId={composeAccount?.id} initialDraft={draftToOpen} settings={settings} onClose={closeComposer} onQueued={(info)=>{handleQueuedSend(info);void refreshDrafts();}}/>}
     {undoSend&&<div className="undo-send" role="status"><span><Icon name="send" size={16}/><b>Mensagem na fila</b><small>Envio em instantes</small></span><button onClick={()=>void undoQueuedSend()}>Desfazer</button></div>}
     {accountOpen&&<AddAccountModal onClose={()=>setAccountOpen(false)} onAdded={account=>{setAccounts(v=>[...v,account]);setActiveId(account.id);void pushCloudAccount(account).catch(()=>undefined);}}/>}
-  </div>;
+  </div></>;
 }
