@@ -80,6 +80,27 @@ export interface ConditionalMailRule {
   accent: string;
 }
 
+export interface QuickStepItem {
+  id: string;
+  name: string;
+  shortcut?: string;
+  actions: Array<{
+    kind: "archive" | "delete" | "read" | "flag" | "pin" | "category" | "move";
+    target?: string;
+  }>;
+}
+
+export interface ShortcutBindings {
+  newMessage: string;
+  search: string;
+  reply: string;
+  replyAll: string;
+  forward: string;
+  archive: string;
+  delete: string;
+  toggleRead: string;
+}
+
 export interface AppSettings {
   theme: ThemeMode;
   readingPane: ReadingPane;
@@ -126,6 +147,8 @@ export interface AppSettings {
   externalSenderWarning?: boolean;
   appLockEnabled?: boolean;
   appLockMinutes?: 0 | 1 | 5 | 15 | 30;
+  quickSteps?: QuickStepItem[];
+  shortcuts?: ShortcutBindings;
   quickActions?: Array<"archive" | "delete" | "flag" | "read" | "pin">;
   conditionalMailRules?: ConditionalMailRule[];
   autoCorrectEnabled?: boolean;
