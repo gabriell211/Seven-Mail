@@ -296,6 +296,80 @@ pub fn list_cached_messages(paths: &AppPaths, account_id: Option<&str>) -> Resul
     Ok(messages)
 }
 
+pub fn cached_remote_uids(
+    paths: &AppPaths,
+    account_id: &str,
+    remote_folder: &str,
+) -> Result<Vec<u32>, String> {
+    let mut uids = list_cached_messages(paths, Some(account_id))?
+        .into_iter()
+        .filter(|message| message.remote_folder.as_deref() == Some(remote_folder))
+        .filter_map(|message| message.remote_id.and_then(|value| value.parse::<u32>().ok()))
+        .collect::<Vec<_>>();
+    uids.sort_unstable();
+    uids.dedup();
+    Ok(uids)
+}
+
+pub fn update_cached_remote_flags(
+    paths: &AppPaths,
+    account_id: &str,
+    remote_folder: &str,
+    uid: u32,
+    is_read: bool,
+    is_flagged: bool,
+) -> Result<bool, String> {
+    let remote_id = uid.to_string();
+    let Some(mut message) = list_cached_messages(paths, Some(account_id))?
+        .into_iter()
+        .find(|message| {
+            message.remote_folder.as_deref() == Some(remote_folder)
+                && message.remote_id.as_deref() == Some(remote_id.as_str())
+        })
+    else {
+        return Ok(false);
+    };
+
+    if message.is_read == is_read && message.is_flagged == is_flagged {
+        return Ok(true);
+    }
+    message.is_read = is_read;
+    message.is_flagged = is_flagged;
+    cache_message(paths, &message)?;
+    Ok(true)
+}
+
+pub fn reconcile_remote_uids(
+    paths: &AppPaths,
+    account_id: &str,
+    remote_folder: &str,
+    remote_uids: &std::collections::HashSet<u32>,
+) -> Result<usize, String> {
+    let messages = list_cached_messages(paths, Some(account_id))?;
+    let mut removed = 0usize;
+    for message in messages {
+        if message.remote_folder.as_deref() != Some(remote_folder) {
+            continue;
+        }
+        let Some(uid) = message.remote_id.as_deref().and_then(|value| value.parse::<u32>().ok()) else {
+            continue;
+        };
+        if remote_uids.contains(&uid) {
+            continue;
+        }
+        let path = paths.message_cache.join(account_id).join(format!("{}.json", message.id));
+        if path.exists() {
+            fs::remove_file(&path).map_err(io_error)?;
+        }
+        let raw = raw_message_path(paths, account_id, &message.id)?;
+        if raw.exists() {
+            fs::remove_file(raw).map_err(io_error)?;
+        }
+        removed += 1;
+    }
+    Ok(removed)
+}
+
 pub fn queue_operation(paths: &AppPaths, operation: &QueueOperation) -> Result<(), String> {
     safe_component(&operation.id)?;
     safe_component(&operation.account_id)?;
@@ -492,8 +566,18 @@ fn claim_next_matching(
     paths: &AppPaths,
     predicate: impl Fn(&QueueOperation) -> bool,
 ) -> Result<Option<QueueOperation>, String> {
+    let now = chrono::Utc::now();
     let Some(operation) = list_operations(&paths.pending)?
         .into_iter()
+        .filter(|operation| {
+            operation
+                .payload
+                .get("_nextAttemptAt")
+                .and_then(|value| value.as_str())
+                .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+                .map(|when| when.with_timezone(&chrono::Utc) <= now)
+                .unwrap_or(true)
+        })
         .find(predicate)
     else {
         return Ok(None);
@@ -538,8 +622,22 @@ pub fn retry_later(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     if !source.exists() {
         return Ok(());
     }
+
+    let mut operation = read_json::<QueueOperation>(&source)?;
+    operation.attempts = operation.attempts.saturating_add(1);
+    let exponent = operation.attempts.min(8);
+    let delay_seconds = (5u64.saturating_mul(1u64 << exponent)).min(15 * 60);
+    let next = chrono::Utc::now() + chrono::Duration::seconds(delay_seconds as i64);
+    if let Some(payload) = operation.payload.as_object_mut() {
+        payload.insert(
+            "_nextAttemptAt".to_string(),
+            serde_json::Value::String(next.to_rfc3339()),
+        );
+    }
+
     let destination = paths.pending.join(format!("{}.json", operation_id));
-    fs::rename(source, destination).map_err(io_error)
+    write_json(&destination, &operation)?;
+    fs::remove_file(source).map_err(io_error)
 }
 
 
