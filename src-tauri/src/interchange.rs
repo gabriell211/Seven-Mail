@@ -381,6 +381,8 @@ pub fn stage_message_attachments(
             name,
             path: path.display().to_string(),
             size: part.len() as u64,
+            inline: false,
+            content_id: None,
         });
     }
     Ok(output)
