@@ -6,7 +6,7 @@ mod providers;
 mod storage;
 mod workspace;
 
-use models::{AccountProfile, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
+use models::{AccountProfile, MailAttachmentInfo, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
 use storage::AppPaths;
 use std::sync::Mutex;
 use tauri::Manager;
@@ -282,6 +282,84 @@ fn import_eml(account_id: String, path: String) -> Result<MailMessage, String> {
 }
 
 #[tauri::command]
+fn read_message_source(account_id: String, message_id: String) -> Result<String, String> {
+    interchange::read_message_source(&AppPaths::resolve()?, &account_id, &message_id)
+}
+
+#[tauri::command]
+fn list_message_attachments(account_id: String, message_id: String) -> Result<Vec<MailAttachmentInfo>, String> {
+    interchange::list_message_attachments(&AppPaths::resolve()?, &account_id, &message_id)
+}
+
+#[tauri::command]
+fn save_message_attachment(
+    account_id: String,
+    message_id: String,
+    index: usize,
+    destination: String,
+) -> Result<(), String> {
+    interchange::save_message_attachment(&AppPaths::resolve()?, &account_id, &message_id, index, &destination)
+}
+
+#[tauri::command]
+fn save_all_message_attachments(
+    account_id: String,
+    message_id: String,
+    directory: String,
+) -> Result<usize, String> {
+    interchange::save_all_message_attachments(&AppPaths::resolve()?, &account_id, &message_id, &directory)
+}
+
+#[tauri::command]
+fn update_message_metadata(
+    account_id: String,
+    message_id: String,
+    importance: Option<String>,
+    snoozed_until: Option<String>,
+    is_muted: Option<bool>,
+    is_phishing: Option<bool>,
+    is_important: Option<bool>,
+) -> Result<MailMessage, String> {
+    storage::update_message_metadata(
+        &AppPaths::resolve()?,
+        &account_id,
+        &message_id,
+        importance,
+        snoozed_until,
+        is_muted,
+        is_phishing,
+        is_important,
+    )
+}
+
+#[tauri::command]
+fn copy_message_to_folder(
+    account_id: String,
+    message_id: String,
+    target_path: String,
+) -> Result<(), String> {
+    let paths = AppPaths::resolve()?;
+    let message = storage::list_cached_messages(&paths, Some(&account_id))?
+        .into_iter()
+        .find(|item| item.id == message_id)
+        .ok_or_else(|| "Mensagem não encontrada.".to_string())?;
+    let remote_id = message.remote_id.ok_or_else(|| "Mensagem local não possui UID remoto.".to_string())?;
+    let mailbox = message.remote_folder.unwrap_or_else(|| "INBOX".to_string());
+    storage::queue_operation(&paths, &QueueOperation {
+        id: uuid::Uuid::new_v4().to_string(),
+        kind: "copy".to_string(),
+        account_id,
+        created_at: chrono::Utc::now().to_rfc3339(),
+        attempts: 0,
+        payload: serde_json::json!({
+            "remoteId": remote_id,
+            "mailbox": mailbox,
+            "targetMailbox": target_path,
+        }),
+    })
+}
+
+#[tauri::command]
 fn list_workspace(kind: String) -> Result<Vec<WorkspaceDocument>, String> {
     workspace::list(&AppPaths::resolve()?, &kind)
 }
@@ -407,6 +485,12 @@ pub fn run() {
             read_text_file,
             write_text_file,
             import_eml,
+            read_message_source,
+            list_message_attachments,
+            save_message_attachment,
+            save_all_message_attachments,
+            update_message_metadata,
+            copy_message_to_folder,
             list_workspace,
             list_workspace_for_sync,
             upsert_workspace,
