@@ -62,32 +62,87 @@ function unfold(value: string): string[] {
   return value.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
 }
 
+
+function recurrenceRule(event: CalendarEvent): string | null {
+  const recurrence=event.recurrence??"none";
+  if(recurrence==="none") return null;
+  const freq=recurrence==="daily"?"DAILY":recurrence==="weekly"?"WEEKLY":recurrence==="monthly"?"MONTHLY":"YEARLY";
+  const parts=["FREQ="+freq];
+  if(event.recurrenceUntil){
+    const until=new Date(event.recurrenceUntil+"T23:59:59");
+    if(Number.isFinite(until.getTime())) parts.push("UNTIL="+icsDate(until.toISOString()));
+  }
+  return parts.join(";");
+}
+
+function eventIcsLines(event: CalendarEvent, organizer?: string): string[] {
+  const lines=[
+    "BEGIN:VEVENT",
+    "UID:"+event.id+"@seven-mail.local",
+    "DTSTAMP:"+icsDate(new Date().toISOString()),
+    event.allDay ? "DTSTART;VALUE=DATE:"+icsDate(event.startAt,true) : "DTSTART:"+icsDate(event.startAt),
+    event.allDay ? "DTEND;VALUE=DATE:"+icsDate(event.endAt,true) : "DTEND:"+icsDate(event.endAt),
+    "SUMMARY:"+escapeText(event.title),
+  ];
+  if(event.description) lines.push("DESCRIPTION:"+escapeText(event.description));
+  if(event.location) lines.push("LOCATION:"+escapeText(event.location));
+  if(event.onlineMeetingUrl) lines.push("URL:"+escapeText(event.onlineMeetingUrl));
+  if(event.isPrivate) lines.push("CLASS:PRIVATE");
+  if(event.status) lines.push("STATUS:"+(event.status==="cancelled"?"CANCELLED":event.status==="draft"?"TENTATIVE":"CONFIRMED"));
+  lines.push("TRANSP:"+(event.freeBusyStatus==="free"?"TRANSPARENT":"OPAQUE"));
+  if(event.timezone) lines.push("X-WR-TIMEZONE:"+escapeText(event.timezone));
+  if(organizer||event.organizer) lines.push("ORGANIZER:mailto:"+(organizer??event.organizer));
+
+  const required=event.requiredParticipants?.length?event.requiredParticipants:event.participants;
+  for(const participant of required) lines.push("ATTENDEE;ROLE=REQ-PARTICIPANT:mailto:"+participant);
+  for(const participant of event.optionalParticipants??[]) lines.push("ATTENDEE;ROLE=OPT-PARTICIPANT:mailto:"+participant);
+  for(const resource of event.resources??[]) lines.push("ATTENDEE;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT:mailto:"+resource);
+
+  const rule=recurrenceRule(event);
+  if(rule) lines.push("RRULE:"+rule);
+  if((event.recurrenceExceptions??[]).length){
+    lines.push("EXDATE:"+event.recurrenceExceptions!.map((value)=>icsDate(value)).join(","));
+  }
+  lines.push("X-SEVEN-COLOR:"+event.color);
+  lines.push("END:VEVENT");
+  return lines;
+}
+
 export function eventsToIcs(events: CalendarEvent[]): string {
-  const lines = [
+  const lines=[
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//Seven Mail//Calendar Export//PT-BR",
     "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
   ];
-
-  for (const event of events) {
-    lines.push("BEGIN:VEVENT");
-    lines.push(`UID:${event.id}@seven-mail.local`);
-    lines.push(`DTSTAMP:${icsDate(new Date().toISOString())}`);
-    lines.push(event.allDay ? `DTSTART;VALUE=DATE:${icsDate(event.startAt, true)}` : `DTSTART:${icsDate(event.startAt)}`);
-    lines.push(event.allDay ? `DTEND;VALUE=DATE:${icsDate(event.endAt, true)}` : `DTEND:${icsDate(event.endAt)}`);
-    lines.push(`SUMMARY:${escapeText(event.title)}`);
-    if (event.description) lines.push(`DESCRIPTION:${escapeText(event.description)}`);
-    if (event.location) lines.push(`LOCATION:${escapeText(event.location)}`);
-    for (const participant of event.participants) {
-      lines.push(`ATTENDEE:mailto:${participant}`);
-    }
-    lines.push(`X-SEVEN-COLOR:${event.color}`);
-    lines.push("END:VEVENT");
-  }
-
+  for(const event of events) lines.push(...eventIcsLines(event));
   lines.push("END:VCALENDAR");
-  return lines.join("\r\n") + "\r\n";
+  return lines.join("\r\n")+"\r\n";
+}
+
+export function eventInvitationToIcs(
+  event: CalendarEvent,
+  organizer: string,
+  method: "REQUEST" | "CANCEL" | "REPLY",
+  response?: CalendarEvent["attendeeResponse"],
+): string {
+  const target=method==="CANCEL"?{...event,status:"cancelled" as const}:event;
+  const lines=[
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Seven Mail//Meeting//PT-BR",
+    "CALSCALE:GREGORIAN",
+    "METHOD:"+method,
+    ...eventIcsLines(target,organizer),
+  ];
+  if(method==="REPLY"&&response){
+    const attendee="ATTENDEE;PARTSTAT="+response.toUpperCase().replace("-","")+";RSVP=FALSE:mailto:"+organizer;
+    const endIndex=lines.lastIndexOf("END:VEVENT");
+    if(endIndex>=0) lines.splice(endIndex,0,attendee);
+  }
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n")+"\r\n";
 }
 
 export function eventsFromIcs(raw: string): CalendarEvent[] {
