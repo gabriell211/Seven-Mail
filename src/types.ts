@@ -96,6 +96,14 @@ export interface AppSettings {
   blockedDomains?: string[];
   favoriteFolders?: Record<string, string[]>;
   folderOrder?: Record<string, string[]>;
+  fontSize?: "small" | "medium" | "large";
+  uiScale?: 0.9 | 1 | 1.1 | 1.2;
+  highContrast?: boolean;
+  reduceMotion?: boolean;
+  closeBehavior?: "tray" | "exit";
+  quietHoursEnabled?: boolean;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
 }
 
 
@@ -265,4 +273,12 @@ export interface ContentBlockItem {
   name: string;
   bodyText: string;
   bodyHtml: string;
+}
+
+export interface ProfileItem {
+  id: string;
+  name: string;
+  accountIds: string[];
+  settings: Partial<AppSettings>;
+  isDefault?: boolean;
 }
