@@ -38,6 +38,11 @@ export interface AccountProfile {
   smtpPort?: number;
   securityMode?: "tls" | "starttls";
   aliases?: string[];
+  isSharedMailbox?: boolean;
+  sharedOwnerAccountId?: string;
+  sharedMode?: "resource" | "account";
+  sharedPermissions?: Array<"read" | "edit" | "calendar" | "manage-calendar" | "send">;
+  sendMode?: "as" | "on-behalf";
   muted?: boolean;
   connectionTimeoutSeconds?: 10 | 20 | 30 | 60 | 120;
 }
