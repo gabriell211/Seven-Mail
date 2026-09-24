@@ -53,6 +53,7 @@ export interface MailMessage {
   bodyHtml?: string;
   bodyText?: string;
   categories: string[];
+  appliedRuleIds?: string[];
 }
 
 export interface QueueOperation {
@@ -121,6 +122,7 @@ export interface TaskItem {
   startsAt?: string;
   dueAt?: string;
   reminderAt?: string;
+  reminderNotifiedAt?: string;
   completedAt?: string;
   relatedMessageId?: string;
 }
@@ -142,6 +144,7 @@ export interface RuleItem {
   operator: "contains" | "equals";
   value: string;
   action: "archive" | "delete" | "spam" | "flag" | "read";
+  stopProcessing?: boolean;
 }
 
 
