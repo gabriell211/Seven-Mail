@@ -14,6 +14,7 @@ import {
 } from "../lib/interchange";
 import type {
   CalendarEvent,
+  ContactGroupItem,
   ContactItem,
   NoteItem,
   RuleItem,
@@ -403,15 +404,27 @@ function CalendarEditor({
 
 export function PersistentPeopleView({ query = "" }: { query?: string }) {
   const store = useWorkspace<ContactItem>("contact");
+  const groups = useWorkspace<ContactGroupItem>("contact-group");
   const [editing, setEditing] = useState<ContactItem | null>(null);
+  const [groupFilter,setGroupFilter]=useState("");
+  const [selectedIds,setSelectedIds]=useState<string[]>([]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return store.items;
-    return store.items.filter((contact) => [contact.displayName, contact.email, contact.company, contact.phone].some((value) => value.toLowerCase().includes(needle)));
-  }, [store.items, query]);
+    return store.items.filter((contact) => {
+      const groupIds=contact.groupIds??[];
+      if(groupFilter&&!groupIds.includes(groupFilter)) return false;
+      if(!needle) return true;
+      const values=[
+        contact.displayName,contact.firstName??"",contact.lastName??"",contact.nickname??"",
+        contact.email,contact.company,contact.phone,contact.jobTitle,contact.notes,
+        ...(contact.emails??[]),...(contact.phones??[]),...(contact.addresses??[]),...(contact.categories??[]),
+      ];
+      return values.some((value)=>value.toLowerCase().includes(needle));
+    });
+  }, [store.items, query, groupFilter]);
 
   function fresh(): ContactItem {
-    return { id: crypto.randomUUID(), displayName: "", email: "", phone: "", company: "", jobTitle: "", notes: "", favorite: false };
+    return { id: crypto.randomUUID(), displayName: "", email: "", phone: "", company: "", jobTitle: "", notes: "", favorite: false, firstName:"", lastName:"", nickname:"", emails:[], phones:[], addresses:[], importantDates:[], categories:[], groupIds:[] };
   }
 
   async function importContacts() {
