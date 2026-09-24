@@ -292,7 +292,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Yahoo
 - [ ] iCloud Mail
 - [ ] Microsoft 365
-- [ ] Outlook.com
+- [ ] Conta Microsoft
 - [ ] Servidores corporativos
 - [ ] Servidores personalizados
 
