@@ -7,10 +7,26 @@ mod workspace;
 
 use models::{AccountProfile, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
 use storage::AppPaths;
+use std::sync::Mutex;
+use tauri::Manager;
+
+struct DesktopState {
+    close_to_tray: Mutex<bool>,
+}
 
 #[tauri::command]
 fn runtime_info() -> Result<RuntimeInfo, String> {
     Ok(AppPaths::resolve()?.runtime_info())
+}
+
+#[tauri::command]
+fn set_close_to_tray(enabled: bool, state: tauri::State<'_, DesktopState>) -> Result<(), String> {
+    let mut value = state
+        .close_to_tray
+        .lock()
+        .map_err(|_| "Estado do desktop indisponível.".to_string())?;
+    *value = enabled;
+    Ok(())
 }
 
 #[tauri::command]
@@ -217,9 +233,67 @@ fn import_workspace(documents: Vec<WorkspaceDocument>) -> Result<usize, String> 
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(DesktopState {
+            close_to_tray: Mutex::new(true),
+        })
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name("Seven Mail")
+                .build(),
+        )
+        .setup(|app| {
+            use tauri::{
+                menu::{Menu, MenuItem},
+                tray::TrayIconBuilder,
+            };
+
+            let open = MenuItem::with_id(app, "open", "Abrir Seven Mail", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open, &quit])?;
+
+            let mut tray = TrayIconBuilder::new()
+                .tooltip("Seven Mail")
+                .menu(&menu)
+                .show_menu_on_left_click(true)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "open" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+
+            tray.build(app)?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.state::<DesktopState>();
+                let close_to_tray = state
+                    .close_to_tray
+                    .lock()
+                    .map(|value| *value)
+                    .unwrap_or(false);
+
+                if close_to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            set_close_to_tray,
             list_accounts,
             save_account,
             set_default_account,
