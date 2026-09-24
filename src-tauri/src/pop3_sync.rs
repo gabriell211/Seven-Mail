@@ -1,6 +1,7 @@
 use crate::{
     credentials,
     models::{AccountProfile, MailAddress, MailMessage},
+    oauth,
     storage::{self, AppPaths},
 };
 use async_native_tls::{TlsConnector, TlsStream};
@@ -8,6 +9,7 @@ use async_std::{
     io::{prelude::BufReadExt, BufReader, WriteExt},
     net::TcpStream,
 };
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use mail_parser::{MessageParser, MimeHeaders};
 use std::{collections::HashSet, hash::{Hash, Hasher}, time::Duration};
 
@@ -82,9 +84,26 @@ async fn connect(account: &AccountProfile) -> Result<PopStream, String> {
     read_status(&mut stream).await?;
 
     let username = account.username.as_deref().unwrap_or(&account.email);
-    let password = credentials::load(&account.id)?;
-    command(&mut stream, &format!("USER {username}")).await?;
-    command(&mut stream, &format!("PASS {password}")).await?;
+    if account.oauth_enabled {
+        let token = oauth::access_token(account)?;
+        let payload = STANDARD.encode(format!("user={username}\x01auth=Bearer {token}\x01\x01"));
+
+        stream.get_mut().write_all(b"AUTH XOAUTH2\r\n").await.map_err(|error| error.to_string())?;
+        stream.get_mut().flush().await.map_err(|error| error.to_string())?;
+        let mut challenge = String::new();
+        stream.read_line(&mut challenge).await.map_err(|error| error.to_string())?;
+        if !challenge.starts_with('+') {
+            return Err(format!("Servidor POP3 recusou XOAUTH2: {}", challenge.trim()));
+        }
+
+        stream.get_mut().write_all(format!("{payload}\r\n").as_bytes()).await.map_err(|error| error.to_string())?;
+        stream.get_mut().flush().await.map_err(|error| error.to_string())?;
+        read_status(&mut stream).await?;
+    } else {
+        let password = credentials::load(&account.id)?;
+        command(&mut stream, &format!("USER {username}")).await?;
+        command(&mut stream, &format!("PASS {password}")).await?;
+    }
     Ok(stream)
 }
 
