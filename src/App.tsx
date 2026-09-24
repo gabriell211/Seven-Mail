@@ -4,6 +4,7 @@ import { bridge } from "./lib/bridge";
 import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, PersistentRulesView, PersistentTasksView } from "./components/WorkspaceViews";
 import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
+import { Composer, type QueuedSendInfo } from "./components/Composer";
 import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudMessage, pushCloudMessages } from "./lib/neon";
 import type { AccountProfile, AppSection, AppSettings, MailFolder, MailMessage, ProviderSettings, RuntimeInfo } from "./types";
 
@@ -16,7 +17,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   confirmBeforeDelete: true,
   confirmBeforeSend: false,
   startWithSystem: false,
-  minimizeToTray: true
+  minimizeToTray: true,
+  sendDelaySeconds: 10
 };
 
 const NAV: Array<{id:AppSection;label:string;icon:IconName}> = [
@@ -306,6 +308,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange}:{set
   return <Workspace title="Configurações" eyebrow="PREFERÊNCIAS">
     <div className="settings-row"><div><h3>Aparência</h3><p>Tema e densidade da interface.</p></div><div className="choices">{(["system","light","dark"] as const).map(t=><button className={settings.theme===t?"choice active":"choice"} key={t} onClick={()=>set("theme",t)}><Icon name={t==="dark"?"moon":"sun"} size={16}/>{t==="system"?"Sistema":t==="light"?"Claro":"Escuro"}</button>)}</div></div>
     <div className="settings-row"><div><h3>Painel de leitura</h3><p>Posição padrão para mensagens.</p></div><select value={settings.readingPane} onChange={e=>set("readingPane",e.target.value as AppSettings["readingPane"])}><option value="right">À direita</option><option value="bottom">Abaixo</option><option value="off">Desativado</option></select></div>
+    <div className="settings-row"><div><h3>Envio</h3><p>Defina o atraso usado para desfazer um envio e a confirmação antes de colocar a mensagem na fila.</p></div><div className="send-settings"><select value={settings.sendDelaySeconds} onChange={e=>set("sendDelaySeconds",Number(e.target.value) as AppSettings["sendDelaySeconds"])}><option value={0}>Imediato</option><option value={5}>Desfazer por 5 s</option><option value={10}>Desfazer por 10 s</option><option value={20}>Desfazer por 20 s</option><option value={30}>Desfazer por 30 s</option></select><label><input type="checkbox" checked={settings.confirmBeforeSend} onChange={e=>set("confirmBeforeSend",e.target.checked)}/> Confirmar antes de enviar</label></div></div>
     <div className="settings-row"><div><h3>Dados locais</h3><p>Cache pode ser limpo sem tocar na fila de saída.</p></div><div className="paths"><span><b>Dados</b>{runtime?.dataDir||"Carregando..."}</span><span><b>Cache</b>{runtime?.cacheDir||"Carregando..."}</span><span><b>Fila</b>{runtime?.queueDir||"Carregando..."}</span><button className="secondary" onClick={()=>bridge.clearCache()}>Limpar apenas cache</button></div></div>
     <AccountsPanel accounts={accounts} onChange={onAccountsChange}/>
     <CloudPanel/>
@@ -328,6 +331,7 @@ export default function App() {
   const [runtime,setRuntime] = useState<RuntimeInfo>();
   const [composeOpen,setComposeOpen] = useState(false);
   const [accountOpen,setAccountOpen] = useState(false);
+  const [undoSend,setUndoSend] = useState<{id:string;expiresAt:number}|null>(null);
   const [search,setSearch] = useState("");
   const [syncState,setSyncState] = useState<"idle"|"syncing"|"error">("idle");
   const [settings,setSettings] = useState<AppSettings>(()=>{
@@ -431,6 +435,24 @@ export default function App() {
     document.documentElement.dataset.density=settings.compact?"compact":"comfortable";
   },[settings]);
 
+  useEffect(()=>{
+    const flush = () => {
+      if (!navigator.onLine) return;
+      void bridge.flushOutbox().catch(() => undefined);
+      for (const account of accounts) {
+        void bridge.flushMailActions(account.id).catch(() => undefined);
+      }
+    };
+
+    flush();
+    const timer = window.setInterval(flush, 15_000);
+    window.addEventListener("online", flush);
+    return ()=>{
+      window.clearInterval(timer);
+      window.removeEventListener("online", flush);
+    };
+  },[accounts]);
+
   async function syncNow() {
     if (!activeAccount || syncState==="syncing") return;
     setSyncState("syncing");
@@ -453,6 +475,28 @@ export default function App() {
     setMessages(await bridge.listCachedMessages(activeAccount.id));
     void pushCloudMessage(updated).catch(() => undefined);
     void bridge.flushMailActions(activeAccount.id).catch(() => undefined);
+  }
+
+  function handleQueuedSend(info: QueuedSendInfo) {
+    const dueAt = new Date(info.sendAt).getTime();
+    if (info.canUndo) {
+      setUndoSend({ id: info.id, expiresAt: dueAt });
+    }
+
+    const wait = Math.max(0, dueAt - Date.now() + 150);
+    if (wait <= 60_000) {
+      window.setTimeout(() => {
+        setUndoSend((current) => current?.id === info.id ? null : current);
+        void bridge.flushOutbox().catch(() => undefined);
+      }, wait);
+    }
+  }
+
+  async function undoQueuedSend() {
+    if (!undoSend) return;
+    const current = undoSend;
+    setUndoSend(null);
+    await bridge.cancelOperation(current.id).catch(() => false);
   }
 
   const filtered = useMemo(()=>{
@@ -482,7 +526,8 @@ export default function App() {
         {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime}/>}
       </div>
     </main>
-    {composeOpen&&<ComposeModal account={activeAccount} onClose={()=>setComposeOpen(false)}/>}
+    {composeOpen&&<Composer accounts={accounts} initialAccountId={activeAccount?.id} settings={settings} onClose={()=>setComposeOpen(false)} onQueued={handleQueuedSend}/>}
+    {undoSend&&<div className="undo-send" role="status"><span><Icon name="send" size={16}/><b>Mensagem na fila</b><small>Envio em instantes</small></span><button onClick={()=>void undoQueuedSend()}>Desfazer</button></div>}
     {accountOpen&&<AddAccountModal onClose={()=>setAccountOpen(false)} onAdded={account=>{setAccounts(v=>[...v,account]);setActiveId(account.id);void pushCloudAccount(account).catch(()=>undefined);}}/>}
   </div>;
 }
