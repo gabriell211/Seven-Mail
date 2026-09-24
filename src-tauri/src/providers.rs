@@ -205,6 +205,18 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
         .and_then(|value| value.as_str())
         .unwrap_or("");
 
+    let calendar_ics = operation
+        .payload
+        .get("calendarIcs")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let calendar_method = operation
+        .payload
+        .get("calendarMethod")
+        .and_then(|value| value.as_str())
+        .unwrap_or("REQUEST")
+        .to_ascii_uppercase();
+
     let attachments: Vec<QueuedAttachment> = operation
         .payload
         .get("attachments")
@@ -250,11 +262,25 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
         return Err("Informe pelo menos um destinatário válido.".to_string());
     }
 
-    let body_part = if body_html.trim().is_empty() {
+    let mut body_part = if body_html.trim().is_empty() {
         MultiPart::alternative().singlepart(SinglePart::plain(body_text.to_owned()))
     } else {
         MultiPart::alternative_plain_html(body_text.to_owned(), body_html.to_owned())
     };
+
+    if !calendar_ics.trim().is_empty() {
+        let calendar_type: ContentType = format!(
+            "text/calendar; charset=utf-8; method={}",
+            calendar_method
+        )
+        .parse()
+        .map_err(|error| format!("MIME de calendário inválido: {error}"))?;
+        body_part = body_part.singlepart(
+            SinglePart::builder()
+                .header(calendar_type)
+                .body(calendar_ics.to_owned()),
+        );
+    }
 
     let mut mixed = MultiPart::mixed().multipart(body_part);
     for attachment in attachments {
