@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { disable as disableAutostart, enable as enableAutostart } from "@tauri-apps/plugin-autostart";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Icon, type IconName } from "./icons";
 import { bridge } from "./lib/bridge";
 import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, PersistentRulesView, PersistentTasksView } from "./components/WorkspaceViews";
 import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { SignaturesPanel } from "./components/SignaturesPanel";
+import { MessageDetailsModal, SenderPoliciesPanel } from "./components/AdvancedMailPanels";
 import { BrandLogo } from "./components/BrandLogo";
 import { LaunchScreen } from "./components/LaunchScreen";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
@@ -23,14 +25,22 @@ const DEFAULT_SETTINGS: AppSettings = {
   readingPane: "right",
   compact: false,
   previewLines: 2,
-  markReadDelayMs: 1200,
+  settings.markReadDelayMs: 1200,
   confirmBeforeDelete: true,
   confirmBeforeSend: false,
   startWithSystem: false,
   minimizeToTray: true,
   sendDelaySeconds: 10,
   notificationsEnabled: false,
-  syncIntervalMinutes: 5
+  syncIntervalMinutes: 5,
+  focusInboxEnabled: true,
+  mailPageSize: 50,
+  maxAttachmentMb: 25,
+  openNextAfterDelete: true,
+  showSenderPhotos: true,
+  blockedSenders: [],
+  trustedSenders: [],
+  blockedDomains: []
 };
 
 const NAV: Array<{id:AppSection;label:string;icon:IconName}> = [
@@ -205,12 +215,31 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onCreateTaskFromMessage,onCreateEventFromMessage,onImportEml,onExportEml,onCreateCategory,onEditCategory,onDeleteCategory,onToggleCategory,onUseSavedSearch,onDeleteSavedSearch,onCreateFolder,onRenameFolder,onDeleteFolder,onMoveToFolder,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,markReadDelayMs,readingPane,previewLines}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateEventFromMessage:(message:MailMessage)=>void;onImportEml?:()=>void;onExportEml:(message:MailMessage)=>void;onCreateCategory:()=>void;onEditCategory:(category:CategoryItem)=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;onCreateFolder?:()=>void;onRenameFolder?:(folder:MailFolder)=>void;onDeleteFolder?:(folder:MailFolder)=>void;onMoveToFolder?:(message:MailMessage,folder:MailFolder)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;markReadDelayMs:number;readingPane:AppSettings["readingPane"];previewLines:AppSettings["previewLines"]}) {
+function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onCreateTaskFromMessage,onCreateEventFromMessage,onImportEml,onExportEml,onCreateCategory,onEditCategory,onDeleteCategory,onToggleCategory,onUseSavedSearch,onDeleteSavedSearch,onCreateFolder,onRenameFolder,onDeleteFolder,onMoveToFolder,onCopyToFolder,onUpdateMetadata,onBlockSender,onTrustSender,onReleaseSender,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,settings}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateEventFromMessage:(message:MailMessage)=>void;onImportEml?:()=>void;onExportEml:(message:MailMessage)=>void;onCreateCategory:()=>void;onEditCategory:(category:CategoryItem)=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;onCreateFolder?:()=>void;onRenameFolder?:(folder:MailFolder)=>void;onDeleteFolder?:(folder:MailFolder)=>void;onMoveToFolder?:(message:MailMessage,folder:MailFolder)=>void;onCopyToFolder?:(message:MailMessage,folder:MailFolder)=>void;onUpdateMetadata:(message:MailMessage,metadata:{importance?:"low"|"normal"|"high";snoozedUntil?:string;isMuted?:boolean;isPhishing?:boolean;isImportant?:boolean})=>void;onBlockSender:(email:string)=>void;onTrustSender:(email:string)=>void;onReleaseSender:(email:string)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;settings:AppSettings}) {
   const [selectedId,setSelectedId] = useState<string>();
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
-  const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread">("newest");
+  const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread"|"size"|"status">("newest");
+  const [focusTab,setFocusTab] = useState<"focused"|"other">("focused");
+  const [conversationView,setConversationView] = useState(true);
+  const [visibleCount,setVisibleCount] = useState(settings.mailPageSize ?? 50);
+  const [details,setDetails] = useState<{message:MailMessage;tab:"attachments"|"headers"|"source"}|null>(null);
   const selected = messages.find(m=>m.id===selectedId);
-  const folderMessages = [...messages.filter(message=>message.folder===folder.name && matchesQuickFilter(message,quickFilter))]
+  const now = Date.now();
+  const baseFolderMessages = messages.filter(message=>{
+    if (message.folder!==folder.name || !matchesQuickFilter(message,quickFilter)) return false;
+    if (message.snoozedUntil) {
+      const until = new Date(message.snoozedUntil).getTime();
+      if (Number.isFinite(until) && until > now) return false;
+    }
+    if (folder.role==="inbox" && settings.focusInboxEnabled) {
+      const trusted=(settings.trustedSenders??[]).includes(message.from.email.toLocaleLowerCase("pt-BR"));
+      const focused=Boolean(message.isImportant||message.isFlagged||message.isPinned||trusted);
+      if (focusTab==="focused"&&!focused) return false;
+      if (focusTab==="other"&&focused) return false;
+    }
+    return true;
+  });
+  const sortedFolderMessages = [...baseFolderMessages]
     .sort((a,b)=>{
       const pinned = Number(b.isPinned)-Number(a.isPinned);
       if (pinned!==0) return pinned;
@@ -218,8 +247,24 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
       if (sort==="sender") return (a.from.name||a.from.email).localeCompare(b.from.name||b.from.email);
       if (sort==="subject") return a.subject.localeCompare(b.subject);
       if (sort==="unread") return Number(a.isRead)-Number(b.isRead)||b.receivedAt.localeCompare(a.receivedAt);
+      if (sort==="size") return (b.sizeBytes??0)-(a.sizeBytes??0);
+      if (sort==="status") return Number(a.isRead)-Number(b.isRead)||Number(b.isFlagged)-Number(a.isFlagged)||b.receivedAt.localeCompare(a.receivedAt);
       return b.receivedAt.localeCompare(a.receivedAt);
     });
+
+  const conversationKey=(message:MailMessage)=>message.subject.toLocaleLowerCase("pt-BR").replace(/^(re|enc|fw|fwd):\s*/g,"").trim()||message.id;
+  const conversationCounts=new Map<string,number>();
+  for(const message of sortedFolderMessages){
+    const key=conversationKey(message);
+    conversationCounts.set(key,(conversationCounts.get(key)??0)+1);
+  }
+  const displayMessages=conversationView
+    ? sortedFolderMessages.filter((message,index,array)=>array.findIndex((item)=>conversationKey(item)===conversationKey(message))===index)
+    : sortedFolderMessages;
+  const folderMessages=displayMessages.slice(0,visibleCount);
+  const selectedThread=selected&&conversationView
+    ? messages.filter((message)=>conversationKey(message)===conversationKey(selected)).sort((a,b)=>a.receivedAt.localeCompare(b.receivedAt))
+    : selected?[selected]:[];
 
   useEffect(()=>{
     if (focusMessageId && messages.some((message)=>message.id===focusMessageId)) {
@@ -268,6 +313,10 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
     window.addEventListener("keydown",onKeyDown);
     return ()=>window.removeEventListener("keydown",onKeyDown);
   },[selectedId,folderMessages,messages]);
+
+  useEffect(()=>{
+    setVisibleCount(settings.mailPageSize ?? 50);
+  },[folder.path,quickFilter,sort,focusTab,conversationView,settings.mailPageSize]);
 
   const visibleFolders = folders.length ? folders : FALLBACK_FOLDERS;
 
@@ -321,7 +370,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
             <span className="message-copy"><span className="message-meta"><b>Rascunho local</b><time>autosave</time></span><strong>{draft.subject||"(sem assunto)"}</strong><small>{draft.to?`Para: ${draft.to}`:(draft.bodyText||"Comece a escrever...")}</small></span>
             {draft.attachments.length>0&&<span className="draft-attachment-count"><Icon name="paperclip" size={13}/>{draft.attachments.length}</span>}
           </button>)}
-          {folderMessages.map(message=><button key={message.id} className={"message "+(selectedId===message.id?"selected ":"")+(!message.isRead?"unread":"")} onClick={()=>{setSelectedId(message.id);if(!message.isRead){window.setTimeout(()=>void act(message.id,"read"),markReadDelayMs);}}}>
+          {folderMessages.map(message=><button key={message.id} className={"message "+(selectedId===message.id?"selected ":"")+(!message.isRead?"unread":"")} onClick={()=>{setSelectedId(message.id);if(!message.isRead){window.setTimeout(()=>void act(message.id,"read"),settings.markReadDelayMs);}}}>
             <span className="avatar">{(message.from.name||message.from.email)[0].toUpperCase()}</span>
             <span className="message-copy"><span className="message-meta"><b>{message.from.name||message.from.email}</b><time>{new Date(message.receivedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</time></span><strong>{message.subject||"(sem assunto)"}</strong><small>{message.preview}</small>{message.categories.length>0&&<span className="message-category-dots">{message.categories.slice(0,4).map(name=>{const category=categories.find(item=>item.name===name);return <i key={name} title={name} style={{background:category?.color||"#888"}}/>;})}</span>}</span>
             <span className="message-indicators">{message.isPinned&&<Icon name="pin" size={13}/>} {message.hasAttachments&&<Icon name="paperclip" size={14}/>}</span>
@@ -453,7 +502,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
   return <Workspace title="Configurações" eyebrow="PREFERÊNCIAS">
     <div className="settings-row brand-settings-row"><div><h3>Sobre o Seven Mail</h3><p>Identidade e informações do aplicativo.</p></div><div className="brand-about-card"><BrandLogo variant="about"/><div><strong>Seven Mail</strong><span>Cliente desktop local-first</span><small>Windows · Linux</small></div></div></div>
     <div className="settings-row"><div><h3>Aparência</h3><p>Tema, densidade e pré-visualização da lista.</p></div><div className="appearance-settings"><div className="choices">{(["system","light","dark"] as const).map(t=><button className={settings.theme===t?"choice active":"choice"} key={t} onClick={()=>set("theme",t)}><Icon name={t==="dark"?"moon":"sun"} size={16}/>{t==="system"?"Sistema":t==="light"?"Claro":"Escuro"}</button>)}</div><label><input type="checkbox" checked={settings.compact} onChange={e=>set("compact",e.target.checked)}/> Lista compacta</label><label><span>Linhas de prévia</span><select value={settings.previewLines} onChange={e=>set("previewLines",Number(e.target.value) as AppSettings["previewLines"])}><option value={1}>1 linha</option><option value={2}>2 linhas</option></select></label></div></div>
-    <div className="settings-row"><div><h3>Painel de leitura</h3><p>Posição padrão e tempo para marcar mensagens como lidas.</p></div><div className="appearance-settings"><select value={settings.readingPane} onChange={e=>set("readingPane",e.target.value as AppSettings["readingPane"])}><option value="right">À direita</option><option value="bottom">Abaixo</option><option value="off">Desativado</option></select><label><span>Marcar como lida</span><select value={settings.markReadDelayMs} onChange={e=>set("markReadDelayMs",Number(e.target.value))}><option value={0}>Imediatamente</option><option value={500}>Após 0,5 s</option><option value={1200}>Após 1,2 s</option><option value={3000}>Após 3 s</option></select></label></div></div>
+    <div className="settings-row"><div><h3>Painel de leitura</h3><p>Posição padrão e tempo para marcar mensagens como lidas.</p></div><div className="appearance-settings"><select value={settings.readingPane} onChange={e=>set("readingPane",e.target.value as AppSettings["readingPane"])}><option value="right">À direita</option><option value="bottom">Abaixo</option><option value="off">Desativado</option></select><label><span>Marcar como lida</span><select value={settings.settings.markReadDelayMs} onChange={e=>set("settings.markReadDelayMs",Number(e.target.value))}><option value={0}>Imediatamente</option><option value={500}>Após 0,5 s</option><option value={1200}>Após 1,2 s</option><option value={3000}>Após 3 s</option></select></label></div></div>
     <div className="settings-row"><div><h3>Envio</h3><p>Defina o atraso usado para desfazer um envio e a confirmação antes de colocar a mensagem na fila.</p></div><div className="send-settings"><select value={settings.sendDelaySeconds} onChange={e=>set("sendDelaySeconds",Number(e.target.value) as AppSettings["sendDelaySeconds"])}><option value={0}>Imediato</option><option value={5}>Desfazer por 5 s</option><option value={10}>Desfazer por 10 s</option><option value={20}>Desfazer por 20 s</option><option value={30}>Desfazer por 30 s</option></select><label><input type="checkbox" checked={settings.confirmBeforeSend} onChange={e=>set("confirmBeforeSend",e.target.checked)}/> Confirmar antes de enviar</label></div></div>
     <div className="settings-row"><div><h3>Sincronização e notificações</h3><p>Atualização automática da caixa de entrada em segundo plano.</p></div><div className="send-settings"><select value={settings.syncIntervalMinutes} onChange={e=>set("syncIntervalMinutes",Number(e.target.value) as AppSettings["syncIntervalMinutes"])}><option value={1}>A cada 1 minuto</option><option value={5}>A cada 5 minutos</option><option value={10}>A cada 10 minutos</option><option value={15}>A cada 15 minutos</option><option value={30}>A cada 30 minutos</option></select><label><input type="checkbox" checked={settings.notificationsEnabled} onChange={e=>set("notificationsEnabled",e.target.checked)}/> Notificações nativas de novas mensagens</label></div></div>
     <div className="settings-row"><div><h3>Dados locais</h3><p>Cache pode ser limpo sem tocar na fila de saída. Backup inclui workspace, preferências e metadados das contas; senhas ficam somente no Keyring.</p></div><div className="paths"><span><b>Dados</b>{runtime?.dataDir||"Carregando..."}</span><span><b>Cache</b>{runtime?.cacheDir||"Carregando..."}</span><span><b>Fila</b>{runtime?.queueDir||"Carregando..."}</span><div className="data-actions"><button className="secondary" onClick={()=>void exportBackup()}><Icon name="download" size={14}/> Exportar backup</button><button className="secondary" onClick={()=>void importBackup()}><Icon name="upload" size={14}/> Restaurar backup</button><button className="secondary" onClick={()=>bridge.clearCache()}>Limpar apenas cache</button></div></div></div>
@@ -1311,7 +1360,7 @@ export default function App() {
         <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} markReadDelayMs={settings.markReadDelayMs} readingPane={settings.readingPane} previewLines={settings.previewLines}/>} 
+        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings.markReadDelayMs={settings.settings.markReadDelayMs} readingPane={settings.readingPane} previewLines={settings.previewLines}/>} 
         {section==="calendar"&&<PersistentCalendarView/>}
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
