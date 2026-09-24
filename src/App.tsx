@@ -540,6 +540,56 @@ export default function App() {
     void pushCloudMessage(updated).catch(() => undefined);
   }
 
+  async function saveSignature(signature: SignatureItem) {
+    const now = new Date().toISOString();
+    const cloudDocuments: Array<WorkspaceDocument<SignatureItem>> = [];
+
+    if (signature.isDefault) {
+      for (const item of signatures) {
+        if (item.accountId !== signature.accountId || item.id === signature.id || !item.isDefault) continue;
+        const demoted = {...item,isDefault:false};
+        const document: WorkspaceDocument<SignatureItem> = {
+          id: demoted.id,
+          kind: "signature",
+          updatedAt: now,
+          payload: demoted,
+        };
+        await bridge.upsertWorkspace(document);
+        cloudDocuments.push(document);
+      }
+    }
+
+    const document: WorkspaceDocument<SignatureItem> = {
+      id: signature.id,
+      kind: "signature",
+      updatedAt: now,
+      payload: signature,
+    };
+    await bridge.upsertWorkspace(document);
+    cloudDocuments.push(document);
+
+    setSignatures((current)=>{
+      const normalized = current.map((item)=>{
+        if (signature.isDefault && item.accountId===signature.accountId && item.id!==signature.id) {
+          return {...item,isDefault:false};
+        }
+        return item;
+      });
+      return [signature,...normalized.filter((item)=>item.id!==signature.id)];
+    });
+
+    for (const item of cloudDocuments) {
+      void pushCloudDocument(item).catch(() => undefined);
+    }
+  }
+
+  async function deleteSignature(signature: SignatureItem) {
+    if (!window.confirm(`Excluir a assinatura "${signature.name}"?`)) return;
+    await bridge.deleteWorkspace("signature",signature.id);
+    setSignatures((current)=>current.filter((item)=>item.id!==signature.id));
+    void deleteCloudDocument("signature",signature.id).catch(() => undefined);
+  }
+
   async function saveCurrentSearch() {
     const query = search.trim();
     if (!query) return;
