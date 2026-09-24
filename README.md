@@ -27,7 +27,27 @@ A proposta é reunir em um único aplicativo tudo o que normalmente é necessár
 - Importação e exportação
 - Segurança e privacidade
 
-> **Status:** Em desenvolvimento.
+> **Status:** Em desenvolvimento ativo. A linha desktop 0.2.x já possui cliente local-first funcional para Windows e Linux, com IMAP/SMTP, múltiplas contas, caixa unificada, composição, fila offline, regras, pesquisa avançada, calendário local, contatos, tarefas, notas e sincronização opcional com Neon.
+
+### Estado atual
+
+A implementação atual já inclui:
+
+- Cliente desktop Tauri 2 com React 19 + TypeScript e backend Rust.
+- Windows e Linux com instaladores nativos.
+- IMAP/SMTP com descoberta automática e configuração manual.
+- Múltiplas contas e caixa unificada.
+- Cache local, leitura offline, rascunhos e caixa de saída durável.
+- Resposta, encaminhamento, anexos, envio agendado e desfazer envio.
+- Pesquisa local avançada com operadores como `from:`, `to:`, `subject:`, `body:`, `folder:`, `is:unread`, `is:flagged`, `has:attachment`, `after:` e `before:`.
+- Regras executadas automaticamente após sincronização ou manualmente, com prioridade e opção de interromper o processamento.
+- Calendário, contatos, tarefas e notas persistentes em modo local-first.
+- Conversão de e-mail em tarefa e retorno da tarefa ao e-mail relacionado.
+- Lembretes nativos de tarefas e notificações de novas mensagens.
+- Credenciais mantidas no Credential Manager/Keyring do sistema operacional.
+- Sincronização cloud opcional via Neon para metadados e workspace; credenciais de e-mail não são enviadas ao Neon.
+
+Recursos como OAuth/PKCE por provedor, CalDAV, CardDAV, POP3, S/MIME, importação PST/MSG/OFT, caixas compartilhadas, delegação e recursos corporativos avançados permanecem no roadmap.
 
 ---
 
