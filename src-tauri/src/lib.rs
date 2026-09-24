@@ -3,8 +3,9 @@ mod imap_sync;
 mod models;
 mod providers;
 mod storage;
+mod workspace;
 
-use models::{AccountProfile, MailMessage, ProviderSettings, QueueOperation, RuntimeInfo};
+use models::{AccountProfile, MailMessage, ProviderSettings, QueueOperation, RuntimeInfo, WorkspaceDocument};
 use storage::AppPaths;
 
 #[tauri::command]
@@ -136,6 +137,36 @@ fn clear_cache() -> Result<(), String> {
     storage::clear_cache(&AppPaths::resolve()?)
 }
 
+#[tauri::command]
+fn list_workspace(kind: String) -> Result<Vec<WorkspaceDocument>, String> {
+    workspace::list(&AppPaths::resolve()?, &kind)
+}
+
+#[tauri::command]
+fn upsert_workspace(document: WorkspaceDocument) -> Result<WorkspaceDocument, String> {
+    workspace::upsert(&AppPaths::resolve()?, document)
+}
+
+#[tauri::command]
+fn delete_workspace(kind: String, id: String) -> Result<(), String> {
+    workspace::delete(&AppPaths::resolve()?, &kind, &id)
+}
+
+#[tauri::command]
+fn search_workspace(query: String) -> Result<Vec<WorkspaceDocument>, String> {
+    workspace::search(&AppPaths::resolve()?, &query)
+}
+
+#[tauri::command]
+fn export_workspace() -> Result<Vec<WorkspaceDocument>, String> {
+    workspace::export_all(&AppPaths::resolve()?)
+}
+
+#[tauri::command]
+fn import_workspace(documents: Vec<WorkspaceDocument>) -> Result<usize, String> {
+    workspace::import_all(&AppPaths::resolve()?, documents)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -154,7 +185,13 @@ pub fn run() {
             list_queue,
             flush_outbox,
             message_action,
-            clear_cache
+            clear_cache,
+            list_workspace,
+            upsert_workspace,
+            delete_workspace,
+            search_workspace,
+            export_workspace,
+            import_workspace
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Seven Mail");
