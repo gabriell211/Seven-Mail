@@ -24,7 +24,7 @@ export function ReadingAssist({
   },[]);
 
   function toggleSpeech(){
-    const speech=speech;
+    const speech=window.speechSynthesis;
     if(speaking){
       speech.cancel();
       setSpeaking(false);
