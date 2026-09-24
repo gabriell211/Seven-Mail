@@ -1,4 +1,4 @@
-use crate::{models::{AccountProfile, MailAddress, MailMessage}, storage::{self, AppPaths}};
+use crate::{models::{AccountProfile, MailAddress, MailAttachmentInfo, MailMessage}, storage::{self, AppPaths}};
 use mail_parser::{MessageParser, MimeHeaders};
 use std::{fs, path::Path};
 
@@ -108,4 +108,125 @@ pub fn import_eml(paths: &AppPaths, account: &AccountProfile, path: &str) -> Res
     storage::cache_message(paths, &message)?;
     storage::cache_raw_message(paths, &message.account_id, &message.id, &raw)?;
     Ok(message)
+}
+
+
+fn attachment_mime(name: &str) -> String {
+    let ext = name.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase());
+    match ext.as_deref() {
+        Some("pdf") => "application/pdf",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        Some("txt") => "text/plain",
+        Some("csv") => "text/csv",
+        Some("html" | "htm") => "text/html",
+        Some("json") => "application/json",
+        Some("xml") => "application/xml",
+        Some("zip") => "application/zip",
+        Some("7z") => "application/x-7z-compressed",
+        Some("docx") => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        Some("xlsx") => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        Some("pptx") => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
+fn safe_attachment_name(value: &str, index: usize) -> String {
+    let cleaned = value
+        .chars()
+        .map(|ch| if ch.is_control() || matches!(ch, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { ch })
+        .collect::<String>();
+    let cleaned = cleaned.trim().trim_matches('.').to_string();
+    if cleaned.is_empty() { format!("anexo-{}", index + 1) } else { cleaned }
+}
+
+pub fn read_message_source(paths: &AppPaths, account_id: &str, message_id: &str) -> Result<String, String> {
+    let raw = storage::read_raw_message(paths, account_id, message_id)?;
+    Ok(String::from_utf8_lossy(&raw).into_owned())
+}
+
+pub fn list_message_attachments(
+    paths: &AppPaths,
+    account_id: &str,
+    message_id: &str,
+) -> Result<Vec<MailAttachmentInfo>, String> {
+    let raw = storage::read_raw_message(paths, account_id, message_id)?;
+    let parsed = MessageParser::default()
+        .parse(&raw)
+        .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
+
+    let mut attachments = Vec::new();
+    for index in 0..parsed.attachment_count() {
+        let Some(part) = parsed.attachment(index) else { continue; };
+        let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
+        attachments.push(MailAttachmentInfo {
+            index,
+            name: name.clone(),
+            size: part.len() as u64,
+            mime: attachment_mime(&name),
+            inline: part.content_id().is_some(),
+        });
+    }
+    Ok(attachments)
+}
+
+pub fn save_message_attachment(
+    paths: &AppPaths,
+    account_id: &str,
+    message_id: &str,
+    index: usize,
+    destination: &str,
+) -> Result<(), String> {
+    let raw = storage::read_raw_message(paths, account_id, message_id)?;
+    let parsed = MessageParser::default()
+        .parse(&raw)
+        .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
+    let part = parsed
+        .attachment(index)
+        .ok_or_else(|| "Anexo não encontrado.".to_string())?;
+    let destination = Path::new(destination);
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("Não foi possível preparar a pasta: {error}"))?;
+    }
+    fs::write(destination, part.contents())
+        .map_err(|error| format!("Não foi possível salvar o anexo: {error}"))
+}
+
+pub fn save_all_message_attachments(
+    paths: &AppPaths,
+    account_id: &str,
+    message_id: &str,
+    directory: &str,
+) -> Result<usize, String> {
+    let raw = storage::read_raw_message(paths, account_id, message_id)?;
+    let parsed = MessageParser::default()
+        .parse(&raw)
+        .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
+    let directory = Path::new(directory);
+    fs::create_dir_all(directory).map_err(|error| format!("Não foi possível preparar a pasta: {error}"))?;
+
+    let mut saved = 0usize;
+    for index in 0..parsed.attachment_count() {
+        let Some(part) = parsed.attachment(index) else { continue; };
+        let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
+        let mut path = directory.join(&name);
+        if path.exists() {
+            let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("anexo");
+            let ext = path.extension().and_then(|value| value.to_str()).unwrap_or("");
+            let next = if ext.is_empty() {
+                format!("{stem}-{}", index + 1)
+            } else {
+                format!("{stem}-{}.{}", index + 1, ext)
+            };
+            path = directory.join(next);
+        }
+        fs::write(path, part.contents())
+            .map_err(|error| format!("Não foi possível salvar o anexo {name}: {error}"))?;
+        saved += 1;
+    }
+    Ok(saved)
 }
