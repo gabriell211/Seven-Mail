@@ -113,6 +113,10 @@ export interface AppSettings {
   autoReplyEnd?: string;
   autoForwardEnabled?: boolean;
   autoForwardAddress?: string;
+  blockRemoteContent?: boolean;
+  remoteContentAllowedSenders?: string[];
+  warnSuspiciousLinks?: boolean;
+  externalSenderWarning?: boolean;
 }
 
 
