@@ -99,7 +99,7 @@ export interface AppSettings {
 }
 
 
-export type WorkspaceKind = "calendar" | "contact" | "task" | "note" | "rule" | "category" | "saved-search" | "signature" | "settings" | "draft" | "template" | "content-block" | "folder-pref" | "profile";
+export type WorkspaceKind = "calendar" | "contact" | "contact-group" | "task" | "note" | "rule" | "category" | "saved-search" | "signature" | "settings" | "draft" | "template" | "content-block" | "folder-pref" | "profile";
 
 export interface WorkspaceDocument<T = Record<string, unknown>> {
   id: string;
@@ -132,6 +132,22 @@ export interface ContactItem {
   jobTitle: string;
   notes: string;
   favorite: boolean;
+  firstName?: string;
+  lastName?: string;
+  nickname?: string;
+  emails?: string[];
+  phones?: string[];
+  addresses?: string[];
+  importantDates?: Array<{ label: string; date: string }>;
+  categories?: string[];
+  groupIds?: string[];
+  photoDataUrl?: string;
+}
+
+export interface ContactGroupItem {
+  id: string;
+  name: string;
+  description?: string;
 }
 
 export interface TaskItem {
