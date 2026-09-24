@@ -663,3 +663,23 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .app-lock-field:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .app-lock-field input{flex:1;min-width:0;border:0!important;background:transparent!important;outline:0!important;font-size:15px;letter-spacing:.12em;color:var(--text)}
 .app-lock-submit{width:100%;min-height:42px;margin-top:4px}
+
+
+/* Quick steps, shortcuts and message drag */
+.quick-step-settings{width:min(640px,100%);display:flex;flex-direction:column;align-items:stretch;gap:8px}
+.quick-step-settings>small{font-size:9px;color:var(--muted)}
+.quick-step-settings>article{display:grid;grid-template-columns:minmax(0,1fr) auto 32px;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:11px;background:var(--solid)}
+.quick-step-settings>article>span{display:flex;min-width:0;flex-direction:column;gap:2px}
+.quick-step-settings>article b{font-size:10px}
+.quick-step-settings>article small{font-size:8px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quick-step-settings kbd,.message-quick-steps kbd{padding:2px 5px;border:1px solid var(--line);border-radius:5px;background:var(--soft);font-size:7px;color:var(--muted);font-family:inherit}
+.shortcut-grid{width:min(620px,100%);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px}
+.shortcut-grid label{display:grid;grid-template-columns:130px minmax(0,1fr);align-items:center;gap:8px}
+.shortcut-grid label span{font-size:9px;color:var(--muted)}
+.shortcut-grid input{height:32px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--text);padding:0 9px;font-size:9px}
+.message-quick-steps{display:flex;gap:6px;flex-wrap:wrap;padding:0 25px 12px}
+.message-quick-steps .secondary{display:inline-flex;align-items:center;gap:6px}
+.message[draggable="true"]{cursor:grab}
+.message[draggable="true"]:active{cursor:grabbing;opacity:.78}
+.folder:has(+ *){}
+@media(max-width:800px){.shortcut-grid{grid-template-columns:1fr}.shortcut-grid label{grid-template-columns:120px 1fr}}
