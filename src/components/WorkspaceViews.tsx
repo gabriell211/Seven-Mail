@@ -23,6 +23,7 @@ import {
 } from "../lib/interchange";
 import type {
   AccountProfile,
+  AppSettings,
   CalendarEvent,
   CalendarListItem,
   ContactGroupItem,
@@ -180,7 +181,7 @@ function Empty({ icon, title, text }: { icon: IconName; title: string; text: str
   );
 }
 
-export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountProfile[] }) {
+export function PersistentCalendarView({ accounts = [], settings }: { accounts?: AccountProfile[]; settings: AppSettings }) {
   const store = useWorkspace<CalendarEvent>("calendar");
   const calendars = useWorkspace<CalendarListItem>("calendar-list");
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
@@ -188,6 +189,30 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
   const [cursor, setCursor] = useState(() => new Date());
   const [view, setView] = useState<"day" | "three" | "week" | "workweek" | "month" | "agenda" | "side">("month");
   const [eventClipboard,setEventClipboard]=useState<{event:CalendarEvent;mode:"copy"|"cut"}|null>(null);
+  const [clock,setClock]=useState(()=>new Date());
+  const locale=settings.locale??"pt-BR";
+  const hour12=settings.timeFormat==="12";
+  const firstDayOfWeek=settings.firstDayOfWeek??0;
+  const workDays=settings.workDays??[1,2,3,4,5];
+
+  useEffect(()=>{
+    const timer=window.setInterval(()=>setClock(new Date()),60_000);
+    return ()=>window.clearInterval(timer);
+  },[]);
+
+  const dateStyle=settings.dateFormat==="long"?"long":settings.dateFormat==="medium"?"medium":"short";
+
+  const formatCalendarTime=(value:string|Date,timeZone?:string)=>new Intl.DateTimeFormat(locale,{
+    hour:"2-digit",
+    minute:"2-digit",
+    hour12,
+    timeZone:timeZone||settings.timezone||undefined,
+  }).format(typeof value==="string"?new Date(value):value);
+
+  const formatCalendarDate=(value:string|Date,options?:Intl.DateTimeFormatOptions)=>new Intl.DateTimeFormat(locale,{
+    ...(options??{dateStyle}),
+    timeZone:settings.timezone||undefined,
+  }).format(typeof value==="string"?new Date(value):value);
 
   const localCalendar:CalendarListItem={id:"local",name:"Local",color:COLORS[0],visible:true};
   const calendarList:CalendarListItem[]=calendars.items.some((item)=>item.id==="local")
@@ -203,7 +228,8 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
 
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const gridStart = new Date(first);
-  gridStart.setDate(first.getDate() - first.getDay());
+  const monthOffset=(first.getDay()-firstDayOfWeek+7)%7;
+  gridStart.setDate(first.getDate() - monthOffset);
   const monthDays = Array.from({ length: 42 }, (_, index) => {
     const date = new Date(gridStart);
     date.setDate(gridStart.getDate() + index);
@@ -213,25 +239,18 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
   const weekStart = useMemo(() => {
     const date = new Date(cursor);
     date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - date.getDay());
+    const offset=(date.getDay()-firstDayOfWeek+7)%7;
+    date.setDate(date.getDate()-offset);
     return date;
-  }, [cursor]);
+  }, [cursor,firstDayOfWeek]);
 
   const weekDays = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(weekStart);
     date.setDate(weekStart.getDate() + index);
     return date;
   });
-  const workWeekStart=useMemo(()=>{
-    const date=new Date(cursor);
-    date.setHours(0,0,0,0);
-    const day=date.getDay();
-    date.setDate(date.getDate()+(day===0?-6:1-day));
-    return date;
-  },[cursor]);
-  const workWeekDays=Array.from({length:5},(_,index)=>{
-    const date=new Date(workWeekStart);date.setDate(workWeekStart.getDate()+index);return date;
-  });
+  const workWeekDays=weekDays.filter((date)=>workDays.includes(date.getDay()));
+  const workWeekStart=workWeekDays[0]??weekStart;
   const threeDays=Array.from({length:3},(_,index)=>{
     const date=new Date(cursor);date.setHours(0,0,0,0);date.setDate(date.getDate()+index);return date;
   });
@@ -290,16 +309,16 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
 
   function title(): string {
     if (view === "day") {
-      return cursor.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+      return formatCalendarDate(cursor,{weekday:"long",day:"numeric",month:"long"});
     }
     if (view === "week" || view === "workweek" || view === "three") {
       const days=view==="workweek"?workWeekDays:view==="three"?threeDays:weekDays;
       const start=days[0]??cursor;
       const end=days[days.length-1]??cursor;
-      return `${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} – ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}`;
+      return `${formatCalendarDate(start,{day:"2-digit",month:"short"})} – ${formatCalendarDate(end,{day:"2-digit",month:"short",year:"numeric"})}`;
     }
     if (view === "agenda") return "Agenda";
-    return cursor.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+    return formatCalendarDate(cursor,{month:"long",year:"numeric"});
   }
 
   async function importIcs() {
@@ -317,6 +336,64 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
     }
     for (const event of events) await store.save(event);
     window.alert(events.length === 1 ? "1 evento importado." : `${events.length} eventos importados.`);
+  }
+
+  async function addHolidayCalendar() {
+    const calendarId=`holidays-${locale.toLowerCase()}`;
+    if(!calendars.items.some((item)=>item.id===calendarId)){
+      await calendars.save({id:calendarId,name:"Feriados",color:"#e15d5d",visible:true});
+    }
+    const year=cursor.getFullYear();
+    const fixed=locale==="pt-BR"
+      ? [
+          [0,1,"Confraternização Universal"],
+          [3,21,"Tiradentes"],
+          [4,1,"Dia do Trabalho"],
+          [8,7,"Independência do Brasil"],
+          [9,12,"Nossa Senhora Aparecida"],
+          [10,2,"Finados"],
+          [10,15,"Proclamação da República"],
+          [10,20,"Consciência Negra"],
+          [11,25,"Natal"],
+        ] as const
+      : [
+          [0,1,"New Year"],
+          [11,25,"Christmas"],
+        ] as const;
+    for(const [month,day,title] of fixed){
+      const start=new Date(year,month,day);
+      const id=`${calendarId}-${year}-${month+1}-${day}`;
+      await store.save({
+        id,
+        title,
+        description:"",
+        location:"",
+        startAt:start.toISOString(),
+        endAt:new Date(year,month,day+1).toISOString(),
+        allDay:true,
+        color:"#e15d5d",
+        participants:[],
+        calendarId,
+        recurrence:"none",
+        categories:["Feriado"],
+        status:"confirmed",
+      });
+    }
+  }
+
+  async function importHolidayIcs() {
+    const selected=await open({multiple:false,directory:false,filters:[{name:"Feriados ICS",extensions:["ics"]}]});
+    if(!selected||Array.isArray(selected)) return;
+    const raw=await bridge.readTextFile(selected);
+    const events=eventsFromIcs(raw);
+    if(events.length===0){window.alert("Nenhum feriado válido encontrado.");return;}
+    const calendarId="holidays-custom";
+    if(!calendars.items.some((item)=>item.id===calendarId)){
+      await calendars.save({id:calendarId,name:"Feriados personalizados",color:"#d06d3f",visible:true});
+    }
+    for(const event of events){
+      await store.save({...event,id:crypto.randomUUID(),calendarId,color:"#d06d3f",categories:[...new Set([...(event.categories??[]),"Feriado"])]});
+    }
   }
 
   async function exportIcs() {
@@ -564,7 +641,7 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
       }}
     >
       <b>{event.title || "Sem título"}</b>
-      {!event.allDay && <small>{new Date(event.startAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</small>}
+      {!event.allDay && <small>{formatCalendarTime(event.startAt,event.timezone)}</small>}
       {event.location && <small>{event.location}</small>}
     </button>
   );
@@ -595,6 +672,8 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
             ))}
           </div>
           <button className="secondary" onClick={() => void createCalendar()}><Icon name="plus" size={14}/> Calendário</button>
+          <button className="secondary" onClick={()=>void addHolidayCalendar()}><Icon name="calendar" size={14}/> Feriados</button>
+          <button className="secondary" onClick={()=>void importHolidayIcs()}><Icon name="upload" size={14}/> Feriados ICS</button>
           {eventClipboard&&<button className="secondary" onClick={()=>void pasteCalendarEvent(cursor)}><Icon name="copy" size={14}/> Colar evento</button>}
           <button className="secondary" onClick={() => void importIcs()}><Icon name="upload" size={14}/> Importar ICS</button>
           <button className="secondary" disabled={store.items.length===0} onClick={() => void exportIcs()}><Icon name="download" size={14}/> Exportar ICS</button>
@@ -605,6 +684,7 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
         </div>}
       </div>
 
+      <div className="calendar-timezones"><span><b>{settings.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone}</b>{formatCalendarTime(clock,settings.timezone)}</span>{(settings.secondaryTimezones??[]).map((zone)=><span key={zone}><b>{zone}</b>{formatCalendarTime(clock,zone)}</span>)}{settings.workplace&&<span><b>Local</b>{settings.workplace}</span>}</div>
       <div className="calendar-list-bar">
         {calendarList.map((calendar)=><span className={calendar.visible===false?"calendar-pill muted":"calendar-pill"} key={calendar.id}>
           <button onClick={()=>void toggleCalendar(calendar)}><i style={{background:calendar.color}}/>{calendar.name}{calendar.accountId&&<small>{accounts.find((item)=>item.id===calendar.accountId)?.email??""}</small>}</button>
@@ -644,7 +724,7 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
           const events = eventsByDay.get(date.toDateString()) ?? [];
           const today = date.toDateString() === new Date().toDateString();
           return <CalendarDropZone className={today ? "calendar-week-day today" : "calendar-week-day"} date={date} key={date.toISOString()}>
-            <header><span>{date.toLocaleDateString("pt-BR", { weekday: "short" }).toUpperCase()}</span><b>{date.getDate()}</b></header>
+            <header><span>{formatCalendarDate(date,{weekday:"short"}).toUpperCase()}</span><b>{date.getDate()}</b></header>
             <div>{events.length ? events.map((event)=><EventButton key={event.occurrenceId} event={event}/>) : <small className="mini-empty">Sem eventos</small>}</div>
           </CalendarDropZone>;
         })}
@@ -654,7 +734,7 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
         {(eventsByDay.get(cursor.toDateString()) ?? []).length
           ? (eventsByDay.get(cursor.toDateString()) ?? []).map((event) => (
               <article className="agenda-row" key={event.id}>
-                <time>{event.allDay ? "Dia inteiro" : new Date(event.startAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time>
+                <time>{event.allDay ? "Dia inteiro" : formatCalendarTime(event.startAt,event.timezone)}</time>
                 <EventButton event={event}/>
               </article>
             ))
@@ -664,7 +744,7 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
       {view === "agenda" && <div className="calendar-agenda">
         {agenda.length ? agenda.map((event) => (
           <article className="agenda-row" key={event.id}>
-            <time>{new Date(event.startAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}</time>
+            <time>{formatCalendarDate(event.startAt,{day:"2-digit",month:"short",year:"numeric"})}</time>
             <EventButton event={event}/>
           </article>
         )) : <Empty icon="calendar" title="Agenda vazia" text="Crie ou importe eventos para começar."/>}
