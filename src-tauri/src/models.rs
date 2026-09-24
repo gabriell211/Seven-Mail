@@ -32,6 +32,8 @@ pub struct AccountProfile {
     pub smtp_port: Option<u16>,
     #[serde(default)]
     pub security_mode: Option<String>,
+    #[serde(default)]
+    pub aliases: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
