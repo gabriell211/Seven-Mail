@@ -4,7 +4,7 @@ use crate::{
     providers,
     storage::{self, AppPaths},
 };
-use async_imap::{types::Flag, Client};
+use async_imap::{types::{Flag, NameAttribute}, Client};
 use async_native_tls::{TlsConnector, TlsStream};
 use async_std::net::TcpStream;
 use futures::TryStreamExt;
@@ -182,5 +182,159 @@ pub fn sync_latest(paths: &AppPaths, account: &AccountProfile, limit: u32) -> Re
 
         session.logout().await.map_err(|error| error.to_string())?;
         Ok(cached)
+    })
+}
+
+
+#[derive(Default)]
+struct SpecialFolders {
+    archive: Option<String>,
+    trash: Option<String>,
+    junk: Option<String>,
+}
+
+async fn special_folders(
+    session: &mut async_imap::Session<TlsStream<TcpStream>>,
+) -> Result<SpecialFolders, String> {
+    let stream = session
+        .list(Some(""), Some("*"))
+        .await
+        .map_err(|error| format!("Falha ao listar pastas IMAP: {error}"))?;
+    let names: Vec<_> = stream
+        .try_collect()
+        .await
+        .map_err(|error| format!("Falha ao receber pastas IMAP: {error}"))?;
+
+    let mut folders = SpecialFolders::default();
+    for name in names {
+        let attributes = name.attributes();
+        if folders.archive.is_none()
+            && attributes.iter().any(|value| matches!(value, NameAttribute::Archive | NameAttribute::All))
+        {
+            folders.archive = Some(name.name().to_owned());
+        }
+        if folders.trash.is_none()
+            && attributes.iter().any(|value| matches!(value, NameAttribute::Trash))
+        {
+            folders.trash = Some(name.name().to_owned());
+        }
+        if folders.junk.is_none()
+            && attributes.iter().any(|value| matches!(value, NameAttribute::Junk))
+        {
+            folders.junk = Some(name.name().to_owned());
+        }
+    }
+
+    Ok(folders)
+}
+
+async fn apply_remote_action(
+    session: &mut async_imap::Session<TlsStream<TcpStream>>,
+    operation: &crate::models::QueueOperation,
+    folders: &SpecialFolders,
+) -> Result<(), String> {
+    let remote_id = operation
+        .payload
+        .get("remoteId")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| "A ação não possui UID remoto.".to_string())?;
+
+    match operation.kind.as_str() {
+        "read" => {
+            let read = operation
+                .payload
+                .get("read")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(true);
+            let query = if read { "+FLAGS.SILENT (\\Seen)" } else { "-FLAGS.SILENT (\\Seen)" };
+            let stream = session
+                .uid_store(remote_id, query)
+                .await
+                .map_err(|error| format!("Falha ao alterar leitura: {error}"))?;
+            let _: Vec<_> = stream
+                .try_collect()
+                .await
+                .map_err(|error| format!("Falha ao confirmar leitura: {error}"))?;
+        }
+        "flag" => {
+            let flagged = operation
+                .payload
+                .get("flagged")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(true);
+            let query = if flagged { "+FLAGS.SILENT (\\Flagged)" } else { "-FLAGS.SILENT (\\Flagged)" };
+            let stream = session
+                .uid_store(remote_id, query)
+                .await
+                .map_err(|error| format!("Falha ao alterar sinalização: {error}"))?;
+            let _: Vec<_> = stream
+                .try_collect()
+                .await
+                .map_err(|error| format!("Falha ao confirmar sinalização: {error}"))?;
+        }
+        "move" => {
+            let target = operation
+                .payload
+                .get("target")
+                .and_then(|value| value.as_str())
+                .unwrap_or("archive");
+            let mailbox = match target {
+                "archive" => folders.archive.as_deref().unwrap_or("Archive"),
+                "trash" => folders.trash.as_deref().unwrap_or("Trash"),
+                "spam" => folders.junk.as_deref().unwrap_or("Junk"),
+                "inbox" => "INBOX",
+                _ => return Err("Destino IMAP não suportado.".to_string()),
+            };
+            session
+                .uid_mv(remote_id, mailbox)
+                .await
+                .map_err(|error| format!("Falha ao mover mensagem: {error}"))?;
+        }
+        _ => return Err("Operação IMAP não suportada.".to_string()),
+    }
+
+    Ok(())
+}
+
+pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize, String> {
+    let Some(first) = storage::claim_next_mail_action(paths, &account.id)? else {
+        return Ok(0);
+    };
+
+    async_std::task::block_on(async {
+        let mut session = match login(account).await {
+            Ok(session) => session,
+            Err(error) => {
+                storage::retry_later(paths, &first.id)?;
+                return Err(error);
+            }
+        };
+
+        if let Err(error) = session.select("INBOX").await {
+            storage::retry_later(paths, &first.id)?;
+            return Err(format!("Não foi possível abrir INBOX para sincronizar ações: {error}"));
+        }
+
+        let folders = special_folders(&mut session).await.unwrap_or_default();
+        let mut applied = 0usize;
+        let mut current = Some(first);
+
+        while let Some(operation) = current {
+            match apply_remote_action(&mut session, &operation, &folders).await {
+                Ok(()) => {
+                    storage::complete(paths, &operation.id)?;
+                    applied += 1;
+                }
+                Err(error) => {
+                    storage::retry_later(paths, &operation.id)?;
+                    let _ = session.logout().await;
+                    return Err(error);
+                }
+            }
+            current = storage::claim_next_mail_action(paths, &account.id)?;
+        }
+
+        session.logout().await.map_err(|error| error.to_string())?;
+        Ok(applied)
     })
 }
