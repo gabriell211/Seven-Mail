@@ -426,7 +426,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 ## Calendários
 
 - [x] Múltiplos calendários
-- [ ] Calendários por conta
+- [x] Calendários por conta
 - [ ] Calendários compartilhados
 - [x] Calendários locais
 - [x] Mostrar/ocultar calendários
@@ -440,7 +440,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Mês
 - [x] Agenda
 - [x] Visualização de 3 dias
-- [ ] Calendários lado a lado
+- [x] Calendários lado a lado
 - [x] Hoje
 
 ## Eventos
@@ -461,39 +461,39 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Evento privado
 - [x] Lembretes
 - [x] Recorrência
-- [ ] Exceções de recorrência
-- [ ] Editar somente esta ocorrência
-- [ ] Editar esta e as próximas ocorrências
+- [x] Exceções de recorrência
+- [x] Editar somente esta ocorrência
+- [x] Editar esta e as próximas ocorrências
 - [ ] Copiar, recortar e colar eventos
 - [x] Anexos
 - [x] Categorias
 
 ## Reuniões
 
-- [ ] Criar reunião
+- [x] Criar reunião
 - [x] Salvar reunião como rascunho
-- [ ] Convidar participantes
-- [ ] Assistente de agendamento
-- [ ] Consulta de disponibilidade livre/ocupado
-- [ ] Sugestão de horários disponíveis
-- [ ] Detecção de conflitos de agenda
-- [ ] Reserva de salas e recursos
-- [ ] Responder convite
-- [ ] Aceitar
-- [ ] Aceitar provisoriamente
-- [ ] Recusar
+- [x] Convidar participantes
+- [x] Assistente de agendamento
+- [x] Consulta de disponibilidade livre/ocupado
+- [x] Sugestão de horários disponíveis
+- [x] Detecção de conflitos de agenda
+- [x] Reserva de salas e recursos
+- [x] Responder convite
+- [x] Aceitar
+- [x] Aceitar provisoriamente
+- [x] Recusar
 - [ ] Manter reunião recusada no calendário
 - [ ] Manter convite na caixa de entrada após responder
-- [ ] Acompanhar reunião sem bloquear o horário quando suportado
+- [x] Acompanhar reunião sem bloquear o horário quando suportado
 - [ ] Sugerir novo horário quando suportado
 - [ ] Acompanhar respostas
-- [ ] Atualizar participantes
+- [x] Atualizar participantes
 - [ ] Enviar atualização somente para participantes adicionados/removidos
-- [ ] Cancelar reunião
+- [x] Cancelar reunião
 - [ ] Adicionar reunião online por integração
 - [ ] Recusar automaticamente convites em conflito
 - [ ] Iniciar reuniões mais tarde ou terminar mais cedo
-- [ ] Calendários de grupo
+- [x] Calendários de grupo
 - [ ] Compartilhar calendário
 - [ ] Permissões de calendário
 - [ ] Delegação de calendário
@@ -502,7 +502,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 - [x] Importar ICS
 - [x] Exportar ICS
-- [ ] Abrir convites ICS
+- [x] Abrir convites ICS
 - [x] Fusos horários
 - [ ] Múltiplos fusos horários
 - [ ] Horário de trabalho
@@ -542,12 +542,12 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Catálogo global de endereços
 - [ ] Diretório corporativo
 - [ ] Consulta LDAP
-- [ ] Grupos de distribuição
+- [x] Grupos de distribuição
 - [ ] Destinatários sugeridos
 - [x] Pesquisa
 - [x] Mesclar duplicados
 - [x] Detecção de duplicados
-- [ ] Edição em massa
+- [x] Edição em massa
 - [x] Exclusão em massa
 
 ## Importação e exportação
@@ -1009,7 +1009,7 @@ A aplicação deverá utilizar:
 - [ ] Eventos
 - [x] Recorrência
 - [ ] Convites
-- [ ] Assistente de agendamento
+- [x] Assistente de agendamento
 - [ ] Livre/ocupado
 - [ ] Compartilhamento e delegação
 - [x] ICS
