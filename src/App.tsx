@@ -203,7 +203,7 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onCreateTaskFromMessage,onCreateCategory,onDeleteCategory,onToggleCategory,onUseSavedSearch,onDeleteSavedSearch,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,markReadDelayMs,readingPane,previewLines}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateCategory:()=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;markReadDelayMs:number;readingPane:AppSettings["readingPane"];previewLines:AppSettings["previewLines"]}) {
+function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onCreateTaskFromMessage,onCreateCategory,onDeleteCategory,onToggleCategory,onUseSavedSearch,onDeleteSavedSearch,onCreateFolder,onRenameFolder,onDeleteFolder,onMoveToFolder,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,markReadDelayMs,readingPane,previewLines}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateCategory:()=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;onCreateFolder?:()=>void;onRenameFolder?:(folder:MailFolder)=>void;onDeleteFolder?:(folder:MailFolder)=>void;onMoveToFolder?:(message:MailMessage,folder:MailFolder)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;markReadDelayMs:number;readingPane:AppSettings["readingPane"];previewLines:AppSettings["previewLines"]}) {
   const [selectedId,setSelectedId] = useState<string>();
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
   const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread">("newest");
@@ -235,12 +235,15 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
     <aside className="folder-pane">
       <button className="compose-button" onClick={onCompose}><Icon name="plus" size={17}/> Novo e-mail</button>
       <div className="account-line"><i style={{background:activeAccount?.color||"#7868ff"}}/><span>{activeAccount?.email||(accounts.length?"Todas as contas":"Nenhuma conta")}</span></div>
+      <div className="group-title folder-group-title"><span>PASTAS</span>{activeAccount&&onCreateFolder&&<button className="group-add" aria-label="Nova pasta" onClick={onCreateFolder}><Icon name="plus" size={13}/></button>}</div>
       <nav className="folders">
         {visibleFolders.map(item=>{
           const unread = messages.filter(message=>message.folder===item.name&&!message.isRead).length;
-          return <button key={item.path} className={folder.path===item.path?"folder active":"folder"} onClick={()=>onFolderChange(item)}>
+          const button=<button className={folder.path===item.path?"folder active":"folder"} onClick={()=>onFolderChange(item)}>
             <Icon name={folderIcon(item.role)} size={17}/><span>{item.name}</span>{unread>0&&<b>{unread}</b>}
           </button>;
+          if(item.role!=="custom"||!activeAccount) return <div key={item.path}>{button}</div>;
+          return <div className="organizer-row folder-organizer" key={item.path}>{button}<div className="folder-actions"><button className="organizer-delete folder-edit" aria-label={`Renomear ${item.name}`} onClick={()=>onRenameFolder?.(item)}><Icon name="settings" size={12}/></button><button className="organizer-delete" aria-label={`Excluir ${item.name}`} onClick={()=>onDeleteFolder?.(item)}><Icon name="x" size={12}/></button></div></div>;
         })}
       </nav>
       <div className="group-title"><span>FAVORITOS</span></div>
@@ -297,6 +300,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
 </div></header>
         <div className="sender"><span className="avatar big">{(selected.from.name||selected.from.email)[0].toUpperCase()}</span><div><b>{selected.from.name||selected.from.email}</b><small>{selected.from.email}</small></div><time>{new Date(selected.receivedAt).toLocaleString()}</time></div>
         {categories.length>0&&<div className="message-categories">{categories.map(category=>{const active=selected.categories.includes(category.name);return <button key={category.id} className={active?"category-chip active":"category-chip"} onClick={()=>onToggleCategory(selected,category)}><i style={{background:category.color}}/>{category.name}</button>;})}</div>}
+        {activeAccount&&onMoveToFolder&&folders.length>1&&<div className="move-folder-row"><span>Mover para</span><select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onMoveToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Escolher pasta...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select></div>}
         <article className="mail-body">{selected.bodyText||selected.preview}</article>
         <div className="reply-actions"><button className="secondary" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={15}/> Responder</button><button className="secondary" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people" size={15}/> Responder a todos</button><button className="secondary" onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward" size={15}/> Encaminhar</button><button className="secondary" onClick={()=>onCreateTaskFromMessage(selected)}><Icon name="check" size={15}/> Criar tarefa</button></div>
       </> : <div className="reading-empty"><Logo/><span className="eyebrow">SEVEN MAIL</span><h2>Selecione uma mensagem</h2><p>Leia, responda e organize sem sair da mesma tela.</p></div>}
@@ -431,6 +435,56 @@ export default function App() {
     ]);
     setCategories(nextCategories);
     setSavedSearches(nextSavedSearches);
+  }
+
+  async function refreshActiveFolders(account = activeAccount) {
+    if (!account) return;
+    const folders = await bridge.listFolders(account.id);
+    setMailFolders(folders.length ? folders : FALLBACK_FOLDERS);
+    return folders;
+  }
+
+  async function createCustomFolder() {
+    if (!activeAccount) return;
+    const name = window.prompt("Nome da nova pasta")?.trim();
+    if (!name) return;
+    await bridge.createFolder(activeAccount.id,name);
+    const folders = await refreshActiveFolders(activeAccount);
+    if (folders) {
+      const created = folders.find((item)=>item.path===name||item.name===name);
+      if (created) setSelectedFolder(created);
+    }
+  }
+
+  async function renameCustomFolder(folder: MailFolder) {
+    if (!activeAccount || folder.role!=="custom") return;
+    const name = window.prompt("Novo nome da pasta",folder.path)?.trim();
+    if (!name || name===folder.path) return;
+    await bridge.renameFolder(activeAccount.id,folder.path,folder.name,name);
+    const folders = await refreshActiveFolders(activeAccount);
+    if (selectedFolder.path===folder.path) {
+      const renamed = folders?.find((item)=>item.path===name||item.name===name);
+      if (renamed) setSelectedFolder(renamed);
+    }
+    setMessages(await bridge.listCachedMessages(activeAccount.id));
+  }
+
+  async function deleteCustomFolder(folder: MailFolder) {
+    if (!activeAccount || folder.role!=="custom") return;
+    if (!window.confirm(`Excluir a pasta "${folder.name}" e as mensagens nela?`)) return;
+    await bridge.deleteFolder(activeAccount.id,folder.path,folder.name);
+    const folders = await refreshActiveFolders(activeAccount);
+    if (selectedFolder.path===folder.path) {
+      setSelectedFolder(folders?.find((item)=>item.role==="inbox")??FALLBACK_FOLDERS[0]);
+    }
+    setMessages(await bridge.listCachedMessages(activeAccount.id));
+  }
+
+  async function moveToFolder(message: MailMessage, target: MailFolder) {
+    const updated = await bridge.moveMessageToFolder(message.accountId,message.id,target.path,target.name);
+    setMessages(await bridge.listCachedMessages(unified ? undefined : message.accountId));
+    void pushCloudMessage(updated).catch(() => undefined);
+    void bridge.flushMailActions(message.accountId).catch(() => undefined);
   }
 
   async function createCategory() {
@@ -972,7 +1026,7 @@ export default function App() {
         <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateCategory={()=>void createCategory()} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} markReadDelayMs={settings.markReadDelayMs} readingPane={settings.readingPane} previewLines={settings.previewLines}/>} 
+        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateCategory={()=>void createCategory()} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} markReadDelayMs={settings.markReadDelayMs} readingPane={settings.readingPane} previewLines={settings.previewLines}/>} 
         {section==="calendar"&&<PersistentCalendarView/>}
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
