@@ -3,6 +3,7 @@ mod imap_sync;
 mod interchange;
 mod local_crypto;
 mod models;
+mod pop3_sync;
 mod providers;
 mod storage;
 mod workspace;
@@ -106,7 +107,11 @@ fn test_imap_connection(account_id: String) -> Result<bool, String> {
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    imap_sync::test(&account)
+    if account.incoming_protocol.eq_ignore_ascii_case("pop3") {
+        pop3_sync::test(&account)
+    } else {
+        imap_sync::test(&account)
+    }
 }
 
 #[tauri::command]
@@ -116,7 +121,11 @@ fn sync_inbox(account_id: String, limit: Option<u32>) -> Result<usize, String> {
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    imap_sync::sync_latest(&paths, &account, limit.unwrap_or(50))
+    if account.incoming_protocol.eq_ignore_ascii_case("pop3") {
+        pop3_sync::sync_latest(&paths, &account, limit.unwrap_or(50))
+    } else {
+        imap_sync::sync_latest(&paths, &account, limit.unwrap_or(50))
+    }
 }
 
 #[tauri::command]
@@ -126,7 +135,16 @@ fn list_mail_folders(account_id: String) -> Result<Vec<MailFolder>, String> {
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    imap_sync::list_folders(&account)
+    if account.incoming_protocol.eq_ignore_ascii_case("pop3") {
+        Ok(vec![
+            MailFolder { name: "Caixa de entrada".into(), path: "INBOX".into(), role: "inbox".into() },
+            MailFolder { name: "Arquivados".into(), path: "Archive".into(), role: "archive".into() },
+            MailFolder { name: "Spam".into(), path: "Junk".into(), role: "spam".into() },
+            MailFolder { name: "Lixeira".into(), path: "Trash".into(), role: "trash".into() },
+        ])
+    } else {
+        imap_sync::list_folders(&account)
+    }
 }
 
 #[tauri::command]
@@ -141,7 +159,15 @@ fn sync_mail_folder(
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    imap_sync::sync_folder(&paths, &account, &path, &label, limit.unwrap_or(50))
+    if account.incoming_protocol.eq_ignore_ascii_case("pop3") {
+        if path.eq_ignore_ascii_case("INBOX") {
+            pop3_sync::sync_latest(&paths, &account, limit.unwrap_or(50))
+        } else {
+            Ok(0)
+        }
+    } else {
+        imap_sync::sync_folder(&paths, &account, &path, &label, limit.unwrap_or(50))
+    }
 }
 
 #[tauri::command]
@@ -194,7 +220,11 @@ fn flush_mail_actions(account_id: String) -> Result<usize, String> {
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    imap_sync::flush_actions(&paths, &account)
+    if account.incoming_protocol.eq_ignore_ascii_case("pop3") {
+        Ok(0)
+    } else {
+        imap_sync::flush_actions(&paths, &account)
+    }
 }
 
 #[tauri::command]
