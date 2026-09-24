@@ -1,4 +1,4 @@
-use crate::{models::WorkspaceDocument, storage::AppPaths};
+use crate::{local_crypto, models::WorkspaceDocument, storage::AppPaths};
 use std::{fs, io, path::{Path, PathBuf}};
 
 fn io_error(error: io::Error) -> String { error.to_string() }
@@ -27,13 +27,13 @@ fn kind_dir(paths: &AppPaths, kind: &str) -> Result<PathBuf, String> {
 }
 
 fn read_document(path: &Path) -> Result<WorkspaceDocument, String> {
-    let bytes = fs::read(path).map_err(io_error)?;
+    let bytes = local_crypto::read(path)?;
     serde_json::from_slice(&bytes).map_err(|error| error.to_string())
 }
 
 fn write_document(path: &Path, document: &WorkspaceDocument) -> Result<(), String> {
     let bytes = serde_json::to_vec_pretty(document).map_err(|error| error.to_string())?;
-    fs::write(path, bytes).map_err(io_error)
+    local_crypto::write(path, &bytes)
 }
 
 pub fn list_for_sync(paths: &AppPaths, kind: &str) -> Result<Vec<WorkspaceDocument>, String> {
