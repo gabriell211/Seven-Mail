@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS desktop_mail_messages (
   owner_id text NOT NULL DEFAULT (auth.user_id()),
   account_id uuid NOT NULL,
   remote_id text,
+  remote_folder text,
   folder text NOT NULL,
   subject text NOT NULL DEFAULT '',
   preview text NOT NULL DEFAULT '',
