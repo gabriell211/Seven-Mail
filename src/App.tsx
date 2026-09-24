@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 import { bridge } from "./lib/bridge";
+import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, PersistentRulesView, PersistentTasksView } from "./components/WorkspaceViews";
 import type { AccountProfile, AppSection, AppSettings, MailMessage, ProviderSettings, RuntimeInfo } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -365,11 +366,11 @@ export default function App() {
       </header>
       <div className="content">
         {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} onCompose={()=>setComposeOpen(true)} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"}/>} 
-        {section==="calendar"&&<CalendarView/>}
-        {section==="people"&&<PeopleView/>}
-        {section==="tasks"&&<TasksView/>}
-        {section==="notes"&&<NotesView/>}
-        {section==="rules"&&<RulesView/>}
+        {section==="calendar"&&<PersistentCalendarView/>}
+        {section==="people"&&<PersistentPeopleView query={search}/>}
+        {section==="tasks"&&<PersistentTasksView/>}
+        {section==="notes"&&<PersistentNotesView query={search}/>}
+        {section==="rules"&&<PersistentRulesView/>}
         {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime}/>}
       </div>
     </main>
