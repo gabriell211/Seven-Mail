@@ -201,7 +201,7 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,onOpenDraft,onComposeFromMessage,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"forward")=>void;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean}) {
+function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,onOpenDraft,onComposeFromMessage,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,markReadDelayMs}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"forward")=>void;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;markReadDelayMs:number}) {
   const [selectedId,setSelectedId] = useState<string>();
   const selected = messages.find(m=>m.id===selectedId);
   const folderMessages = messages.filter(message=>message.folder===folder.name);
@@ -242,7 +242,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,on
             <span className="message-copy"><span className="message-meta"><b>Rascunho local</b><time>autosave</time></span><strong>{draft.subject||"(sem assunto)"}</strong><small>{draft.to?`Para: ${draft.to}`:(draft.bodyText||"Comece a escrever...")}</small></span>
             {draft.attachments.length>0&&<span className="draft-attachment-count"><Icon name="paperclip" size={13}/>{draft.attachments.length}</span>}
           </button>)}
-          {folderMessages.map(message=><button key={message.id} className={"message "+(selectedId===message.id?"selected ":"")+(!message.isRead?"unread":"")} onClick={()=>{setSelectedId(message.id);if(!message.isRead) void act(message.id,"read");}}>
+          {folderMessages.map(message=><button key={message.id} className={"message "+(selectedId===message.id?"selected ":"")+(!message.isRead?"unread":"")} onClick={()=>{setSelectedId(message.id);if(!message.isRead){window.setTimeout(()=>void act(message.id,"read"),markReadDelayMs);}}}>
             <span className="avatar">{(message.from.name||message.from.email)[0].toUpperCase()}</span>
             <span className="message-copy"><span className="message-meta"><b>{message.from.name||message.from.email}</b><time>{new Date(message.receivedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</time></span><strong>{message.subject||"(sem assunto)"}</strong><small>{message.preview}</small></span>
             {message.hasAttachments&&<Icon name="paperclip" size={14}/>}
@@ -636,6 +636,7 @@ export default function App() {
   }
 
   async function applyMessageAction(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox") {
+    if (action==="delete" && settings.confirmBeforeDelete && !window.confirm("Excluir esta mensagem?")) return;
     const message = messages.find((item)=>item.id===messageId);
     const accountId = activeAccount?.id ?? message?.accountId;
     if (!accountId) return;
@@ -686,7 +687,7 @@ export default function App() {
         <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"}/>} 
+        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} markReadDelayMs={settings.markReadDelayMs}/>} 
         {section==="calendar"&&<PersistentCalendarView/>}
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView/>}
