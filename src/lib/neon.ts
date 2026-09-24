@@ -2,19 +2,9 @@ import { createClient } from "@neondatabase/neon-js";
 import type { WorkspaceDocument, WorkspaceKind } from "../types";
 
 const databaseUrl = import.meta.env.VITE_NEON_DATABASE_URL?.trim();
-const authUrl = import.meta.env.VITE_NEON_AUTH_URL?.trim();
-const dataApiUrl = import.meta.env.VITE_NEON_DATA_API_URL?.trim();
+export const neonConfigured = Boolean(databaseUrl);
 
-export const neonConfigured = Boolean(databaseUrl || (authUrl && dataApiUrl));
-
-export const neonClient = databaseUrl
-  ? createClient(databaseUrl)
-  : authUrl && dataApiUrl
-    ? createClient({
-        auth: { url: authUrl },
-        dataApi: { url: dataApiUrl },
-      })
-    : null;
+export const neonClient = databaseUrl ? createClient(databaseUrl) : null;
 
 function requireClient() {
   if (!neonClient) {
