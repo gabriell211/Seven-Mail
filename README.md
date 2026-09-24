@@ -27,7 +27,7 @@ A proposta é reunir em um único aplicativo tudo o que normalmente é necessár
 - Importação e exportação
 - Segurança e privacidade
 
-> **Status:** Em desenvolvimento ativo. A linha desktop 0.3.x já possui cliente local-first funcional para Windows e Linux, com IMAP/SMTP, múltiplas contas, caixa unificada, composição, fila offline, regras, pesquisa avançada, calendário local, contatos, tarefas, notas e sincronização opcional com Neon.
+> **Status:** Em desenvolvimento ativo. A linha desktop 0.4.x já possui cliente local-first funcional para Windows e Linux, com IMAP/SMTP, múltiplas contas, caixa unificada, composição, fila offline, regras, pesquisa avançada, calendário local, contatos, tarefas, notas e sincronização opcional com Neon.
 
 ### Estado atual
 
