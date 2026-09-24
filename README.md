@@ -367,9 +367,9 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 ## Caixas compartilhadas e delegação
 
-- [ ] Adicionar caixa compartilhada
-- [ ] Caixa compartilhada como recurso
-- [ ] Caixa compartilhada como conta
+- [x] Adicionar caixa compartilhada
+- [x] Caixa compartilhada como recurso
+- [x] Caixa compartilhada como conta
 - [ ] Pastas compartilhadas
 - [ ] Calendário compartilhado
 - [ ] Arquivo compartilhado
@@ -377,12 +377,12 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Notificações por caixa compartilhada
 - [ ] Regras por caixa compartilhada
 - [ ] Respostas automáticas por caixa compartilhada
-- [ ] Enviar como
-- [ ] Enviar em nome de
-- [ ] Acesso delegado
-- [ ] Permissões de leitura
-- [ ] Permissões de edição
-- [ ] Permissões de gerenciamento de calendário
+- [x] Enviar como
+- [x] Enviar em nome de
+- [x] Acesso delegado
+- [x] Permissões de leitura
+- [x] Permissões de edição
+- [x] Permissões de gerenciamento de calendário
 
 ## Protocolos e provedores
 
@@ -510,7 +510,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Local de trabalho
 - [x] Horário de trabalho por dia
 - [ ] Calendários de feriados
-- [ ] Importação de feriados personalizados quando suportado
+- [x] Importação de feriados personalizados quando suportado
 
 ---
 
@@ -989,9 +989,9 @@ A aplicação deverá utilizar:
 - [x] Microsoft 365
 - [x] Configuração manual
 - [x] Perfis
-- [ ] Caixas compartilhadas
-- [ ] Delegação
-- [ ] Enviar como / em nome de
+- [x] Caixas compartilhadas
+- [x] Delegação
+- [x] Enviar como / em nome de
 - [x] Sincronização independente
 
 ## 0.4.0 — Offline
