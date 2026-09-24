@@ -181,10 +181,11 @@ export interface RuleItem {
   name: string;
   enabled: boolean;
   priority: number;
-  field: "from" | "to" | "subject" | "body" | "domain";
-  operator: "contains" | "equals";
+  field: "from" | "to" | "subject" | "body" | "domain" | "size" | "attachment" | "priority";
+  operator: "contains" | "equals" | "greater" | "less";
   value: string;
-  action: "archive" | "delete" | "spam" | "flag" | "read";
+  action: "archive" | "delete" | "spam" | "flag" | "read" | "move" | "copy" | "category" | "forward";
+  target?: string;
   stopProcessing?: boolean;
 }
 
