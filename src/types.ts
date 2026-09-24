@@ -81,7 +81,7 @@ export interface AppSettings {
 }
 
 
-export type WorkspaceKind = "calendar" | "contact" | "task" | "note" | "rule" | "category" | "saved-search" | "settings" | "draft";
+export type WorkspaceKind = "calendar" | "contact" | "task" | "note" | "rule" | "category" | "saved-search" | "signature" | "settings" | "draft";
 
 export interface WorkspaceDocument<T = Record<string, unknown>> {
   id: string;
@@ -137,6 +137,15 @@ export interface SavedSearchItem {
   id: string;
   name: string;
   query: string;
+}
+
+export interface SignatureItem {
+  id: string;
+  accountId: string;
+  name: string;
+  bodyText: string;
+  bodyHtml: string;
+  isDefault: boolean;
 }
 
 export interface NoteItem {
