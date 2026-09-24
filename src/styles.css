@@ -203,3 +203,9 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
   .composer-footer>div{width:100%;justify-content:flex-end;flex-wrap:wrap}
   .undo-send{left:14px;right:14px;bottom:14px;min-width:0;transform:none}
 }
+
+
+/* Local draft continuation */
+.local-draft-message{border-left:2px solid color-mix(in srgb,var(--accent) 62%,transparent);background:linear-gradient(90deg,color-mix(in srgb,var(--accent-soft) 52%,transparent),transparent 48%)}
+.draft-avatar{background:color-mix(in srgb,var(--accent) 12%,var(--surface-2));color:var(--accent)}
+.draft-attachment-count{display:flex;align-items:center;gap:3px;font-size:9px;color:var(--muted)}
