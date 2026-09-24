@@ -37,6 +37,38 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "longDescription": "Seven Mail é um cliente de e-mail desktop local-first com múltiplas contas, sincronização IMAP/SMTP, calendário, contatos, tarefas, notas, regras e integração opcional com Neon."
+    "longDescription": "Seven Mail é um cliente de e-mail desktop local-first com múltiplas contas, sincronização IMAP/SMTP, calendário, contatos, tarefas, notas, regras e integração opcional com Neon.",
+    "fileAssociations": [
+      {
+        "ext": [
+          "eml"
+        ],
+        "name": "Seven Mail message",
+        "description": "Mensagem de e-mail",
+        "mimeType": "message/rfc822",
+        "role": "Viewer",
+        "rank": "Default"
+      },
+      {
+        "ext": [
+          "ics"
+        ],
+        "name": "Seven Mail calendar",
+        "description": "Evento de calendário",
+        "mimeType": "text/calendar",
+        "role": "Viewer",
+        "rank": "Default"
+      }
+    ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "mailto",
+          "seven-mail"
+        ]
+      }
+    }
   }
 }
