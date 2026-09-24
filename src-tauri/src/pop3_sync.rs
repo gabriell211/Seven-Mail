@@ -83,6 +83,9 @@ async fn connect(account: &AccountProfile) -> Result<PopStream, String> {
     let mut stream = BufReader::new(tls);
     read_status(&mut stream).await?;
 
+    if !account.can("read") {
+        return Err("A conta compartilhada não possui permissão de leitura.".to_string());
+    }
     let username = account.username.as_deref().unwrap_or(&account.email);
     if account.oauth_enabled {
         let token = oauth::access_token(account)?;
@@ -100,7 +103,7 @@ async fn connect(account: &AccountProfile) -> Result<PopStream, String> {
         stream.get_mut().flush().await.map_err(|error| error.to_string())?;
         read_status(&mut stream).await?;
     } else {
-        let password = credentials::load(&account.id)?;
+        let password = credentials::load(account.credential_account_id())?;
         command(&mut stream, &format!("USER {username}")).await?;
         command(&mut stream, &format!("PASS {password}")).await?;
     }
