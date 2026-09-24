@@ -41,6 +41,43 @@ export function AccountsPanel({
     setOauthStatus((current)=>({...current,[account.id]:active}));
   }
 
+  async function addSharedMailbox() {
+    if(accounts.length===0){
+      window.alert("Adicione uma conta proprietária antes da caixa compartilhada.");
+      return;
+    }
+    const ownerEmail=window.prompt("Conta proprietária/autenticadora",accounts.find((item)=>item.isDefault)?.email??accounts[0].email)?.trim();
+    const owner=accounts.find((item)=>item.email.toLocaleLowerCase("pt-BR")===ownerEmail?.toLocaleLowerCase("pt-BR"));
+    if(!owner){
+      window.alert("Conta proprietária não encontrada.");
+      return;
+    }
+    const email=window.prompt("Endereço da caixa compartilhada")?.trim();
+    if(!email) return;
+    const displayName=window.prompt("Nome da caixa compartilhada",email.split("@")[0])?.trim()||email;
+    const shared:AccountProfile={
+      ...owner,
+      id:crypto.randomUUID(),
+      displayName,
+      email,
+      username:email,
+      isDefault:false,
+      isSharedMailbox:true,
+      sharedOwnerAccountId:owner.id,
+      sharedOwnerEmail:owner.email,
+      sharedMode:"account",
+      sharedPermissions:["read","edit","calendar","manage-calendar","send"],
+      sendMode:"as",
+      aliases:[],
+      muted:false,
+    };
+    await bridge.saveAccount(shared);
+    const next=[...accounts,shared];
+    onChange(next);
+    void pushCloudAccount(shared).catch(()=>undefined);
+    setEditing(shared);
+  }
+
   async function setDefault(accountId: string) {
     setBusyId(accountId);
     try {
@@ -104,7 +141,8 @@ export function AccountsPanel({
       <div className="settings-row account-settings">
         <div>
           <h3>Contas de e-mail</h3>
-          <p>Edite IMAP/POP3/SMTP, troque a credencial do keyring, teste a conexão e escolha a conta padrão.</p>
+          <p>Edite IMAP/POP3/SMTP, OAuth, DAV/LDAP, delegação e escolha a conta padrão.</p>
+          <button className="secondary account-shared-add" onClick={()=>void addSharedMailbox()}><Icon name="plus" size={14}/> Caixa compartilhada</button>
         </div>
         <div className="account-settings-list">
           {accounts.length === 0 && <div className="mini-empty">Nenhuma conta conectada.</div>}
@@ -114,7 +152,7 @@ export function AccountsPanel({
               <div className="account-settings-copy">
                 <b>{account.displayName}</b>
                 <span>{account.email}</span>
-                <small>{status[account.id] || (account.muted ? "Conta silenciada" : account.isDefault ? "Conta padrão" : account.provider)}</small>
+                <small>{status[account.id] || (account.muted ? "Conta silenciada" : account.isSharedMailbox ? `Compartilhada · ${account.sendMode==="on-behalf"?"em nome de":"enviar como"}` : account.isDefault ? "Conta padrão" : account.provider)}</small>
               </div>
               <div className="account-settings-actions">
                 {!account.isDefault && <button className="ghost" disabled={busyId === account.id} onClick={() => void setDefault(account.id)}>Tornar padrão</button>}
@@ -153,6 +191,11 @@ export function AccountsPanel({
               <label><span>Timeout</span><select value={editing.connectionTimeoutSeconds ?? 30} onChange={(event) => setEditing({ ...editing, connectionTimeoutSeconds: Number(event.target.value) as AccountProfile["connectionTimeoutSeconds"] })}><option value={10}>10 s</option><option value={20}>20 s</option><option value={30}>30 s</option><option value={60}>60 s</option><option value={120}>120 s</option></select></label>
               <label><span>Cor</span><input type="color" value={editing.color} onChange={(event) => setEditing({ ...editing, color: event.target.value })} /></label>
               <label className="inline-check"><input type="checkbox" checked={Boolean(editing.muted)} onChange={(event) => setEditing({ ...editing, muted: event.target.checked })} /> Silenciar sincronização e notificações desta conta</label>
+              {editing.isSharedMailbox&&<>
+                <label><span>Modo compartilhado</span><select value={editing.sharedMode??"account"} onChange={(event)=>setEditing({...editing,sharedMode:event.target.value as "resource"|"account"})}><option value="account">Como conta</option><option value="resource">Como recurso</option></select></label>
+                <label><span>Modo de envio</span><select value={editing.sendMode??"as"} onChange={(event)=>setEditing({...editing,sendMode:event.target.value as "as"|"on-behalf"})}><option value="as">Enviar como</option><option value="on-behalf">Enviar em nome de</option></select></label>
+                <label className="full"><span>Permissões</span><div className="permission-checks">{(["read","edit","calendar","manage-calendar","send"] as const).map((permission)=><label key={permission}><input type="checkbox" checked={(editing.sharedPermissions??[]).includes(permission)} onChange={(event)=>{const current=editing.sharedPermissions??[];setEditing({...editing,sharedPermissions:event.target.checked?[...new Set([...current,permission])]:current.filter((item)=>item!==permission)})}}/>{permission==="read"?"Leitura":permission==="edit"?"Edição":permission==="calendar"?"Calendário":permission==="manage-calendar"?"Gerenciar calendário":"Envio"}</label>)}</div></label>
+              </>}
               <label className="full"><span>URL CalDAV</span><input value={editing.caldavUrl ?? ""} onChange={(event) => setEditing({ ...editing, caldavUrl: event.target.value })} placeholder="https://servidor/dav/calendario/"/></label>
               <label className="full"><span>URL CardDAV</span><input value={editing.carddavUrl ?? ""} onChange={(event) => setEditing({ ...editing, carddavUrl: event.target.value })} placeholder="https://servidor/dav/contatos/"/></label>
               <label className="full inline-check"><input type="checkbox" checked={Boolean(editing.oauthEnabled)} onChange={(event)=>{
