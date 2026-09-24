@@ -162,6 +162,8 @@ export interface TaskItem {
   reminderNotifiedAt?: string;
   completedAt?: string;
   relatedMessageId?: string;
+  recurrence?: "none" | "daily" | "weekly" | "monthly" | "yearly";
+  categories?: string[];
 }
 
 export interface CategoryItem {
