@@ -1,5 +1,6 @@
 mod credentials;
 mod imap_sync;
+mod interchange;
 mod models;
 mod providers;
 mod storage;
@@ -261,6 +262,26 @@ fn clear_cache() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    interchange::read_text_file(&path)
+}
+
+#[tauri::command]
+fn write_text_file(path: String, content: String) -> Result<(), String> {
+    interchange::write_text_file(&path, &content)
+}
+
+#[tauri::command]
+fn import_eml(account_id: String, path: String) -> Result<MailMessage, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    interchange::import_eml(&paths, &account, &path)
+}
+
+#[tauri::command]
 fn list_workspace(kind: String) -> Result<Vec<WorkspaceDocument>, String> {
     workspace::list(&AppPaths::resolve()?, &kind)
 }
@@ -383,6 +404,9 @@ pub fn run() {
             message_action,
             move_message_to_folder,
             clear_cache,
+            read_text_file,
+            write_text_file,
+            import_eml,
             list_workspace,
             list_workspace_for_sync,
             upsert_workspace,
