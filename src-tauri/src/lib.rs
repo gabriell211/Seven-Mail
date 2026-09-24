@@ -10,7 +10,7 @@ mod workspace;
 use models::{AccountProfile, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
 use storage::AppPaths;
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 struct DesktopState {
     close_to_tray: Mutex<bool>,
@@ -19,6 +19,11 @@ struct DesktopState {
 #[tauri::command]
 fn runtime_info() -> Result<RuntimeInfo, String> {
     Ok(AppPaths::resolve()?.runtime_info())
+}
+
+#[tauri::command]
+fn initial_open_requests() -> Vec<String> {
+    std::env::args().skip(1).collect()
 }
 
 #[tauri::command]
@@ -477,9 +482,21 @@ fn import_workspace(documents: Vec<WorkspaceDocument>) -> Result<usize, String> 
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            let requests = argv.into_iter().skip(1).collect::<Vec<_>>();
+            if !requests.is_empty() {
+                let _ = app.emit("seven-mail:desktop-open", requests);
+            }
+        }))
         .manage(DesktopState {
             close_to_tray: Mutex::new(true),
         })
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(
@@ -537,6 +554,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            initial_open_requests,
             set_close_to_tray,
             list_accounts,
             save_account,
