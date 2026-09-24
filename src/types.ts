@@ -23,6 +23,8 @@ export interface AccountProfile {
   imapPort?: number;
   pop3Host?: string;
   pop3Port?: number;
+  caldavUrl?: string;
+  carddavUrl?: string;
   smtpHost?: string;
   smtpPort?: number;
   securityMode?: "tls" | "starttls";
