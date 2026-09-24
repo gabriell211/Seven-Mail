@@ -40,6 +40,9 @@ export const bridge = {
   moveMessageToFolder: (accountId: string, messageId: string, targetPath: string, targetLabel: string): Promise<MailMessage> =>
     command("move_message_to_folder", { accountId, messageId, targetPath, targetLabel }),
   clearCache: (): Promise<void> => command("clear_cache"),
+  readTextFile: (path: string): Promise<string> => command("read_text_file", { path }),
+  writeTextFile: (path: string, content: string): Promise<void> => command("write_text_file", { path, content }),
+  importEml: (accountId: string, path: string): Promise<MailMessage> => command("import_eml", { accountId, path }),
   listWorkspace: <T = Record<string, unknown>>(kind: WorkspaceKind): Promise<Array<WorkspaceDocument<T>>> => command("list_workspace", { kind }),
   listWorkspaceForSync: <T = Record<string, unknown>>(kind: WorkspaceKind): Promise<Array<WorkspaceDocument<T>>> => command("list_workspace_for_sync", { kind }),
   upsertWorkspace: <T = Record<string, unknown>>(document: WorkspaceDocument<T>): Promise<WorkspaceDocument<T>> => command("upsert_workspace", { document }),
