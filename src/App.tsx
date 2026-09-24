@@ -74,7 +74,18 @@ const DEFAULT_SETTINGS: AppSettings = {
   warnSuspiciousLinks: true,
   externalSenderWarning: true,
   appLockEnabled: false,
-  appLockMinutes: 5
+  appLockMinutes: 5,
+  quickSteps: [],
+  shortcuts: {
+    newMessage:"ctrl+n",
+    search:"ctrl+k",
+    reply:"r",
+    replyAll:"shift+r",
+    forward:"f",
+    archive:"e",
+    delete:"delete",
+    toggleRead:"u"
+  }
 };
 
 const NAV: Array<{id:AppSection;label:string;icon:IconName}> = [
@@ -113,6 +124,20 @@ const COLORS = ["#7868ff","#21a6a1","#ef7350","#cb59d8","#3d83f6"];
 
 function conversationKey(subject: string): string {
   return subject.toLocaleLowerCase("pt-BR").replace(/^(re|enc|fw|fwd):\s*/g,"").replace(/\s+/g," ").trim();
+}
+
+function shortcutMatches(event:KeyboardEvent,binding:string|undefined):boolean {
+  if(!binding) return false;
+  const parts=binding.toLocaleLowerCase("en-US").split("+").map((part)=>part.trim()).filter(Boolean);
+  const key=parts.at(-1);
+  if(!key) return false;
+  const normalizedKey=event.key.toLocaleLowerCase("en-US");
+  const keyMatch=key==="delete"?event.key==="Delete":normalizedKey===key;
+  return keyMatch
+    && event.ctrlKey===parts.includes("ctrl")
+    && event.metaKey===parts.includes("meta")
+    && event.altKey===parts.includes("alt")
+    && event.shiftKey===parts.includes("shift");
 }
 
 function notificationsMutedNow(settings: AppSettings): boolean {
