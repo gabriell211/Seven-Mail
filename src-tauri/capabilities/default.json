@@ -3,12 +3,14 @@
   "identifier": "default",
   "description": "Default desktop capability",
   "windows": [
-    "main"
+    "main",
+    "message-*"
   ],
   "permissions": [
     "core:default",
     "dialog:default",
     "autostart:default",
-    "notification:default"
+    "notification:default",
+    "core:webview:allow-create-webview-window"
   ]
 }
