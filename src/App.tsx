@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 import { bridge } from "./lib/bridge";
 import type { AccountProfile, AppSection, AppSettings, MailMessage, RuntimeInfo } from "./types";
@@ -237,10 +237,10 @@ function SettingsView({settings,onChange,runtime}:{settings:AppSettings;onChange
   </Workspace>;
 }
 
-function Workspace({title,eyebrow,action,onAction,children}:{title:string;eyebrow:string;action?:string;onAction?:()=>void;children:React.ReactNode}) {
+function Workspace({title,eyebrow,action,onAction,children}:{title:string;eyebrow:string;action?:string;onAction?:()=>void;children:ReactNode}) {
   return <div className="workspace"><header className="workspace-header"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1></div>{action&&<button className="primary" onClick={onAction}><Icon name="plus" size={15}/>{action}</button>}</header>{children}</div>;
 }
-function Feature({icon,title,children}:{icon:IconName;title:string;children:React.ReactNode}) { return <article className="feature"><div className="empty-symbol small-symbol"><Icon name={icon}/></div><h3>{title}</h3><p>{children}</p></article>; }
+function Feature({icon,title,children}:{icon:IconName;title:string;children:ReactNode}) { return <article className="feature"><div className="empty-symbol small-symbol"><Icon name={icon}/></div><h3>{title}</h3><p>{children}</p></article>; }
 
 export default function App() {
   const [section,setSection] = useState<AppSection>("mail");
