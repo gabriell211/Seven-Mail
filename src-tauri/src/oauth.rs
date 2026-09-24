@@ -86,7 +86,7 @@ fn parse_token_response(
         expires_at,
         scope: response.get("scope").and_then(Value::as_str).map(ToOwned::to_owned),
     };
-    store(&account.id, &state)?;
+    store(account.credential_account_id(), &state)?;
     Ok(state)
 }
 
@@ -127,7 +127,7 @@ pub fn exchange_code(
 }
 
 pub fn refresh(account: &AccountProfile) -> Result<OAuthTokenState, String> {
-    let current = load(&account.id)?
+    let current = load(account.credential_account_id())?
         .ok_or_else(|| "A conta ainda não foi autorizada por OAuth.".to_string())?;
     let refresh_token = current
         .refresh_token
@@ -152,7 +152,7 @@ pub fn refresh(account: &AccountProfile) -> Result<OAuthTokenState, String> {
 }
 
 pub fn access_token(account: &AccountProfile) -> Result<String, String> {
-    let state = load(&account.id)?
+    let state = load(account.credential_account_id())?
         .ok_or_else(|| "A conta ainda não foi autorizada por OAuth.".to_string())?;
 
     let expires_soon = state
