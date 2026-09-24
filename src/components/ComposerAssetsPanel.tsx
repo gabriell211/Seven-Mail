@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { Icon } from "../icons";
 import { bridge } from "../lib/bridge";
 import { pushCloudDocument } from "../lib/neon";
@@ -55,6 +56,48 @@ export function ComposerAssetsPanel() {
     await reload();
   }
 
+  async function importTemplateFile(){
+    const selected=await open({
+      multiple:false,
+      directory:false,
+      filters:[{name:"Modelo",extensions:["json","txt","html","htm"]}],
+    });
+    if(!selected||Array.isArray(selected)) return;
+    const raw=await bridge.readTextFile(selected);
+    const lower=selected.toLowerCase();
+    const fileName=selected.split(/[\\/]/).pop()?.replace(/\.[^.]+$/,"")||"Modelo importado";
+    let value:MailTemplateItem;
+    if(lower.endsWith(".json")){
+      const parsed=JSON.parse(raw) as Partial<MailTemplateItem>;
+      value={
+        id:crypto.randomUUID(),
+        name:parsed.name?.trim()||fileName,
+        subject:parsed.subject??"",
+        bodyText:parsed.bodyText??"",
+        bodyHtml:parsed.bodyHtml??textHtml(parsed.bodyText??""),
+      };
+    }else if(lower.endsWith(".html")||lower.endsWith(".htm")){
+      const documentNode=new DOMParser().parseFromString(raw,"text/html");
+      documentNode.querySelectorAll("script,iframe,object,embed,form").forEach((node)=>node.remove());
+      value={id:crypto.randomUUID(),name:fileName,subject:"",bodyText:documentNode.body.innerText,bodyHtml:documentNode.body.innerHTML};
+    }else{
+      value={id:crypto.randomUUID(),name:fileName,subject:"",bodyText:raw,bodyHtml:textHtml(raw)};
+    }
+    const document:WorkspaceDocument<MailTemplateItem>={id:value.id,kind:"template",updatedAt:new Date().toISOString(),payload:value};
+    await bridge.upsertWorkspace(document);
+    void pushCloudDocument(document).catch(()=>undefined);
+    await reload();
+  }
+
+  async function exportTemplateFile(item:MailTemplateItem){
+    const destination=await saveDialog({
+      defaultPath:`${item.name.replace(/[\\/:*?"<>|]/g,"-")||"modelo"}.sevenmail-template.json`,
+      filters:[{name:"Modelo Seven Mail",extensions:["json"]}],
+    });
+    if(!destination) return;
+    await bridge.writeTextFile(destination,JSON.stringify({...item,exportedAt:new Date().toISOString()},null,2));
+  }
+
   function newTemplate(){
     setEditing({kind:"template",value:{id:crypto.randomUUID(),name:"",subject:"",bodyText:"",bodyHtml:""}});
   }
@@ -67,8 +110,8 @@ export function ComposerAssetsPanel() {
       <div><h3>Modelos e blocos</h3><p>Conteúdo reutilizável para acelerar a composição sem depender de serviços externos.</p></div>
       <div className="composer-assets">
         <section>
-          <header><b>Modelos</b><button className="secondary" onClick={newTemplate}><Icon name="plus" size={13}/> Novo modelo</button></header>
-          {templates.length===0?<small>Nenhum modelo salvo.</small>:templates.map((item)=><article key={item.id}><button onClick={()=>setEditing({kind:"template",value:{...item}})}><b>{item.name}</b><span>{item.subject||"(sem assunto)"}</span></button><button className="icon-button" onClick={()=>void remove("template",item.id)}><Icon name="trash" size={13}/></button></article>)}
+          <header><b>Modelos</b><div className="composer-assets-header-actions"><button className="secondary" onClick={()=>void importTemplateFile()}><Icon name="upload" size={13}/> Importar</button><button className="secondary" onClick={newTemplate}><Icon name="plus" size={13}/> Novo modelo</button></div></header>
+          {templates.length===0?<small>Nenhum modelo salvo.</small>:templates.map((item)=><article key={item.id}><button onClick={()=>setEditing({kind:"template",value:{...item}})}><b>{item.name}</b><span>{item.subject||"(sem assunto)"}</span></button><button className="icon-button" title="Exportar modelo" onClick={()=>void exportTemplateFile(item)}><Icon name="download" size={13}/></button><button className="icon-button" onClick={()=>void remove("template",item.id)}><Icon name="trash" size={13}/></button></article>)}
         </section>
         <section>
           <header><b>Blocos reutilizáveis</b><button className="secondary" onClick={newBlock}><Icon name="plus" size={13}/> Novo bloco</button></header>
