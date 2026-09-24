@@ -452,22 +452,32 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
         setSelectedId(folderMessages[Math.max(0,index<=0?0:index-1)].id);
         return;
       }
-      if (!current || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (!current) return;
 
-      const key = event.key.toLowerCase();
-      if (key==="r") {
+      const quickStep=(settings.quickSteps??[]).find((step)=>shortcutMatches(event,step.shortcut));
+      if(quickStep){
         event.preventDefault();
-        onComposeFromMessage(current,event.shiftKey?"replyAll":"reply");
-      } else if (key==="f") {
+        void runQuickStep(current,quickStep);
+        return;
+      }
+
+      const bindings=settings.shortcuts??DEFAULT_SETTINGS.shortcuts!;
+      if(shortcutMatches(event,bindings.replyAll)){
+        event.preventDefault();
+        onComposeFromMessage(current,"replyAll");
+      }else if(shortcutMatches(event,bindings.reply)){
+        event.preventDefault();
+        onComposeFromMessage(current,"reply");
+      }else if(shortcutMatches(event,bindings.forward)){
         event.preventDefault();
         onComposeFromMessage(current,"forward");
-      } else if (key==="e") {
+      }else if(shortcutMatches(event,bindings.archive)){
         event.preventDefault();
         void act(current.id,"archive");
-      } else if (key==="u") {
+      }else if(shortcutMatches(event,bindings.toggleRead)){
         event.preventDefault();
         void act(current.id,current.isRead?"unread":"read");
-      } else if (event.key==="Delete") {
+      }else if(shortcutMatches(event,bindings.delete)){
         event.preventDefault();
         void act(current.id,"delete");
       }
@@ -544,6 +554,36 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
     return "archive";
   }
 
+  async function runQuickStep(message:MailMessage,step:NonNullable<AppSettings["quickSteps"]>[number]){
+    let current=messages.find((item)=>item.id===message.id)??message;
+    for(const action of step.actions){
+      if(action.kind==="archive"||action.kind==="delete"||action.kind==="read"||action.kind==="flag"||action.kind==="pin"){
+        const mapped=action.kind==="read"
+          ? (current.isRead?"unread":"read")
+          : action.kind==="flag"
+            ? (current.isFlagged?"unflag":"flag")
+            : action.kind==="pin"
+              ? (current.isPinned?"unpin":"pin")
+              : action.kind;
+        await onMessageAction(current.id,mapped);
+        current={...current,
+          isRead:mapped==="read"?true:mapped==="unread"?false:current.isRead,
+          isFlagged:mapped==="flag"?true:mapped==="unflag"?false:current.isFlagged,
+          isPinned:mapped==="pin"?true:mapped==="unpin"?false:current.isPinned,
+        };
+      }else if(action.kind==="category"&&action.target){
+        const category=categories.find((item)=>item.name===action.target||item.id===action.target);
+        if(category&&!current.categories.includes(category.name)){
+          onToggleCategory(current,category);
+          current={...current,categories:[...current.categories,category.name]};
+        }
+      }else if(action.kind==="move"&&action.target&&onMoveToFolder){
+        const target=folders.find((item)=>item.path===action.target||item.name===action.target);
+        if(target) onMoveToFolder(current,target);
+      }
+    }
+  }
+
   async function act(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox") {
     const currentIndex=folderMessages.findIndex((message)=>message.id===messageId);
     await onMessageAction(messageId, action);
@@ -598,7 +638,18 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
       <nav className="folders">
         {visibleFolders.map(item=>{
           const unread = messages.filter(message=>message.folder===item.name&&!message.isRead).length;
-          const button=<button className={folder.path===item.path?"folder active":"folder"} onClick={()=>onFolderChange(item)}>
+          const button=<button
+            className={folder.path===item.path?"folder active":"folder"}
+            onClick={()=>onFolderChange(item)}
+            onDragOver={(event)=>{if(onMoveToFolder)event.preventDefault();}}
+            onDrop={(event)=>{
+              if(!onMoveToFolder)return;
+              event.preventDefault();
+              const messageId=event.dataTransfer.getData("application/x-seven-mail-message");
+              const dragged=messages.find((message)=>message.id===messageId);
+              if(dragged&&dragged.remoteFolder!==item.path) onMoveToFolder(dragged,item);
+            }}
+          >
             <Icon name={folderIcon(item.role)} size={17}/><span>{item.name}</span>{unread>0&&<b>{unread}</b>}
           </button>;
           if(item.role!=="custom"||!activeAccount) return <div className="organizer-row folder-organizer" key={item.path}>{button}<div className="folder-actions"><button className={favoriteFolderPaths.includes(item.path)?"organizer-delete active":"organizer-delete"} aria-label={`Favoritar ${item.name}`} onClick={()=>onToggleFolderFavorite?.(item)}><Icon name="star" size={12}/></button></div></div>;
@@ -646,7 +697,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
           </button>)}
           {messageGroups.map((group)=><section className="message-date-group" key={group.label}>
             <button className="message-group-header" onClick={()=>setCollapsedGroups((current)=>current.includes(group.label)?current.filter((item)=>item!==group.label):[...current,group.label])}><Icon name="chevron" size={12}/><b>{group.label}</b><span>{group.messages.length}</span></button>
-            {!collapsedGroups.includes(group.label)&&group.messages.map(message=>{const accent=conditionalAccent(message);return <button key={message.id} style={accent?{borderLeftColor:accent}:undefined} className={"message "+(accent?"conditional ":"")+(selectedId===message.id?"selected ":"")+(!message.isRead?"unread ":"")+(message.isPhishing?"phishing ":"")+(message.isImportant?"important ":"")+(isBlocked(message)?"blocked ":"")} onClick={()=>{setSelectedId(message.id);if(!message.isRead){window.setTimeout(()=>void act(message.id,"read"),settings.markReadDelayMs);}}}>
+            {!collapsedGroups.includes(group.label)&&group.messages.map(message=>{const accent=conditionalAccent(message);return <button key={message.id} draggable={Boolean(onMoveToFolder)} onDragStart={(event)=>{event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("application/x-seven-mail-message",message.id);}} style={accent?{borderLeftColor:accent}:undefined} className={"message "+(accent?"conditional ":"")+(selectedId===message.id?"selected ":"")+(!message.isRead?"unread ":"")+(message.isPhishing?"phishing ":"")+(message.isImportant?"important ":"")+(isBlocked(message)?"blocked ":"")} onClick={()=>{setSelectedId(message.id);if(!message.isRead){window.setTimeout(()=>void act(message.id,"read"),settings.markReadDelayMs);}}}>
               {settings.showSenderPhotos!==false&&<span className="avatar">{(message.from.name||message.from.email)[0].toUpperCase()}</span>}
               <span className="message-copy"><span className="message-meta"><b>{message.from.name||message.from.email}</b><time>{new Date(message.receivedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</time></span><strong>{message.subject||"(sem assunto)"}{conversationView&&(conversationCounts.get(conversationKey(message))??0)>1&&<em className="conversation-count"> {conversationCounts.get(conversationKey(message))}</em>}</strong><small>{message.preview}</small>{message.categories.length>0&&<span className="message-category-dots">{message.categories.slice(0,4).map(name=>{const category=categories.find(item=>item.name===name);return <i key={name} title={name} style={{background:category?.color||"#888"}}/>;})}</span>}</span>
               <span className="message-indicators">{message.isImportant&&<Icon name="star" size={13}/>} {message.isMuted&&<Icon name="moon" size={13}/>} {message.isPinned&&<Icon name="pin" size={13}/>} {message.hasAttachments&&<Icon name="paperclip" size={14}/>}</span>
@@ -677,6 +728,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
         {conversationView&&selectedThread.length>1&&<div className="thread-summary"><b>{selectedThread.length} mensagens nesta conversa</b>{selectedThread.map(item=><button key={item.id} className={item.id===selected.id?"active":""} onClick={()=>setSelectedId(item.id)}><span>{item.from.name||item.from.email}</span><time>{new Date(item.receivedAt).toLocaleString("pt-BR")}</time></button>)}</div>}
         <SafeMessageBody message={selected} accountEmail={accounts.find((item)=>item.id===selected.accountId)?.email} settings={settings} onAllowRemote={onAllowRemoteContent}/>
         <ReadingAssist message={selected}/>
+        {(settings.quickSteps??[]).length>0&&<div className="message-quick-steps">{(settings.quickSteps??[]).map((step)=><button className="secondary" key={step.id} onClick={()=>void runQuickStep(selected,step)}><Icon name="rule" size={13}/>{step.name}{step.shortcut&&<kbd>{step.shortcut}</kbd>}</button>)}</div>}
         <div className="reply-actions advanced-actions">
           <button className="secondary" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={15}/> Responder</button>
           <button className="secondary" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people" size={15}/> Responder a todos</button>
