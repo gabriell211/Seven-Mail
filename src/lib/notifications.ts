@@ -3,7 +3,7 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
-import type { MailMessage, TaskItem } from "../types";
+import type { CalendarEvent, MailMessage, TaskItem } from "../types";
 
 export async function ensureNotificationPermission(): Promise<boolean> {
   try {
@@ -46,5 +46,20 @@ export async function notifyTaskReminder(task: TaskItem): Promise<void> {
   sendNotification({
     title: "Lembrete de tarefa",
     body: due ? `${task.title} · vence ${due}` : task.title,
+  });
+}
+
+
+export async function notifyCalendarReminder(event: CalendarEvent): Promise<void> {
+  if (!(await ensureNotificationPermission())) return;
+
+  const starts = new Date(event.startAt).toLocaleString("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+
+  sendNotification({
+    title: "Lembrete de evento",
+    body: `${event.title} · ${starts}`,
   });
 }
