@@ -69,6 +69,49 @@ function plainTextToHtml(value: string): string {
   return node.innerHTML.replace(/\n/g, "<br>");
 }
 
+function parseMergeCsv(raw:string):{headers:string[];rows:Array<Record<string,string>>}{
+  const text=raw.replace(/^\uFEFF/,"");
+  const records:string[][]=[];
+  let row:string[]=[];
+  let field="";
+  let quoted=false;
+  for(let index=0;index<text.length;index+=1){
+    const char=text[index];
+    if(char==='"'){
+      if(quoted&&text[index+1]==='"'){
+        field+='"';
+        index+=1;
+      }else{
+        quoted=!quoted;
+      }
+      continue;
+    }
+    if(char===","&&!quoted){
+      row.push(field);
+      field="";
+      continue;
+    }
+    if((char==="\n"||char==="\r")&&!quoted){
+      if(char==="\r"&&text[index+1]==="\n") index+=1;
+      row.push(field);
+      field="";
+      if(row.some((value)=>value.trim())) records.push(row);
+      row=[];
+      continue;
+    }
+    field+=char;
+  }
+  row.push(field);
+  if(row.some((value)=>value.trim())) records.push(row);
+  const headers=(records.shift()??[]).map((value,index)=>value.trim()||`coluna_${index+1}`);
+  const rows=records.map((values)=>Object.fromEntries(headers.map((header,index)=>[header,(values[index]??"").trim()])));
+  return {headers,rows};
+}
+
+function mergeFields(template:string,row:Record<string,string>):string{
+  return template.replace(/\{\{\s*([^{}]+?)\s*\}\}/g,(_,key:string)=>row[key]??"");
+}
+
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -143,6 +186,12 @@ export function Composer({
   const [showCc, setShowCc] = useState(false);
   const [showBcc, setShowBcc] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [showMerge,setShowMerge]=useState(false);
+  const [mergeHeaders,setMergeHeaders]=useState<string[]>([]);
+  const [mergeRows,setMergeRows]=useState<Array<Record<string,string>>>([]);
+  const [mergeEmailColumn,setMergeEmailColumn]=useState("");
+  const [mergeFileName,setMergeFileName]=useState("");
+  const [mergeBusy,setMergeBusy]=useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [templates, setTemplates] = useState<MailTemplateItem[]>([]);
@@ -423,6 +472,93 @@ export function Composer({
     return values.every((value)=>/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value.replace(/^.*<([^>]+)>$/,"$1")));
   }
 
+  async function pickMergeCsv(){
+    if(draft.attachments.length>0){
+      setError("Mala direta com anexos ainda não é permitida neste modo. Remova os anexos antes de criar o lote.");
+      return;
+    }
+    const selected=await open({
+      multiple:false,
+      directory:false,
+      filters:[{name:"Lista CSV",extensions:["csv"]}],
+    });
+    if(!selected||Array.isArray(selected)) return;
+    const raw=await bridge.readTextFile(selected);
+    const parsed=parseMergeCsv(raw);
+    if(parsed.headers.length===0||parsed.rows.length===0){
+      setError("O CSV não possui cabeçalho e linhas válidas.");
+      return;
+    }
+    if(parsed.rows.length>500){
+      setError("A mala direta aceita no máximo 500 destinatários por lote.");
+      return;
+    }
+    const emailHeader=parsed.headers.find((header)=>/^(e-?mail|email_address|correo)$/i.test(header))
+      ?? parsed.headers.find((header)=>header.toLowerCase().includes("mail"))
+      ?? parsed.headers[0];
+    setMergeHeaders(parsed.headers);
+    setMergeRows(parsed.rows);
+    setMergeEmailColumn(emailHeader);
+    setMergeFileName(selected.split(/[\\/]/).pop()??"lista.csv");
+    setError("");
+  }
+
+  async function queueMailMerge(){
+    if(!account||mergeBusy||mergeRows.length===0||!mergeEmailColumn) return;
+    if(draft.attachments.length>0){
+      setError("Remova os anexos antes de enviar mala direta.");
+      return;
+    }
+    const validRows=mergeRows.filter((row)=>/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(row[mergeEmailColumn]??""));
+    if(validRows.length===0){
+      setError("Nenhum endereço válido foi encontrado na coluna selecionada.");
+      return;
+    }
+    if(!window.confirm(`Enfileirar ${validRows.length} mensagens personalizadas? Cada destinatário receberá uma mensagem separada.`)) return;
+
+    setMergeBusy(true);
+    setError("");
+    try{
+      const now=Date.now();
+      for(let index=0;index<validRows.length;index+=1){
+        const row=validRows[index];
+        const id=crypto.randomUUID();
+        const sendAt=new Date(now+index*350).toISOString();
+        await bridge.queueOperation({
+          id,
+          kind:"send",
+          accountId:account.id,
+          createdAt:new Date().toISOString(),
+          attempts:0,
+          payload:{
+            fromAddress:draft.fromAddress||account.email,
+            to:row[mergeEmailColumn],
+            cc:"",
+            bcc:"",
+            subject:mergeFields(draft.subject,row),
+            bodyText:mergeFields(draft.bodyText,row),
+            bodyHtml:draft.mode==="rich"?sanitizeOutgoingHtml(mergeFields(draft.bodyHtml,row)):"",
+            attachments:[],
+            priority:draft.priority??"normal",
+            requestReadReceipt:Boolean(draft.requestReadReceipt),
+            requestDeliveryReceipt:Boolean(draft.requestDeliveryReceipt),
+            sendAt,
+          },
+        });
+      }
+      setShowMerge(false);
+      setMergeRows([]);
+      setMergeHeaders([]);
+      setMergeFileName("");
+      window.alert(`${validRows.length} mensagens foram adicionadas à fila local.`);
+      void bridge.flushOutbox().catch(()=>undefined);
+    }catch(reason){
+      setError(reason instanceof Error?reason.message:String(reason));
+    }finally{
+      setMergeBusy(false);
+    }
+  }
+
   async function discard() {
     if (!window.confirm("Descartar este rascunho?")) return;
     finishedRef.current = true;
@@ -639,6 +775,18 @@ export function Composer({
           </div>
         )}
 
+        {showMerge&&<div className="mail-merge-panel">
+          <header><div><span className="eyebrow">MALA DIRETA</span><b>Envio personalizado por CSV</b></div><button className="icon-button" onClick={()=>setShowMerge(false)}><Icon name="x" size={14}/></button></header>
+          <p>Use placeholders como <code>{{nome}}</code> ou <code>{{empresa}}</code> no assunto e no corpo da mensagem.</p>
+          <div className="mail-merge-controls">
+            <button className="secondary" onClick={()=>void pickMergeCsv()}><Icon name="upload" size={14}/>{mergeFileName||"Selecionar CSV"}</button>
+            {mergeHeaders.length>0&&<label><span>Coluna de e-mail</span><select value={mergeEmailColumn} onChange={(event)=>setMergeEmailColumn(event.target.value)}>{mergeHeaders.map((header)=><option key={header} value={header}>{header}</option>)}</select></label>}
+            {mergeRows.length>0&&<span className="merge-count"><b>{mergeRows.length}</b> linhas</span>}
+            <button className="primary" disabled={mergeRows.length===0||!mergeEmailColumn||mergeBusy} onClick={()=>void queueMailMerge()}>{mergeBusy?"Enfileirando...":"Criar lote"}</button>
+          </div>
+          {mergeHeaders.length>0&&<small>Campos disponíveis: {mergeHeaders.map((header)=>`{{${header}}}`).join(" · ")}</small>}
+        </div>}
+
         {showSchedule && (
           <div className="schedule-row">
             <Icon name="clock" size={16} />
@@ -673,6 +821,7 @@ export function Composer({
             <label className="composer-mini-check"><input type="checkbox" checked={Boolean(draft.requestReadReceipt)} onChange={(event)=>setDraft((current)=>({...current,requestReadReceipt:event.target.checked}))}/> Recibo leitura</label>
             <label className="composer-mini-check"><input type="checkbox" checked={Boolean(draft.requestDeliveryReceipt)} onChange={(event)=>setDraft((current)=>({...current,requestDeliveryReceipt:event.target.checked}))}/> Recibo entrega</label>
             <button className={showSchedule ? "ghost active" : "ghost"} onClick={() => setShowSchedule((value) => !value)}><Icon name="clock" size={15} /> Programar</button>
+            <button className={showMerge?"ghost active":"ghost"} onClick={()=>setShowMerge((value)=>!value)}><Icon name="people" size={15}/> Mala direta</button>
             <span className="send-delay">{settings.sendDelaySeconds > 0 ? `Desfazer por ${settings.sendDelaySeconds}s` : "Envio imediato"}</span>
           </div>
           <div>
