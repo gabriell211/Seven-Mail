@@ -34,6 +34,14 @@ pub struct AccountProfile {
     pub security_mode: Option<String>,
     #[serde(default)]
     pub aliases: Vec<String>,
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default = "default_timeout_seconds")]
+    pub connection_timeout_seconds: u64,
+}
+
+fn default_timeout_seconds() -> u64 {
+    30
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
