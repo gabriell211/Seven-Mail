@@ -1,4 +1,4 @@
-use crate::models::{AccountProfile, MailMessage, QueueOperation, QueuedAttachment, RuntimeInfo};
+use crate::{local_crypto, models::{AccountProfile, MailMessage, QueueOperation, QueuedAttachment, RuntimeInfo}};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{fs, io::{self, Write}, path::{Path, PathBuf}};
 
@@ -95,14 +95,11 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     let parent = path.parent().ok_or_else(|| "Caminho local inválido.".to_string())?;
     fs::create_dir_all(parent).map_err(io_error)?;
     let bytes = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
-    let mut file = fs::File::create(path).map_err(io_error)?;
-    file.write_all(&bytes).map_err(io_error)?;
-    file.sync_all().map_err(io_error)?;
-    Ok(())
+    local_crypto::write(path, &bytes)
 }
 
 fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, String> {
-    let bytes = fs::read(path).map_err(io_error)?;
+    let bytes = local_crypto::read(path)?;
     serde_json::from_slice(&bytes).map_err(|error| error.to_string())
 }
 
@@ -211,15 +208,12 @@ pub fn cache_raw_message(paths: &AppPaths, account_id: &str, message_id: &str, r
     let path = raw_message_path(paths, account_id, message_id)?;
     let parent = path.parent().ok_or_else(|| "Caminho de mensagem inválido.".to_string())?;
     fs::create_dir_all(parent).map_err(io_error)?;
-    let mut file = fs::File::create(path).map_err(io_error)?;
-    file.write_all(raw).map_err(io_error)?;
-    file.sync_all().map_err(io_error)?;
-    Ok(())
+    local_crypto::write(&path, raw)
 }
 
 pub fn read_raw_message(paths: &AppPaths, account_id: &str, message_id: &str) -> Result<Vec<u8>, String> {
     let path = raw_message_path(paths, account_id, message_id)?;
-    fs::read(path).map_err(|error| format!("Fonte original da mensagem indisponível: {error}"))
+    local_crypto::read(&path).map_err(|error| format!("Fonte original da mensagem indisponível: {error}"))
 }
 
 pub fn update_message_metadata(
@@ -418,7 +412,8 @@ pub fn stage_attachments(
         let name = safe_attachment_name(original_name);
         let staged_name = format!("{:03}-{name}", offset + index);
         let staged_path = destination.join(staged_name);
-        fs::copy(source_path, &staged_path).map_err(io_error)?;
+        let source_bytes = fs::read(source_path).map_err(io_error)?;
+        local_crypto::write(&staged_path, &source_bytes)?;
 
         output.push(QueuedAttachment {
             name,
@@ -456,7 +451,7 @@ pub fn stage_message_as_eml(
         base.push_str(".eml");
     }
     let staged_path = destination.join(format!("000-{base}"));
-    fs::write(&staged_path, &raw).map_err(io_error)?;
+    local_crypto::write(&staged_path, &raw)?;
 
     Ok(QueuedAttachment {
         name: base,
