@@ -132,6 +132,10 @@ pub struct QueuedAttachment {
     pub name: String,
     pub path: String,
     pub size: u64,
+    #[serde(default)]
+    pub inline: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_id: Option<String>,
 }
 
 
