@@ -9,6 +9,7 @@ async function command<T>(name: string, args?: Record<string, unknown>): Promise
 }
 
 export const bridge = {
+  initialOpenRequests: (): Promise<string[]> => command("initial_open_requests"),
   runtimeInfo: async (): Promise<RuntimeInfo> => hasTauri()
     ? command<RuntimeInfo>("runtime_info")
     : { platform:"browser", dataDir:"%APPDATA%\\Seven Mail", cacheDir:"%APPDATA%\\Seven Mail\\cache", queueDir:"%APPDATA%\\Seven Mail\\queue", version:"web-preview" },
