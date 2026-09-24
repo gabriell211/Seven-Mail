@@ -12,6 +12,7 @@ export const bridge = {
   runtimeInfo: async (): Promise<RuntimeInfo> => hasTauri()
     ? command<RuntimeInfo>("runtime_info")
     : { platform:"browser", dataDir:"%APPDATA%\\Seven Mail", cacheDir:"%APPDATA%\\Seven Mail\\cache", queueDir:"%APPDATA%\\Seven Mail\\queue", version:"web-preview" },
+  setCloseToTray: (enabled: boolean): Promise<void> => command("set_close_to_tray", { enabled }),
   listAccounts: (): Promise<AccountProfile[]> => command("list_accounts"),
   saveAccount: (account: AccountProfile): Promise<void> => command("save_account", { account }),
   setDefaultAccount: (accountId: string): Promise<AccountProfile[]> => command("set_default_account", { accountId }),
