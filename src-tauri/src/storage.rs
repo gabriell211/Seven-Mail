@@ -324,26 +324,7 @@ pub fn apply_message_action(
     Ok(message)
 }
 
-fn clear_directory_contents(dir: &Path) -> Result<(), String> {
-    if !dir.exists() {
-        return Ok(());
-    }
-
-    for entry in fs::read_dir(dir).map_err(io_error)? {
-        let path = entry.map_err(io_error)?.path();
-        if path.is_dir() {
-            clear_directory_contents(&path)?;
-            fs::remove_dir(&path).map_err(io_error)?;
-        } else {
-            fs::remove_file(&path).map_err(io_error)?;
-        }
-    }
-
-    Ok(())
-}
-
 pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
-    clear_directory_contents(&paths.message_cache)?;
     fs::create_dir_all(&paths.message_cache).map_err(io_error)?;
     Ok(())
 }
