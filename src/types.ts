@@ -18,8 +18,11 @@ export interface AccountProfile {
   color: string;
   isDefault: boolean;
   username?: string;
+  incomingProtocol?: "imap" | "pop3";
   imapHost?: string;
   imapPort?: number;
+  pop3Host?: string;
+  pop3Port?: number;
   smtpHost?: string;
   smtpPort?: number;
   securityMode?: "tls" | "starttls";
