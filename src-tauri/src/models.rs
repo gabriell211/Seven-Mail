@@ -33,6 +33,10 @@ pub struct AccountProfile {
     #[serde(default)]
     pub pop3_port: Option<u16>,
     #[serde(default)]
+    pub caldav_url: Option<String>,
+    #[serde(default)]
+    pub carddav_url: Option<String>,
+    #[serde(default)]
     pub smtp_host: Option<String>,
     #[serde(default)]
     pub smtp_port: Option<u16>,
@@ -52,6 +56,13 @@ fn default_timeout_seconds() -> u64 {
 
 fn default_incoming_protocol() -> String {
     "imap".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DavSyncResult {
+    pub calendar_objects: Vec<String>,
+    pub contact_objects: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
