@@ -47,7 +47,7 @@ fn extract_objects(xml: &str, local_name: &str) -> Result<Vec<String>, String> {
 
 fn report(account: &AccountProfile, url: &str, body: &str, tag: &str) -> Result<Vec<String>, String> {
     validate_url(url)?;
-    let password = credentials::load(&account.id)?;
+    let password = credentials::load(account.credential_account_id())?;
     let username = account.username.as_deref().unwrap_or(&account.email);
     let timeout = Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300));
     let client = Client::builder()
@@ -72,7 +72,8 @@ fn report(account: &AccountProfile, url: &str, body: &str, tag: &str) -> Result<
 }
 
 pub fn sync(account: &AccountProfile) -> Result<DavSyncResult, String> {
-    let calendar_objects = if let Some(url) = account.caldav_url.as_deref().filter(|value| !value.trim().is_empty()) {
+    let calendar_objects = if account.can("calendar") {
+        if let Some(url) = account.caldav_url.as_deref().filter(|value| !value.trim().is_empty()) {
         report(
             account,
             url,
@@ -83,6 +84,9 @@ pub fn sync(account: &AccountProfile) -> Result<DavSyncResult, String> {
 </c:calendar-query>"#,
             "calendar-data",
         )?
+        } else {
+            Vec::new()
+        }
     } else {
         Vec::new()
     };
