@@ -58,6 +58,8 @@ pub struct MailMessage {
     pub account_id: String,
     #[serde(default)]
     pub remote_id: Option<String>,
+    #[serde(default)]
+    pub remote_folder: Option<String>,
     pub folder: String,
     pub subject: String,
     pub preview: String,
@@ -92,4 +94,13 @@ pub struct WorkspaceDocument {
     pub kind: String,
     pub updated_at: String,
     pub payload: Value,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MailFolder {
+    pub name: String,
+    pub path: String,
+    pub role: String,
 }
