@@ -124,6 +124,8 @@ export interface AppSettings {
   remoteContentAllowedSenders?: string[];
   warnSuspiciousLinks?: boolean;
   externalSenderWarning?: boolean;
+  appLockEnabled?: boolean;
+  appLockMinutes?: 0 | 1 | 5 | 15 | 30;
   quickActions?: Array<"archive" | "delete" | "flag" | "read" | "pin">;
   conditionalMailRules?: ConditionalMailRule[];
   autoCorrectEnabled?: boolean;
