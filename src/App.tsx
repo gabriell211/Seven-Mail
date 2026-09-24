@@ -1760,6 +1760,28 @@ export default function App() {
     await importEmlPath(selected);
   }
 
+  async function syncLdapForAccount(account:AccountProfile) {
+    if(!account.ldapUrl?.trim()) return;
+    const entries=await bridge.syncLdap(account.id);
+    const now=new Date().toISOString();
+    for(const entry of entries){
+      const payload:ContactItem={
+        id:entry.id,
+        displayName:entry.displayName,
+        email:entry.email,
+        phone:entry.phone,
+        company:entry.company,
+        jobTitle:entry.jobTitle,
+        notes:`LDAP: ${entry.dn}`,
+        favorite:false,
+        categories:["LDAP"],
+      };
+      const document:WorkspaceDocument<ContactItem>={id:payload.id,kind:"contact",updatedAt:now,payload};
+      await bridge.upsertWorkspace(document);
+      void pushCloudDocument(document).catch(()=>undefined);
+    }
+  }
+
   async function syncDavForAccount(account:AccountProfile) {
     if(!account.caldavUrl?.trim()&&!account.carddavUrl?.trim()) return;
     const result=await bridge.syncDav(account.id);
@@ -2339,7 +2361,10 @@ export default function App() {
             : after.filter((message)=>message.folder==="Caixa de entrada"&&!known.has(message.id));
 
           await applyFreshAutomations(fresh,account);
-          await syncDavForAccount(account).catch(()=>undefined);
+          await Promise.all([
+            syncDavForAccount(account).catch(()=>undefined),
+            syncLdapForAccount(account).catch(()=>undefined),
+          ]);
 
           if (!disposed && activeAccount?.id===account.id) {
             setMessages(after);
@@ -2531,7 +2556,10 @@ export default function App() {
         const path = unified ? "INBOX" : selectedFolder.path;
         const label = unified ? "Caixa de entrada" : selectedFolder.name;
         await bridge.syncFolder(account.id,path,label,settings.memorySaverEnabled?25:50);
-        await syncDavForAccount(account).catch(()=>undefined);
+        await Promise.all([
+          syncDavForAccount(account).catch(()=>undefined),
+          syncLdapForAccount(account).catch(()=>undefined),
+        ]);
       });
       const synced = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id);
       await applySenderPolicies(synced);
