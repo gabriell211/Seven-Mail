@@ -367,3 +367,42 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
   .launch-seven__liquid{transform:translateY(18%)}
   .launch-screen.is-finishing .launch-seven__liquid{transform:translateY(0)}
 }
+
+
+/* Calendar multi-view + task filters + interchange actions */
+.toolbar-actions,.workspace-toolbar,.data-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.workspace-toolbar{margin:-8px 0 16px}
+.calendar-view-switch,.task-filter-bar{display:flex;align-items:center;gap:3px;padding:3px;background:var(--soft);border-radius:10px}
+.calendar-view-switch button,.task-filter-bar button{min-height:30px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:9px;font-weight:750}
+.calendar-view-switch button.active,.task-filter-bar button.active{background:var(--solid);color:var(--text);box-shadow:0 3px 10px rgba(42,45,80,.07)}
+.calendar-week-grid{display:grid;grid-template-columns:repeat(7,minmax(130px,1fr));gap:8px;overflow:auto;padding-bottom:4px}
+.calendar-week-day{min-height:390px;border:1px solid var(--line);border-radius:14px;background:var(--solid);padding:10px}
+.calendar-week-day>header{display:flex;align-items:center;justify-content:space-between;padding:3px 2px 9px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.calendar-week-day>header span{font-size:8px;letter-spacing:.08em;color:var(--muted);font-weight:850}
+.calendar-week-day>header b{width:27px;height:27px;border-radius:50%;display:grid;place-items:center;font-size:10px}
+.calendar-week-day.today>header b{background:var(--accent);color:#fff}
+.calendar-week-day>div{display:flex;flex-direction:column;gap:6px}
+.calendar-day-list,.calendar-agenda{display:flex;flex-direction:column;gap:8px}
+.agenda-row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;align-items:start;border:1px solid var(--line);border-radius:14px;background:var(--solid);padding:10px}
+.agenda-row>time{font-size:9px;color:var(--muted);font-weight:750;padding:8px 5px}
+.agenda-row .calendar-event{width:100%;min-height:42px}
+.task-filter-bar{margin:-6px 0 14px;width:max-content;max-width:100%;overflow:auto}
+.task-filter-bar button{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.task-filter-bar button b{min-width:18px;padding:2px 5px;border-radius:999px;background:var(--line);font-size:8px}
+.task-filter-bar button.active b{background:var(--accent-soft);color:var(--accent)}
+.task-card.overdue{box-shadow:inset 3px 0 0 #e15d5d;background:color-mix(in srgb,var(--soft) 90%,#e15d5d)}
+.task-card.overdue .task-copy small{color:#d95858}
+.data-actions{margin-top:3px}
+.paths .data-actions button{margin-top:0}
+.category-organizer-row{grid-template-columns:minmax(0,1fr) 50px}
+.category-organizer-row:hover .organizer-delete,.category-organizer-row .organizer-delete:focus-visible{opacity:1}
+
+@media(max-width:1050px){
+  .calendar-toolbar{align-items:flex-start;gap:10px}
+  .toolbar-actions{max-width:82%}
+  .calendar-week-grid{grid-template-columns:repeat(7,minmax(160px,1fr))}
+}
+@media(max-width:720px){
+  .agenda-row{grid-template-columns:1fr}
+  .agenda-row>time{padding:0 3px}
+}
