@@ -135,3 +135,21 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .cloud-ok{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11px;color:#2b9b72}
 .cloud-ok i{width:7px;height:7px;border-radius:50%;background:#2b9b72}
 .cloud-error{color:#d95656}
+
+
+/* Account management */
+.account-settings{align-items:flex-start}
+.account-settings-list{width:min(660px,100%);display:flex;flex-direction:column;gap:9px}
+.account-settings-card{display:flex;align-items:center;gap:11px;border:1px solid var(--border);background:var(--surface-2);border-radius:14px;padding:12px 13px}
+.account-dot{width:10px;height:10px;border-radius:50%;flex:none;box-shadow:0 0 0 4px color-mix(in srgb,currentColor 8%,transparent)}
+.account-settings-copy{display:flex;flex-direction:column;min-width:0;flex:1}
+.account-settings-copy b,.account-settings-copy span,.account-settings-copy small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.account-settings-copy span{font-size:12px;color:var(--muted);margin-top:2px}
+.account-settings-copy small{font-size:10px;color:var(--accent);margin-top:4px}
+.account-settings-actions{display:flex;align-items:center;gap:4px}
+.danger-icon{color:#d65a5a}
+.account-edit-modal{width:min(720px,calc(100vw - 32px))}
+.account-edit-grid{padding:24px 28px}
+.account-edit-grid select{width:100%;border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:10px;padding:10px}
+.account-edit-grid input[type="color"]{min-height:42px;padding:4px}
+@media(max-width:760px){.account-settings-card{align-items:flex-start;flex-wrap:wrap}.account-settings-actions{width:100%;justify-content:flex-end}}
