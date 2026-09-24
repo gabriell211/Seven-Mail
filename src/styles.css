@@ -563,3 +563,15 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .calendar-pill button+button{padding:0 7px;color:var(--muted)}
 .calendar-pill i{width:8px;height:8px;border-radius:50%}
 .calendar-pill.muted{opacity:.48}
+
+
+/* Safe message rendering */
+.safe-message-wrap{display:flex;flex-direction:column}
+.external-sender-warning{margin:0 25px 10px;padding:8px 10px;border:1px solid rgba(225,151,52,.28);border-radius:9px;background:rgba(225,151,52,.08);color:#a76416;font-size:9px;font-weight:750}
+:root[data-theme="dark"] .external-sender-warning{color:#f0ba72;background:rgba(225,151,52,.11)}
+.remote-content-banner{margin:0 25px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--soft);font-size:9px;color:var(--muted)}
+.remote-content-banner .secondary{flex:none}
+.safe-html{word-break:break-word}
+.safe-html img{max-width:100%;height:auto}
+.safe-html .remote-image-blocked{display:inline-block;min-width:160px;min-height:38px;padding:9px;border:1px dashed var(--line2);background:var(--soft);color:var(--muted)}
+.safe-html a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
