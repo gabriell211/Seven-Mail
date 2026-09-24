@@ -171,14 +171,28 @@ function Empty({ icon, title, text }: { icon: IconName; title: string; text: str
 export function PersistentCalendarView() {
   const store = useWorkspace<CalendarEvent>("calendar");
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
-  const [month, setMonth] = useState(() => new Date());
+  const [cursor, setCursor] = useState(() => new Date());
+  const [view, setView] = useState<"day" | "week" | "month" | "agenda">("month");
 
-  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const gridStart = new Date(first);
   gridStart.setDate(first.getDate() - first.getDay());
-  const days = Array.from({ length: 42 }, (_, index) => {
+  const monthDays = Array.from({ length: 42 }, (_, index) => {
     const date = new Date(gridStart);
     date.setDate(gridStart.getDate() + index);
+    return date;
+  });
+
+  const weekStart = useMemo(() => {
+    const date = new Date(cursor);
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - date.getDay());
+    return date;
+  }, [cursor]);
+
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart);
+    date.setDate(weekStart.getDate() + index);
     return date;
   });
 
@@ -186,10 +200,17 @@ export function PersistentCalendarView() {
     const map = new Map<string, CalendarEvent[]>();
     for (const event of store.items) {
       const key = new Date(event.startAt).toDateString();
-      map.set(key, [...(map.get(key) ?? []), event]);
+      const list = [...(map.get(key) ?? []), event]
+        .sort((a, b) => a.startAt.localeCompare(b.startAt));
+      map.set(key, list);
     }
     return map;
   }, [store.items]);
+
+  const agenda = useMemo(
+    () => [...store.items].sort((a, b) => a.startAt.localeCompare(b.startAt)),
+    [store.items],
+  );
 
   function fresh(): CalendarEvent {
     return {
@@ -203,6 +224,29 @@ export function PersistentCalendarView() {
       color: COLORS[0],
       participants: [],
     };
+  }
+
+  function shiftPeriod(direction: -1 | 1) {
+    setCursor((current) => {
+      const next = new Date(current);
+      if (view === "day") next.setDate(next.getDate() + direction);
+      else if (view === "week") next.setDate(next.getDate() + direction * 7);
+      else next.setMonth(next.getMonth() + direction);
+      return next;
+    });
+  }
+
+  function title(): string {
+    if (view === "day") {
+      return cursor.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+    }
+    if (view === "week") {
+      const end = new Date(weekStart);
+      end.setDate(end.getDate() + 6);
+      return `${weekStart.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} – ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}`;
+    }
+    if (view === "agenda") return "Agenda";
+    return cursor.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
   }
 
   async function importIcs() {
@@ -231,48 +275,91 @@ export function PersistentCalendarView() {
     await bridge.writeTextFile(destination, eventsToIcs(store.items));
   }
 
+  const EventButton = ({ event }: { event: CalendarEvent }) => (
+    <button className="calendar-event" style={{ borderLeftColor: event.color }} onClick={() => setEditing(event)}>
+      <b>{event.title || "Sem título"}</b>
+      {!event.allDay && <small>{new Date(event.startAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</small>}
+      {event.location && <small>{event.location}</small>}
+    </button>
+  );
+
   return (
     <Workspace
-      title={month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
+      title={title()}
       eyebrow="CALENDÁRIO"
       action="Novo evento"
       onAction={() => setEditing(fresh())}
     >
       <div className="calendar-toolbar">
         <div className="toolbar-actions">
-          <button className="secondary" onClick={() => setMonth(new Date())}>Hoje</button>
+          <button className="secondary" onClick={() => setCursor(new Date())}>Hoje</button>
+          <div className="calendar-view-switch">
+            {(["day", "week", "month", "agenda"] as const).map((item) => (
+              <button className={view === item ? "active" : ""} key={item} onClick={() => setView(item)}>
+                {item === "day" ? "Dia" : item === "week" ? "Semana" : item === "month" ? "Mês" : "Agenda"}
+              </button>
+            ))}
+          </div>
           <button className="secondary" onClick={() => void importIcs()}><Icon name="upload" size={14}/> Importar ICS</button>
           <button className="secondary" disabled={store.items.length===0} onClick={() => void exportIcs()}><Icon name="download" size={14}/> Exportar ICS</button>
         </div>
-        <div className="icon-group">
-          <button className="icon-button" aria-label="Mês anterior" onClick={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}><Icon name="chevron" size={16} /></button>
-          <button className="icon-button next-chevron" aria-label="Próximo mês" onClick={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}><Icon name="chevron" size={16} /></button>
-        </div>
+        {view !== "agenda" && <div className="icon-group">
+          <button className="icon-button" aria-label="Período anterior" onClick={() => shiftPeriod(-1)}><Icon name="chevron" size={16} /></button>
+          <button className="icon-button next-chevron" aria-label="Próximo período" onClick={() => shiftPeriod(1)}><Icon name="chevron" size={16} /></button>
+        </div>}
       </div>
-      <div className="calendar">
+
+      {view === "month" && <div className="calendar">
         <div className="week">{["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"].map((day) => <span key={day}>{day}</span>)}</div>
         <div className="days">
-          {days.map((date) => {
+          {monthDays.map((date) => {
             const events = eventsByDay.get(date.toDateString()) ?? [];
-            const outside = date.getMonth() !== month.getMonth();
+            const outside = date.getMonth() !== cursor.getMonth();
             const today = date.toDateString() === new Date().toDateString();
             return (
               <div className={`day ${outside ? "outside" : ""} ${today ? "today" : ""}`} key={date.toISOString()}>
                 <span>{date.getDate()}</span>
                 <div className="day-events">
-                  {events.slice(0, 3).map((event) => (
-                    <button key={event.id} className="calendar-event" style={{ borderLeftColor: event.color }} onClick={() => setEditing(event)}>
-                      <b>{event.title || "Sem título"}</b>
-                      {!event.allDay && <small>{new Date(event.startAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</small>}
-                    </button>
-                  ))}
+                  {events.slice(0, 3).map((event) => <EventButton key={event.id} event={event} />)}
                   {events.length > 3 && <small className="more-events">+{events.length - 3} eventos</small>}
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
+      </div>}
+
+      {view === "week" && <div className="calendar-week-grid">
+        {weekDays.map((date) => {
+          const events = eventsByDay.get(date.toDateString()) ?? [];
+          const today = date.toDateString() === new Date().toDateString();
+          return <section className={today ? "calendar-week-day today" : "calendar-week-day"} key={date.toISOString()}>
+            <header><span>{date.toLocaleDateString("pt-BR", { weekday: "short" }).toUpperCase()}</span><b>{date.getDate()}</b></header>
+            <div>{events.length ? events.map((event)=><EventButton key={event.id} event={event}/>) : <small className="mini-empty">Sem eventos</small>}</div>
+          </section>;
+        })}
+      </div>}
+
+      {view === "day" && <div className="calendar-day-list">
+        {(eventsByDay.get(cursor.toDateString()) ?? []).length
+          ? (eventsByDay.get(cursor.toDateString()) ?? []).map((event) => (
+              <article className="agenda-row" key={event.id}>
+                <time>{event.allDay ? "Dia inteiro" : new Date(event.startAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time>
+                <EventButton event={event}/>
+              </article>
+            ))
+          : <Empty icon="calendar" title="Agenda livre" text="Nenhum evento neste dia."/>}
+      </div>}
+
+      {view === "agenda" && <div className="calendar-agenda">
+        {agenda.length ? agenda.map((event) => (
+          <article className="agenda-row" key={event.id}>
+            <time>{new Date(event.startAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}</time>
+            <EventButton event={event}/>
+          </article>
+        )) : <Empty icon="calendar" title="Agenda vazia" text="Crie ou importe eventos para começar."/>}
+      </div>}
+
       {editing && (
         <CalendarEditor
           value={editing}
@@ -307,6 +394,7 @@ function CalendarEditor({
       <label className="full"><span>Local</span><input value={value.location} onChange={(event) => onChange({ ...value, location: event.target.value })} placeholder="Local ou link da reunião" /></label>
       <label className="full"><span>Participantes</span><input value={value.participants.join(", ")} onChange={(event) => onChange({ ...value, participants: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} placeholder="email@exemplo.com, outro@exemplo.com" /></label>
       <label className="full"><span>Descrição</span><textarea value={value.description} onChange={(event) => onChange({ ...value, description: event.target.value })} /></label>
+      <label><span>Lembrete</span><input type="datetime-local" value={value.reminderAt?.slice(0,16) ?? ""} onChange={(event) => onChange({ ...value, reminderAt: event.target.value || undefined, reminderNotifiedAt: undefined })} /></label>
       <label className="inline-check"><input type="checkbox" checked={value.allDay} onChange={(event) => onChange({ ...value, allDay: event.target.checked })} /> Dia inteiro</label>
       {onDelete && <button className="danger-link" onClick={() => void onDelete()}><Icon name="trash" size={14} /> Excluir evento</button>}
     </EditorModal>
