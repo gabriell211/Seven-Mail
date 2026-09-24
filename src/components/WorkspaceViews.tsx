@@ -177,9 +177,10 @@ export function PersistentCalendarView() {
   const [cursor, setCursor] = useState(() => new Date());
   const [view, setView] = useState<"day" | "three" | "week" | "workweek" | "month" | "agenda">("month");
 
-  const calendarList:CalendarListItem[]=calendars.items.length
+  const localCalendar:CalendarListItem={id:"local",name:"Local",color:COLORS[0],visible:true};
+  const calendarList:CalendarListItem[]=calendars.items.some((item)=>item.id==="local")
     ? calendars.items
-    : [{id:"local",name:"Local",color:COLORS[0],visible:true}];
+    : [localCalendar,...calendars.items];
   const visibleCalendarIds=new Set(calendarList.filter((item)=>item.visible!==false).map((item)=>item.id));
   const visibleEvents=store.items.filter((event)=>visibleCalendarIds.has(event.calendarId??"local"));
 
@@ -309,6 +310,39 @@ export function PersistentCalendarView() {
     await bridge.writeTextFile(destination, eventsToIcs(store.items));
   }
 
+  async function createCalendar() {
+    const name=window.prompt("Nome do calendário")?.trim();
+    if(!name) return;
+    await calendars.save({id:crypto.randomUUID(),name,color:COLORS[calendarList.length%COLORS.length],visible:true});
+  }
+
+  async function toggleCalendar(calendar:CalendarListItem) {
+    if(calendar.id==="local"&&!calendars.items.some((item)=>item.id==="local")){
+      await calendars.save({...calendar,visible:false});
+      return;
+    }
+    await calendars.save({...calendar,visible:calendar.visible===false});
+  }
+
+  async function removeCalendar(calendar:CalendarListItem) {
+    if(calendar.id==="local") return;
+    if(!window.confirm(`Excluir o calendário "${calendar.name}"? Os eventos permanecerão locais e serão movidos para Local.`)) return;
+    for(const event of store.items.filter((item)=>item.calendarId===calendar.id)){
+      await store.save({...event,calendarId:"local"});
+    }
+    await calendars.remove(calendar.id);
+  }
+
+  async function duplicateEvent(event:CalendarEvent) {
+    await store.save({
+      ...event,
+      id:crypto.randomUUID(),
+      title:`${event.title} (cópia)`,
+      status:"confirmed",
+      reminderNotifiedAt:undefined,
+    });
+  }
+
   const EventButton = ({ event }: { event: CalendarEvent }) => (
     <button className="calendar-event" style={{ borderLeftColor: event.color }} onClick={() => setEditing(event)}>
       <b>{event.title || "Sem título"}</b>
@@ -328,12 +362,13 @@ export function PersistentCalendarView() {
         <div className="toolbar-actions">
           <button className="secondary" onClick={() => setCursor(new Date())}>Hoje</button>
           <div className="calendar-view-switch">
-            {(["day", "week", "month", "agenda"] as const).map((item) => (
+            {(["day","three","week","workweek","month","agenda"] as const).map((item) => (
               <button className={view === item ? "active" : ""} key={item} onClick={() => setView(item)}>
-                {item === "day" ? "Dia" : item === "week" ? "Semana" : item === "month" ? "Mês" : "Agenda"}
+                {item==="day"?"Dia":item==="three"?"3 dias":item==="week"?"Semana":item==="workweek"?"Semana útil":item==="month"?"Mês":"Agenda"}
               </button>
             ))}
           </div>
+          <button className="secondary" onClick={() => void createCalendar()}><Icon name="plus" size={14}/> Calendário</button>
           <button className="secondary" onClick={() => void importIcs()}><Icon name="upload" size={14}/> Importar ICS</button>
           <button className="secondary" disabled={store.items.length===0} onClick={() => void exportIcs()}><Icon name="download" size={14}/> Exportar ICS</button>
         </div>
@@ -341,6 +376,13 @@ export function PersistentCalendarView() {
           <button className="icon-button" aria-label="Período anterior" onClick={() => shiftPeriod(-1)}><Icon name="chevron" size={16} /></button>
           <button className="icon-button next-chevron" aria-label="Próximo período" onClick={() => shiftPeriod(1)}><Icon name="chevron" size={16} /></button>
         </div>}
+      </div>
+
+      <div className="calendar-list-bar">
+        {calendarList.map((calendar)=><span className={calendar.visible===false?"calendar-pill muted":"calendar-pill"} key={calendar.id}>
+          <button onClick={()=>void toggleCalendar(calendar)}><i style={{background:calendar.color}}/>{calendar.name}</button>
+          {calendar.id!=="local"&&<button aria-label={`Excluir calendário ${calendar.name}`} onClick={()=>void removeCalendar(calendar)}><Icon name="x" size={10}/></button>}
+        </span>)}
       </div>
 
       {view === "month" && <div className="calendar">
@@ -363,8 +405,8 @@ export function PersistentCalendarView() {
         </div>
       </div>}
 
-      {view === "week" && <div className="calendar-week-grid">
-        {weekDays.map((date) => {
+      {(view==="week"||view==="workweek"||view==="three") && <div className="calendar-week-grid" style={{gridTemplateColumns:`repeat(${displayWeekDays.length},minmax(160px,1fr))`}}>
+        {displayWeekDays.map((date) => {
           const events = eventsByDay.get(date.toDateString()) ?? [];
           const today = date.toDateString() === new Date().toDateString();
           return <section className={today ? "calendar-week-day today" : "calendar-week-day"} key={date.toISOString()}>
@@ -397,9 +439,11 @@ export function PersistentCalendarView() {
       {editing && (
         <CalendarEditor
           value={editing}
+          calendars={calendarList}
           onChange={setEditing}
           onClose={() => setEditing(null)}
           onSave={() => store.save(editing)}
+          onDuplicate={store.items.some((item)=>item.id===editing.id)?async()=>{await duplicateEvent(editing);setEditing(null);}:undefined}
           onDelete={store.items.some((item) => item.id === editing.id) ? async () => { await store.remove(editing.id); setEditing(null); } : undefined}
         />
       )}
@@ -409,27 +453,42 @@ export function PersistentCalendarView() {
 
 function CalendarEditor({
   value,
+  calendars,
   onChange,
   onClose,
   onSave,
   onDelete,
+  onDuplicate,
 }: {
   value: CalendarEvent;
+  calendars: CalendarListItem[];
   onChange: (value: CalendarEvent) => void;
   onClose: () => void;
   onSave: () => Promise<void>;
   onDelete?: () => Promise<void>;
+  onDuplicate?: () => Promise<void>;
 }) {
   return (
     <EditorModal title={value.title || "Novo evento"} eyebrow="EVENTO" onClose={onClose} onSave={onSave} disabled={!value.title.trim() || !value.startAt || !value.endAt}>
       <label className="full"><span>Título</span><input autoFocus value={value.title} onChange={(event) => onChange({ ...value, title: event.target.value })} /></label>
       <label><span>Início</span><input type="datetime-local" value={value.startAt.slice(0, 16)} onChange={(event) => onChange({ ...value, startAt: event.target.value })} /></label>
       <label><span>Fim</span><input type="datetime-local" value={value.endAt.slice(0, 16)} onChange={(event) => onChange({ ...value, endAt: event.target.value })} /></label>
-      <label className="full"><span>Local</span><input value={value.location} onChange={(event) => onChange({ ...value, location: event.target.value })} placeholder="Local ou link da reunião" /></label>
-      <label className="full"><span>Participantes</span><input value={value.participants.join(", ")} onChange={(event) => onChange({ ...value, participants: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} placeholder="email@exemplo.com, outro@exemplo.com" /></label>
+      <label><span>Calendário</span><select value={value.calendarId??"local"} onChange={(event)=>onChange({...value,calendarId:event.target.value,color:calendars.find((item)=>item.id===event.target.value)?.color??value.color})}>{calendars.map((calendar)=><option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</select></label>
+      <label><span>Status</span><select value={value.status??"confirmed"} onChange={(event)=>onChange({...value,status:event.target.value as CalendarEvent["status"]})}><option value="confirmed">Confirmado</option><option value="draft">Rascunho</option><option value="cancelled">Cancelado</option></select></label>
+      <label className="full"><span>Local</span><input value={value.location} onChange={(event) => onChange({ ...value, location: event.target.value })} placeholder="Local ou sala" /></label>
+      <label className="full"><span>Reunião online</span><input value={value.onlineMeetingUrl??""} onChange={(event)=>onChange({...value,onlineMeetingUrl:event.target.value||undefined})} placeholder="https://..." /></label>
+      <label className="full"><span>Participantes obrigatórios</span><input value={(value.requiredParticipants?.length?value.requiredParticipants:value.participants).join(", ")} onChange={(event) => {const list=event.target.value.split(",").map((item)=>item.trim()).filter(Boolean);onChange({ ...value, requiredParticipants:list,participants:list });}} placeholder="email@exemplo.com" /></label>
+      <label className="full"><span>Participantes opcionais</span><input value={(value.optionalParticipants??[]).join(", ")} onChange={(event)=>onChange({...value,optionalParticipants:event.target.value.split(",").map((item)=>item.trim()).filter(Boolean)})}/></label>
+      <label className="full"><span>Salas e recursos</span><input value={(value.resources??[]).join(", ")} onChange={(event)=>onChange({...value,resources:event.target.value.split(",").map((item)=>item.trim()).filter(Boolean)})} placeholder="Sala 1, Projetor"/></label>
+      <label><span>Recorrência</span><select value={value.recurrence??"none"} onChange={(event)=>onChange({...value,recurrence:event.target.value as CalendarEvent["recurrence"]})}><option value="none">Não repetir</option><option value="daily">Diária</option><option value="weekly">Semanal</option><option value="monthly">Mensal</option><option value="yearly">Anual</option></select></label>
+      <label><span>Repetir até</span><input type="date" value={value.recurrenceUntil?.slice(0,10)??""} disabled={!value.recurrence||value.recurrence==="none"} onChange={(event)=>onChange({...value,recurrenceUntil:event.target.value||undefined})}/></label>
+      <label><span>Fuso horário</span><input value={value.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone} onChange={(event)=>onChange({...value,timezone:event.target.value})}/></label>
+      <label><span>Categorias</span><input value={(value.categories??[]).join(", ")} onChange={(event)=>onChange({...value,categories:event.target.value.split(",").map((item)=>item.trim()).filter(Boolean)})}/></label>
       <label className="full"><span>Descrição</span><textarea value={value.description} onChange={(event) => onChange({ ...value, description: event.target.value })} /></label>
       <label><span>Lembrete</span><input type="datetime-local" value={value.reminderAt?.slice(0,16) ?? ""} onChange={(event) => onChange({ ...value, reminderAt: event.target.value || undefined, reminderNotifiedAt: undefined })} /></label>
       <label className="inline-check"><input type="checkbox" checked={value.allDay} onChange={(event) => onChange({ ...value, allDay: event.target.checked })} /> Dia inteiro</label>
+      <label className="inline-check"><input type="checkbox" checked={Boolean(value.isPrivate)} onChange={(event)=>onChange({...value,isPrivate:event.target.checked})}/> Evento privado</label>
+      {onDuplicate && <button className="secondary" onClick={()=>void onDuplicate()}><Icon name="copy" size={14}/> Duplicar evento</button>}
       {onDelete && <button className="danger-link" onClick={() => void onDelete()}><Icon name="trash" size={14} /> Excluir evento</button>}
     </EditorModal>
   );
