@@ -449,7 +449,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Editar evento
 - [x] Excluir evento
 - [x] Duplicar evento
-- [ ] Arrastar evento
+- [x] Arrastar evento
 - [ ] Redimensionar evento
 - [x] Local
 - [x] Descrição
@@ -464,7 +464,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Exceções de recorrência
 - [x] Editar somente esta ocorrência
 - [x] Editar esta e as próximas ocorrências
-- [ ] Copiar, recortar e colar eventos
+- [x] Copiar, recortar e colar eventos
 - [x] Anexos
 - [x] Categorias
 
@@ -509,7 +509,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Dias úteis configuráveis
 - [x] Local de trabalho
 - [x] Horário de trabalho por dia
-- [ ] Calendários de feriados
+- [x] Calendários de feriados
 - [x] Importação de feriados personalizados quando suportado
 
 ---
