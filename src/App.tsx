@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { disable as disableAutostart, enable as enableAutostart } from "@tauri-apps/plugin-autostart";
 import { Icon, type IconName } from "./icons";
 import { bridge } from "./lib/bridge";
@@ -14,6 +15,7 @@ import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccoun
 import { syncWorkspaceCollection } from "./lib/workspace-sync";
 import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
 import { pendingRulesForMessage } from "./lib/rules";
+import { messageToEml, safeExportName } from "./lib/interchange";
 import type { AccountProfile, AppSection, AppSettings, CategoryItem, MailFolder, MailMessage, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
