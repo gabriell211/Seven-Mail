@@ -14,6 +14,7 @@ import {
 } from "../lib/interchange";
 import type {
   CalendarEvent,
+  CalendarListItem,
   ContactGroupItem,
   ContactItem,
   NoteItem,
@@ -171,9 +172,16 @@ function Empty({ icon, title, text }: { icon: IconName; title: string; text: str
 
 export function PersistentCalendarView() {
   const store = useWorkspace<CalendarEvent>("calendar");
+  const calendars = useWorkspace<CalendarListItem>("calendar-list");
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [cursor, setCursor] = useState(() => new Date());
-  const [view, setView] = useState<"day" | "week" | "month" | "agenda">("month");
+  const [view, setView] = useState<"day" | "three" | "week" | "workweek" | "month" | "agenda">("month");
+
+  const calendarList:CalendarListItem[]=calendars.items.length
+    ? calendars.items
+    : [{id:"local",name:"Local",color:COLORS[0],visible:true}];
+  const visibleCalendarIds=new Set(calendarList.filter((item)=>item.visible!==false).map((item)=>item.id));
+  const visibleEvents=store.items.filter((event)=>visibleCalendarIds.has(event.calendarId??"local"));
 
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const gridStart = new Date(first);
