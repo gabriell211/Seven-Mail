@@ -21,6 +21,7 @@ export const bridge = {
   syncInbox: (accountId: string, limit = 50): Promise<number> => command("sync_inbox", { accountId, limit }),
   flushMailActions: (accountId: string): Promise<number> => command("flush_mail_actions", { accountId }),
   listCachedMessages: (accountId?: string): Promise<MailMessage[]> => command("list_cached_messages", { accountId: accountId ?? null }),
+  cacheMessage: (message: MailMessage): Promise<void> => command("cache_message", { message }),
   queueOperation: (operation: QueueOperation): Promise<void> => command("queue_operation", { operation }),
   listQueue: (): Promise<QueueOperation[]> => command("list_queue"),
   flushOutbox: (): Promise<number> => command("flush_outbox"),
