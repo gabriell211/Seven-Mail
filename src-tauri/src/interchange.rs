@@ -1,5 +1,5 @@
 use crate::{models::{AccountProfile, MailAddress, MailMessage}, storage::{self, AppPaths}};
-use mail_parser::MessageParser;
+use mail_parser::{MessageParser, MimeHeaders};
 use std::{fs, path::Path};
 
 const MAX_TEXT_FILE_BYTES: u64 = 32 * 1024 * 1024;
@@ -72,6 +72,10 @@ pub fn import_eml(paths: &AppPaths, account: &AccountProfile, path: &str) -> Res
         .body_preview(180)
         .map(|value| value.into_owned())
         .unwrap_or_default();
+    let attachment_names = (0..parsed.attachment_count())
+        .filter_map(|index| parsed.attachment(index))
+        .map(|part| part.attachment_name().unwrap_or("anexo").to_string())
+        .collect::<Vec<_>>();
 
     let message = MailMessage {
         id: format!("{}-import-{}", account.id, uuid::Uuid::new_v4()),
@@ -92,8 +96,16 @@ pub fn import_eml(paths: &AppPaths, account: &AccountProfile, path: &str) -> Res
         body_text,
         categories: vec!["Importado".to_string()],
         applied_rule_ids: Vec::new(),
+        size_bytes: Some(raw.len() as u64),
+        attachment_names,
+        importance: Some("normal".to_string()),
+        snoozed_until: None,
+        is_muted: false,
+        is_phishing: false,
+        is_important: false,
     };
 
     storage::cache_message(paths, &message)?;
+    storage::cache_raw_message(paths, &message.account_id, &message.id, &raw)?;
     Ok(message)
 }
