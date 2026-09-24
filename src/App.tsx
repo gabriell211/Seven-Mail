@@ -15,6 +15,7 @@ import { SafeMessageBody } from "./components/SafeMessageBody";
 import { ReadingAssist } from "./components/ReadingAssist";
 import { BrandLogo } from "./components/BrandLogo";
 import { LaunchScreen } from "./components/LaunchScreen";
+import { AppLockScreen } from "./components/AppLockScreen";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
 import { ensureNotificationPermission, notifyCalendarReminder, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
 import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
@@ -71,7 +72,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   blockRemoteContent: true,
   remoteContentAllowedSenders: [],
   warnSuspiciousLinks: true,
-  externalSenderWarning: true
+  externalSenderWarning: true,
+  appLockEnabled: false,
+  appLockMinutes: 5
 };
 
 const NAV: Array<{id:AppSection;label:string;icon:IconName}> = [
@@ -781,6 +784,8 @@ export default function App() {
     workspace: false,
     messages: false,
   });
+  const [lockConfigured,setLockConfigured]=useState(false);
+  const [appLocked,setAppLocked]=useState(false);
   const [settings,setSettings] = useState<AppSettings>(()=>{
     try { return {...DEFAULT_SETTINGS,...JSON.parse(localStorage.getItem("seven-mail:settings")||"{}")}; } catch { return DEFAULT_SETTINGS; }
   });
@@ -1623,6 +1628,44 @@ export default function App() {
   },[selectedFolder.role]);
 
   useEffect(()=>{
+    let disposed=false;
+    void bridge.hasAppLock().then((enabled)=>{
+      if(disposed) return;
+      setLockConfigured(enabled);
+      setAppLocked(enabled);
+      setSettings((current)=>({...current,appLockEnabled:enabled}));
+    }).catch(()=>undefined);
+    const changed=(event:Event)=>{
+      const enabled=Boolean((event as CustomEvent<boolean>).detail);
+      setLockConfigured(enabled);
+      if(!enabled) setAppLocked(false);
+    };
+    window.addEventListener("seven-mail:app-lock-changed",changed);
+    return ()=>{
+      disposed=true;
+      window.removeEventListener("seven-mail:app-lock-changed",changed);
+    };
+  },[]);
+
+  useEffect(()=>{
+    if(!lockConfigured||appLocked) return;
+    const minutes=settings.appLockMinutes??5;
+    if(minutes<=0) return;
+    let timer=0;
+    const arm=()=>{
+      window.clearTimeout(timer);
+      timer=window.setTimeout(()=>setAppLocked(true),minutes*60_000);
+    };
+    const events=["pointerdown","keydown","wheel","touchstart"] as const;
+    for(const event of events) window.addEventListener(event,arm,{passive:true});
+    arm();
+    return ()=>{
+      window.clearTimeout(timer);
+      for(const event of events) window.removeEventListener(event,arm);
+    };
+  },[lockConfigured,appLocked,settings.appLockMinutes]);
+
+  useEffect(()=>{
     localStorage.setItem("seven-mail:settings",JSON.stringify(settings));
     const root=document.documentElement;
     const theme = settings.theme==="system" ? (matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light") : settings.theme;
@@ -2016,6 +2059,12 @@ export default function App() {
     await bridge.cancelOperation(current.id).catch(() => false);
   }
 
+  async function unlockApp(pin:string):Promise<boolean>{
+    const valid=await bridge.verifyAppLock(pin);
+    if(valid) setAppLocked(false);
+    return valid;
+  }
+
   const filtered = useMemo(
     ()=>messages.filter((message)=>matchesMailQuery(message,search)),
     [messages,search],
@@ -2048,7 +2097,7 @@ export default function App() {
     setSearchHistory([]);
   }
 
-  return <><LaunchScreen ready={bootReady}/><div className="app-shell">
+  return <><LaunchScreen ready={bootReady}/>{appLocked&&<AppLockScreen onUnlock={unlockApp}/>}<div className="app-shell">
     <aside className="nav-rail">
       <div className="rail-brand"><BrandLogo variant="rail"/></div>
       <nav>{NAV.map(item=><button key={item.id} className={section===item.id?"nav-item active":"nav-item"} title={item.label} onClick={()=>setSection(item.id)}><Icon name={item.icon}/><span>{item.label}</span></button>)}</nav>
@@ -2059,7 +2108,7 @@ export default function App() {
         <div className="product"><strong>Seven Mail</strong><span>{NAV.find(n=>n.id===section)?.label}</span></div>
         {section==="mail"&&profileAccounts.length>0&&<select className="account-switcher" value={unified?"__all__":(activeAccount?.id??"")} onChange={e=>setActiveId(e.target.value)} aria-label="Selecionar conta"><option value="__all__">Todas as contas</option>{profileAccounts.map(account=><option key={account.id} value={account.id}>{account.email}</option>)}</select>}
         <label className="search"><Icon name="search" size={17}/><input list="seven-mail-search-suggestions" value={search} onFocus={()=>setGlobalSearchOpen(true)} onChange={e=>{setSearch(e.target.value);setGlobalSearchOpen(true);}} onKeyDown={e=>{if(e.key==="Enter"){commitSearchHistory();setGlobalSearchOpen(true);}else if(e.key==="Escape"){setGlobalSearchOpen(false);}}} placeholder="Pesquisar em todo o Seven Mail..."/><kbd>Ctrl K</kbd></label><datalist id="seven-mail-search-suggestions">{searchSuggestions.map((value)=><option value={value} key={value}/>)}</datalist>{section==="mail"&&search.trim()&&<button className="icon-button save-search-button" title="Salvar pesquisa" aria-label="Salvar pesquisa" onClick={()=>void saveCurrentSearch()}><Icon name="star" size={17}/></button>}
-        <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
+        <div className="top-actions">{lockConfigured&&<button className="icon-button" title="Bloquear agora" onClick={()=>setAppLocked(true)}><Icon name="lock" size={17}/></button>}<span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
         {globalSearchOpen&&search.trim()&&<div className="global-search-popover">
           <header><span><Icon name="search" size={15}/><b>Pesquisa global</b></span><button onClick={()=>setGlobalSearchOpen(false)}><Icon name="x" size={13}/></button></header>
           <div className="global-search-group"><small>E-MAILS</small>{filtered.slice(0,6).map((message)=><button key={message.id} onClick={()=>{setActiveId(message.accountId);setFocusMessageId(message.id);setSection("mail");setGlobalSearchOpen(false);commitSearchHistory();}}><Icon name="mail" size={14}/><span><b>{message.subject||"(sem assunto)"}</b><small>{message.from.name||message.from.email}</small></span></button>)}{filtered.length===0&&<em>Nenhum e-mail encontrado.</em>}</div>
