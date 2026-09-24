@@ -204,21 +204,35 @@ export function PersistentCalendarView() {
     date.setDate(weekStart.getDate() + index);
     return date;
   });
+  const workWeekStart=useMemo(()=>{
+    const date=new Date(cursor);
+    date.setHours(0,0,0,0);
+    const day=date.getDay();
+    date.setDate(date.getDate()+(day===0?-6:1-day));
+    return date;
+  },[cursor]);
+  const workWeekDays=Array.from({length:5},(_,index)=>{
+    const date=new Date(workWeekStart);date.setDate(workWeekStart.getDate()+index);return date;
+  });
+  const threeDays=Array.from({length:3},(_,index)=>{
+    const date=new Date(cursor);date.setHours(0,0,0,0);date.setDate(date.getDate()+index);return date;
+  });
+  const displayWeekDays=view==="workweek"?workWeekDays:view==="three"?threeDays:weekDays;
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
-    for (const event of store.items) {
+    for (const event of visibleEvents) {
       const key = new Date(event.startAt).toDateString();
       const list = [...(map.get(key) ?? []), event]
         .sort((a, b) => a.startAt.localeCompare(b.startAt));
       map.set(key, list);
     }
     return map;
-  }, [store.items]);
+  }, [visibleEvents]);
 
   const agenda = useMemo(
-    () => [...store.items].sort((a, b) => a.startAt.localeCompare(b.startAt)),
-    [store.items],
+    () => [...visibleEvents].sort((a, b) => a.startAt.localeCompare(b.startAt)),
+    [visibleEvents],
   );
 
   function fresh(): CalendarEvent {
@@ -232,6 +246,15 @@ export function PersistentCalendarView() {
       allDay: false,
       color: COLORS[0],
       participants: [],
+      calendarId:calendarList.find((item)=>item.visible!==false)?.id??calendarList[0]?.id??"local",
+      requiredParticipants:[],
+      optionalParticipants:[],
+      resources:[],
+      isPrivate:false,
+      recurrence:"none",
+      categories:[],
+      status:"confirmed",
+      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
   }
 
@@ -239,7 +262,8 @@ export function PersistentCalendarView() {
     setCursor((current) => {
       const next = new Date(current);
       if (view === "day") next.setDate(next.getDate() + direction);
-      else if (view === "week") next.setDate(next.getDate() + direction * 7);
+      else if (view === "three") next.setDate(next.getDate() + direction * 3);
+      else if (view === "week" || view === "workweek") next.setDate(next.getDate() + direction * 7);
       else next.setMonth(next.getMonth() + direction);
       return next;
     });
@@ -249,10 +273,11 @@ export function PersistentCalendarView() {
     if (view === "day") {
       return cursor.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
     }
-    if (view === "week") {
-      const end = new Date(weekStart);
-      end.setDate(end.getDate() + 6);
-      return `${weekStart.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} – ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}`;
+    if (view === "week" || view === "workweek" || view === "three") {
+      const days=view==="workweek"?workWeekDays:view==="three"?threeDays:weekDays;
+      const start=days[0]??cursor;
+      const end=days[days.length-1]??cursor;
+      return `${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} – ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}`;
     }
     if (view === "agenda") return "Agenda";
     return cursor.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
