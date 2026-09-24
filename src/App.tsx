@@ -252,7 +252,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
   const [periodFilter,setPeriodFilter] = useState<"all"|"today"|"7d"|"30d">("all");
   const [senderFilter,setSenderFilter] = useState("");
   const [priorityFilter,setPriorityFilter] = useState<"all"|"low"|"normal"|"high">("all");
-  const [visibleCount,setVisibleCount] = useState(settings.mailPageSize ?? 50);
+  const [visibleCount,setVisibleCount] = useState<number>(settings.mailPageSize ?? 50);
   const [details,setDetails] = useState<{message:MailMessage;tab:"attachments"|"headers"|"source"}|null>(null);
   const selected = messages.find(m=>m.id===selectedId);
   const now = Date.now();
