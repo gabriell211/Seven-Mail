@@ -126,6 +126,10 @@ export interface AppSettings {
   externalSenderWarning?: boolean;
   quickActions?: Array<"archive" | "delete" | "flag" | "read" | "pin">;
   conditionalMailRules?: ConditionalMailRule[];
+  autoCorrectEnabled?: boolean;
+  autoCapitalizeEnabled?: boolean;
+  composeLanguage?: string;
+  customDictionary?: string[];
 }
 
 
@@ -271,6 +275,8 @@ export interface QueuedAttachment {
   name: string;
   path: string;
   size: number;
+  inline?: boolean;
+  contentId?: string;
 }
 
 
