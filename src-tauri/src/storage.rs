@@ -202,9 +202,24 @@ pub fn list_queue(paths: &AppPaths) -> Result<Vec<QueueOperation>, String> {
 }
 
 pub fn claim_next_kind(paths: &AppPaths, kind: &str) -> Result<Option<QueueOperation>, String> {
+    claim_next_matching(paths, |operation| operation.kind == kind)
+}
+
+pub fn claim_next_mail_action(paths: &AppPaths, account_id: &str) -> Result<Option<QueueOperation>, String> {
+    safe_component(account_id)?;
+    claim_next_matching(paths, |operation| {
+        operation.account_id == account_id
+            && matches!(operation.kind.as_str(), "read" | "flag" | "move")
+    })
+}
+
+fn claim_next_matching(
+    paths: &AppPaths,
+    predicate: impl Fn(&QueueOperation) -> bool,
+) -> Result<Option<QueueOperation>, String> {
     let Some(operation) = list_operations(&paths.pending)?
         .into_iter()
-        .find(|operation| operation.kind == kind)
+        .find(predicate)
     else {
         return Ok(None);
     };
