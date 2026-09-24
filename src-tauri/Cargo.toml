@@ -35,3 +35,5 @@ base64 = "0.22"
 zip = { version = "4.6", default-features = false, features = ["deflate"] }
 aes-gcm = "0.10"
 rand = "0.8"
+reqwest = { version = "0.13", features = ["blocking"] }
+regex = "1"
