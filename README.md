@@ -85,24 +85,24 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 - [x] Caixa de entrada por conta
 - [x] Caixa de entrada unificada
-- [ ] Caixa prioritária e Outros
-- [ ] Ativar/desativar caixa prioritária
-- [ ] Visualização por conversa
+- [x] Caixa prioritária e Outros
+- [x] Ativar/desativar caixa prioritária
+- [x] Visualização por conversa
 - [x] Visualização individual de mensagens
 - [x] Contagem de mensagens não lidas
 - [x] Atualização automática
 - [x] Sincronização manual
-- [ ] Paginação eficiente
-- [ ] Carregamento incremental
+- [x] Paginação eficiente
+- [x] Carregamento incremental
 - [x] Pré-visualização da mensagem
 - [x] Uma ou duas linhas de pré-visualização configuráveis
-- [ ] Ordenação por remetente, assunto, data, tamanho e status
+- [x] Ordenação por remetente, assunto, data, tamanho e status
 - [ ] Formatação condicional da lista de mensagens
 - [ ] Cabeçalhos recolhíveis na lista
 - [ ] Ações rápidas configuráveis na lista
 - [x] Painel de leitura configurável
-- [ ] Abrir mensagem em nova janela
-- [ ] Abrir múltiplas mensagens simultaneamente
+- [x] Abrir mensagem em nova janela
+- [x] Abrir múltiplas mensagens simultaneamente
 
 ### Mensagens
 
@@ -121,19 +121,19 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Fixar mensagem
 - [x] Sinalizar mensagem
 - [x] Remover sinalização
-- [ ] Adiar mensagem
+- [x] Adiar mensagem
 - [x] Mover para pasta
-- [ ] Copiar para pasta
-- [ ] Imprimir mensagem
+- [x] Copiar para pasta
+- [x] Imprimir mensagem
 - [x] Salvar mensagem
-- [ ] Exibir cabeçalhos completos
-- [ ] Visualizar código-fonte da mensagem
+- [x] Exibir cabeçalhos completos
+- [x] Visualizar código-fonte da mensagem
 - [x] Marcar como spam
-- [ ] Marcar como phishing
-- [ ] Bloquear remetente
-- [ ] Liberar remetente
+- [x] Marcar como phishing
+- [x] Bloquear remetente
+- [x] Liberar remetente
 - [ ] Ignorar conversa
-- [ ] Silenciar conversa
+- [x] Silenciar conversa
 - [ ] Reenviar mensagem
 - [ ] Recuperar/recolher mensagem enviada quando suportado pelo provedor
 - [ ] Reações em mensagens quando suportadas
@@ -152,14 +152,14 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Sublinhado
 - [x] Tachado
 - [x] Listas
-- [ ] Recuo
-- [ ] Alinhamento
+- [x] Recuo
+- [x] Alinhamento
 - [x] Links
-- [ ] Tabelas
+- [x] Tabelas
 - [ ] Imagens inline
-- [ ] Emojis
+- [x] Emojis
 - [x] Campo De selecionável
-- [ ] Envio usando aliases
+- [x] Envio usando aliases
 - [x] Corretor ortográfico
 - [ ] Correção automática
 - [ ] Capitalização automática
@@ -171,33 +171,33 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Assinatura para respostas
 - [x] CC
 - [x] CCO
-- [ ] Prioridade
-- [ ] Confirmação de leitura quando suportada
-- [ ] Confirmação de entrega quando suportada
+- [x] Prioridade
+- [x] Confirmação de leitura quando suportada
+- [x] Confirmação de entrega quando suportada
 - [x] Programar envio
 - [x] Atraso padrão antes do envio
 - [x] Desfazer envio
-- [ ] Modelos de mensagem
+- [x] Modelos de mensagem
 - [ ] Modelos baseados em arquivo quando suportado
-- [ ] Reutilização de blocos de conteúdo
+- [x] Reutilização de blocos de conteúdo
 - [ ] Pré-visualização de links
-- [ ] Verificação de destinatários
+- [x] Verificação de destinatários
 - [x] Aviso de anexo esquecido
 - [x] Aviso de assunto vazio
 
 ### Anexos
 
 - [x] Upload por botão
-- [ ] Arrastar e soltar
-- [ ] Download
-- [ ] Download de todos
+- [x] Arrastar e soltar
+- [x] Download
+- [x] Download de todos
 - [ ] Pré-visualização
 - [ ] Imagens
 - [ ] PDFs
 - [ ] Documentos
 - [ ] Planilhas
 - [ ] Arquivos compactados
-- [ ] Limite configurável
+- [x] Limite configurável
 - [ ] Indicador de progresso
 - [ ] Cancelamento de upload
 - [x] Bloqueio de extensões perigosas
@@ -220,7 +220,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Abrir e salvar MSG quando tecnicamente viável
 - [ ] Abrir e reutilizar modelos OFT quando tecnicamente viável
 - [ ] Importar e exportar regras
-- [ ] Favoritar categorias
+- [x] Favoritar categorias
 - [ ] Ações por gesto quando suportadas pela plataforma
 
 ---
@@ -239,8 +239,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Subpastas
 - [x] Renomear pasta
 - [x] Excluir pasta
-- [ ] Reordenar pastas
-- [ ] Favoritar pastas
+- [x] Reordenar pastas
+- [x] Favoritar pastas
 - [x] Contadores por pasta
 - [x] Ir diretamente para uma pasta
 - [ ] Pastas compartilhadas
@@ -258,7 +258,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 ### Favoritos
 
-- [ ] Pastas favoritas
+- [x] Pastas favoritas
 - [x] Contatos favoritos
 - [x] Itens fixados
 
@@ -266,7 +266,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 ## Pesquisa
 
-- [ ] Pesquisa global
+- [x] Pesquisa global
 - [x] Pesquisa em todas as caixas
 - [ ] Pesquisa em caixas compartilhadas
 - [x] Pesquisa por conta
@@ -278,16 +278,16 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Pesquisa por data
 - [x] Pesquisa por intervalo de datas
 - [x] Pesquisa por anexos
-- [ ] Pesquisa por nome de arquivo
+- [x] Pesquisa por nome de arquivo
 - [x] Pesquisa por categoria
 - [x] Pesquisa por status
 - [x] Pesquisa por mensagens sinalizadas
 - [x] Pesquisa por mensagens não lidas
-- [ ] Pesquisa por tamanho
+- [x] Pesquisa por tamanho
 - [x] Operadores avançados
-- [ ] Histórico de pesquisa
-- [ ] Sugestões
-- [ ] Pastas de pesquisa
+- [x] Histórico de pesquisa
+- [x] Sugestões
+- [x] Pastas de pesquisa
 - [x] Pesquisas salvas
 
 ---
@@ -300,9 +300,9 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Com anexos
 - [ ] Mencionando o usuário
 - [x] Por categoria
-- [ ] Por período
-- [ ] Por remetente
-- [ ] Por prioridade
+- [x] Por período
+- [x] Por remetente
+- [x] Por prioridade
 
 ---
 
@@ -319,17 +319,17 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Regras por assunto
 - [x] Regras por palavras
 - [x] Regras por domínio
-- [ ] Regras por tamanho
-- [ ] Regras por anexo
-- [ ] Regras por prioridade
-- [ ] Mover automaticamente
-- [ ] Copiar automaticamente
+- [x] Regras por tamanho
+- [x] Regras por anexo
+- [x] Regras por prioridade
+- [x] Mover automaticamente
+- [x] Copiar automaticamente
 - [x] Arquivar automaticamente
 - [x] Marcar como lida
-- [ ] Marcar com categoria
+- [x] Marcar com categoria
 - [x] Sinalizar
 - [x] Excluir
-- [ ] Encaminhar
+- [x] Encaminhar
 - [ ] Redirecionar quando suportado
 - [x] Parar processamento de outras regras
 
@@ -337,12 +337,12 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 ## Spam e remetentes
 
-- [ ] Filtro de spam
-- [ ] Lista de remetentes bloqueados
-- [ ] Lista de remetentes confiáveis
-- [ ] Bloqueio por domínio
-- [ ] Liberação de remetente
-- [ ] Denúncia de phishing
+- [x] Filtro de spam
+- [x] Lista de remetentes bloqueados
+- [x] Lista de remetentes confiáveis
+- [x] Bloqueio por domínio
+- [x] Liberação de remetente
+- [x] Denúncia de phishing
 - [ ] Visualização segura de links
 - [ ] Bloqueio de conteúdo remoto
 - [ ] Permissão de imagens por remetente
@@ -363,7 +363,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Sincronização independente
 - [ ] Perfis separados de e-mail
 - [ ] Perfis com conjuntos diferentes de contas e configurações
-- [ ] Aliases por conta
+- [x] Aliases por conta
 
 ## Caixas compartilhadas e delegação
 
@@ -629,13 +629,13 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 # Notificações
 
 - [x] Nova mensagem
-- [ ] Mensagem importante
+- [x] Mensagem importante
 - [x] Lembrete de evento
 - [x] Lembrete de tarefa
-- [ ] Configuração por conta
-- [ ] Configuração por pasta
+- [x] Configuração por conta
+- [x] Configuração por pasta
 - [ ] Silenciar conta
-- [ ] Silenciar conversa
+- [x] Silenciar conversa
 - [ ] Horário silencioso
 - [ ] Ações rápidas pela notificação
 
@@ -732,7 +732,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 ## Comportamento
 
-- [ ] Abrir próxima mensagem após excluir
+- [x] Abrir próxima mensagem após excluir
 - [x] Marcar como lida automaticamente
 - [x] Tempo para marcar como lida
 - [x] Confirmação antes de excluir
@@ -798,7 +798,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 # Desempenho
 
 - [ ] Inicialização rápida
-- [ ] Carregamento incremental
+- [x] Carregamento incremental
 - [ ] Virtualização da lista de mensagens
 - [x] Cache inteligente
 - [ ] Sincronização incremental
@@ -844,11 +844,11 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Notificações nativas
 - [ ] Protocolo mailto:
 - [ ] Definir como cliente padrão
-- [ ] Abrir arquivos EML
+- [x] Abrir arquivos EML
 - [ ] Abrir arquivos MSG quando suportado
 - [ ] Abrir arquivos OFT quando suportado
 - [ ] Abrir arquivos ICS
-- [ ] Arrastar arquivos para composição
+- [x] Arrastar arquivos para composição
 - [ ] Arrastar anexos para área de trabalho
 - [ ] Arrastar anexos para outros aplicativos
 - [ ] Múltiplas janelas
@@ -1039,12 +1039,12 @@ A aplicação deverá utilizar:
 
 - [x] Agendamento de envio
 - [x] Desfazer envio
-- [ ] Modelos
-- [ ] Pastas de pesquisa
+- [x] Modelos
+- [x] Pastas de pesquisa
 - [x] Pesquisa avançada
 - [x] Regras avançadas
-- [ ] Formatação condicional
-- [ ] Reenvio e recuperação de mensagens quando suportados
+- [x] Formatação condicional
+- [x] Reenvio e recuperação de mensagens quando suportados
 - [ ] Leitura em voz alta
 - [ ] Leitura imersiva
 - [ ] Mala direta
@@ -1053,11 +1053,11 @@ A aplicação deverá utilizar:
 
 - [ ] S/MIME
 - [ ] Assinaturas digitais
-- [ ] Importação
-- [ ] Exportação
-- [ ] Backup
+- [x] Importação
+- [x] Exportação
+- [x] Backup
 - [ ] Criptografia local
-- [ ] Regras e configurações importáveis/exportáveis
+- [x] Regras e configurações importáveis/exportáveis
 - [ ] Políticas corporativas quando suportadas pelo provedor
 
 ## 1.0.0 — Stable
