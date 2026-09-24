@@ -273,6 +273,15 @@ export interface MailAttachmentInfo {
   inline: boolean;
 }
 
+export interface MailAttachmentPreview {
+  name: string;
+  mime: string;
+  size: number;
+  dataUrl?: string;
+  text?: string;
+  kind: "image" | "pdf" | "text" | "archive" | "office" | "binary" | "large";
+}
+
 export interface MailTemplateItem {
   id: string;
   name: string;
