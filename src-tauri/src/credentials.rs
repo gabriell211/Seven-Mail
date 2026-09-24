@@ -1,5 +1,6 @@
 const SERVICE: &str = "Seven Mail";
 const APP_LOCK_ID: &str = "__app_lock__";
+const LOCAL_STORAGE_KEY_ID: &str = "__local_storage_key__";
 
 fn validate_account_id(account_id: &str) -> Result<(), String> {
     if account_id.is_empty()
@@ -73,4 +74,22 @@ pub fn clear_app_lock() -> Result<(), String> {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(error.to_string()),
     }
+}
+
+
+pub fn load_local_storage_key() -> Result<Option<String>, String> {
+    match entry(LOCAL_STORAGE_KEY_ID)?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+pub fn store_local_storage_key(value: &str) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Err("Chave de armazenamento local inválida.".to_string());
+    }
+    entry(LOCAL_STORAGE_KEY_ID)?
+        .set_password(value)
+        .map_err(|error| error.to_string())
 }
