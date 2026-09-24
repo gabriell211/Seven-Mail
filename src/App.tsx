@@ -12,6 +12,7 @@ import { MessageDetailsModal, SenderPoliciesPanel } from "./components/AdvancedM
 import { ComposerAssetsPanel } from "./components/ComposerAssetsPanel";
 import { ProfilesPanel } from "./components/ProfilesPanel";
 import { SafeMessageBody } from "./components/SafeMessageBody";
+import { ReadingAssist } from "./components/ReadingAssist";
 import { BrandLogo } from "./components/BrandLogo";
 import { LaunchScreen } from "./components/LaunchScreen";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
@@ -575,6 +576,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
         {activeAccount&&folders.length>1&&<div className="move-folder-row"><span>Organizar</span>{onMoveToFolder&&<select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onMoveToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Mover para...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select>}{onCopyToFolder&&<select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onCopyToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Copiar para...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select>}</div>}
         {conversationView&&selectedThread.length>1&&<div className="thread-summary"><b>{selectedThread.length} mensagens nesta conversa</b>{selectedThread.map(item=><button key={item.id} className={item.id===selected.id?"active":""} onClick={()=>setSelectedId(item.id)}><span>{item.from.name||item.from.email}</span><time>{new Date(item.receivedAt).toLocaleString("pt-BR")}</time></button>)}</div>}
         <SafeMessageBody message={selected} accountEmail={accounts.find((item)=>item.id===selected.accountId)?.email} settings={settings} onAllowRemote={onAllowRemoteContent}/>
+        <ReadingAssist message={selected}/>
         <div className="reply-actions advanced-actions">
           <button className="secondary" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={15}/> Responder</button>
           <button className="secondary" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people" size={15}/> Responder a todos</button>
