@@ -5,6 +5,7 @@ mod interchange;
 mod ldap_sync;
 mod local_crypto;
 mod models;
+mod oauth;
 mod pop3_sync;
 mod providers;
 mod storage;
@@ -85,6 +86,41 @@ fn verify_app_lock(pin: String) -> Result<bool, String> {
 #[tauri::command]
 fn clear_app_lock() -> Result<(), String> {
     credentials::clear_app_lock()
+}
+
+#[tauri::command]
+fn oauth_exchange_code(
+    account_id: String,
+    code: String,
+    verifier: String,
+    redirect_uri: Option<String>,
+) -> Result<oauth::OAuthTokenState, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    oauth::exchange_code(&account, &code, &verifier, redirect_uri.as_deref())
+}
+
+#[tauri::command]
+fn oauth_refresh(account_id: String) -> Result<oauth::OAuthTokenState, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    oauth::refresh(&account)
+}
+
+#[tauri::command]
+fn oauth_status(account_id: String) -> Result<bool, String> {
+    oauth::status(&account_id)
+}
+
+#[tauri::command]
+fn oauth_clear(account_id: String) -> Result<(), String> {
+    oauth::clear(&account_id)
 }
 
 #[tauri::command]
@@ -574,6 +610,7 @@ pub fn run() {
             close_to_tray: Mutex::new(true),
         })
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(
@@ -642,6 +679,10 @@ pub fn run() {
             set_app_lock,
             verify_app_lock,
             clear_app_lock,
+            oauth_exchange_code,
+            oauth_refresh,
+            oauth_status,
+            oauth_clear,
             discover_provider,
             sync_ldap,
             test_ldap_connection,
