@@ -376,6 +376,8 @@ pub fn stage_attachments(
     paths: &AppPaths,
     operation_id: &str,
     sources: &[String],
+    max_file_mb: u64,
+    max_total_mb: u64,
 ) -> Result<Vec<QueuedAttachment>, String> {
     safe_component(operation_id)?;
     let destination = paths.queue_attachments.join(operation_id);
@@ -399,12 +401,14 @@ pub fn stage_attachments(
         }
 
         let metadata = fs::metadata(source_path).map_err(io_error)?;
-        if metadata.len() > 25 * 1024 * 1024 {
-            return Err("Cada anexo deve ter no máximo 25 MB.".to_string());
+        let max_file = max_file_mb.clamp(1, 250) * 1024 * 1024;
+        let max_total = max_total_mb.clamp(max_file_mb.clamp(1, 250), 500) * 1024 * 1024;
+        if metadata.len() > max_file {
+            return Err(format!("Cada anexo deve ter no máximo {max_file_mb} MB."));
         }
         total = total.saturating_add(metadata.len());
-        if total > 100 * 1024 * 1024 {
-            return Err("O total de anexos desta mensagem não pode exceder 100 MB.".to_string());
+        if total > max_total {
+            return Err(format!("O total de anexos desta mensagem não pode exceder {max_total_mb} MB."));
         }
 
         let original_name = source_path
