@@ -5,7 +5,7 @@ mod providers;
 mod storage;
 mod workspace;
 
-use models::{AccountProfile, MailFolder, MailMessage, ProviderSettings, QueueOperation, RuntimeInfo, WorkspaceDocument};
+use models::{AccountProfile, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
 use storage::AppPaths;
 
 #[tauri::command]
@@ -127,6 +127,16 @@ fn queue_operation(operation: QueueOperation) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn stage_attachments(operation_id: String, sources: Vec<String>) -> Result<Vec<QueuedAttachment>, String> {
+    storage::stage_attachments(&AppPaths::resolve()?, &operation_id, &sources)
+}
+
+#[tauri::command]
+fn cancel_operation(operation_id: String) -> Result<bool, String> {
+    storage::cancel_operation(&AppPaths::resolve()?, &operation_id)
+}
+
+#[tauri::command]
 fn list_queue() -> Result<Vec<QueueOperation>, String> {
     storage::list_queue(&AppPaths::resolve()?)
 }
@@ -138,7 +148,7 @@ fn flush_outbox() -> Result<usize, String> {
     let mut sent = 0usize;
 
     loop {
-        let Some(operation) = storage::claim_next_kind(&paths, "send")? else {
+        let Some(operation) = storage::claim_next_send_due(&paths)? else {
             break;
         };
 
@@ -225,6 +235,8 @@ pub fn run() {
             list_cached_messages,
             cache_message,
             queue_operation,
+            stage_attachments,
+            cancel_operation,
             list_queue,
             flush_outbox,
             message_action,
