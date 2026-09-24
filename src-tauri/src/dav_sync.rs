@@ -26,7 +26,7 @@ fn xml_unescape(value: &str) -> String {
         .unwrap_or(value.trim())
         .replace("&lt;", "<")
         .replace("&gt;", ">")
-        .replace("&quot;", """)
+        .replace("&quot;", "\"")
         .replace("&apos;", "'")
         .replace("&amp;", "&")
 }
