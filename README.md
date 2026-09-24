@@ -48,7 +48,11 @@ A implementação atual já inclui:
 - Regras executadas automaticamente após sincronização ou manualmente, com prioridade e opção de interromper o processamento.
 - Calendário, contatos, tarefas e notas persistentes em modo local-first.
 - Conversão de e-mail em tarefa e retorno da tarefa ao e-mail relacionado.
-- Lembretes nativos de tarefas e notificações de novas mensagens.
+- Lembretes nativos de tarefas e eventos, além de notificações de novas mensagens.
+- Importação e exportação local de EML, ICS, CSV e vCard.
+- Backup/restauração local de workspace, preferências e metadados de contas (sem exportar credenciais).
+- Calendário com visualizações de dia, semana, mês e agenda; tarefas com filtros de hoje, atrasadas e próximas.
+- Atalhos de teclado para navegação e ações principais de mensagens.
 - Credenciais mantidas no Credential Manager/Keyring do sistema operacional.
 - Sincronização cloud opcional via Neon para metadados e workspace; credenciais de e-mail não são enviadas ao Neon.
 
@@ -92,7 +96,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Carregamento incremental
 - [x] Pré-visualização da mensagem
 - [x] Uma ou duas linhas de pré-visualização configuráveis
-- [x] Ordenação por remetente, assunto, data, tamanho e status
+- [ ] Ordenação por remetente, assunto, data, tamanho e status
 - [ ] Formatação condicional da lista de mensagens
 - [ ] Cabeçalhos recolhíveis na lista
 - [ ] Ações rápidas configuráveis na lista
@@ -121,7 +125,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Mover para pasta
 - [ ] Copiar para pasta
 - [ ] Imprimir mensagem
-- [ ] Salvar mensagem
+- [x] Salvar mensagem
 - [ ] Exibir cabeçalhos completos
 - [ ] Visualizar código-fonte da mensagem
 - [x] Marcar como spam
@@ -135,7 +139,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Reações em mensagens quando suportadas
 - [ ] Arrastar mensagens entre pastas
 - [ ] Arrastar mensagens entre contas quando suportado
-- [ ] Criar evento a partir de um e-mail
+- [x] Criar evento a partir de um e-mail
 - [x] Criar tarefa a partir de um e-mail
 
 ### Composição
@@ -156,7 +160,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Emojis
 - [x] Campo De selecionável
 - [ ] Envio usando aliases
-- [ ] Corretor ortográfico
+- [x] Corretor ortográfico
 - [ ] Correção automática
 - [ ] Capitalização automática
 - [ ] Dicionários por idioma
@@ -167,7 +171,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Assinatura para respostas
 - [x] CC
 - [x] CCO
-- [x] Prioridade
+- [ ] Prioridade
 - [ ] Confirmação de leitura quando suportada
 - [ ] Confirmação de entrega quando suportada
 - [x] Programar envio
@@ -212,7 +216,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Mala direta / envio personalizado em massa
 - [ ] Leitura em voz alta
 - [ ] Modo de leitura imersiva
-- [ ] Abrir e salvar EML
+- [x] Abrir e salvar EML
 - [ ] Abrir e salvar MSG quando tecnicamente viável
 - [ ] Abrir e reutilizar modelos OFT quando tecnicamente viável
 - [ ] Importar e exportar regras
@@ -245,7 +249,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 ### Categorias
 
 - [x] Criar categorias
-- [ ] Editar categorias
+- [x] Editar categorias
 - [x] Excluir categorias
 - [x] Aplicar múltiplas categorias
 - [x] Cores por categoria
@@ -325,7 +329,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Marcar com categoria
 - [x] Sinalizar
 - [x] Excluir
-- [x] Encaminhar
+- [ ] Encaminhar
 - [ ] Redirecionar quando suportado
 - [x] Parar processamento de outras regras
 
@@ -430,11 +434,11 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 ## Visualizações
 
-- [ ] Dia
-- [ ] Semana
+- [x] Dia
+- [x] Semana
 - [ ] Semana útil
 - [x] Mês
-- [ ] Agenda
+- [x] Agenda
 - [ ] Visualização de 3 dias
 - [ ] Calendários lado a lado
 - [x] Hoje
@@ -496,8 +500,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 ## Compatibilidade
 
-- [ ] Importar ICS
-- [ ] Exportar ICS
+- [x] Importar ICS
+- [x] Exportar ICS
 - [ ] Abrir convites ICS
 - [ ] Fusos horários
 - [ ] Múltiplos fusos horários
@@ -532,7 +536,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 ## Organização
 
 - [x] Contatos favoritos
-- [x] Categorias
+- [ ] Categorias
 - [ ] Grupos
 - [ ] Listas de contatos
 - [ ] Catálogo global de endereços
@@ -548,9 +552,9 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 ## Importação e exportação
 
-- [ ] CSV
-- [ ] vCard
-- [ ] Backup de contatos
+- [x] CSV
+- [x] vCard
+- [x] Backup de contatos
 
 ## Compartilhamento
 
@@ -567,21 +571,21 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Excluir tarefa
 - [x] Marcar como concluída
 - [x] Prioridade
-- [ ] Data de início
+- [x] Data de início
 - [x] Data de vencimento
 - [x] Lembretes
 - [ ] Recorrência
-- [x] Categorias
+- [ ] Categorias
 - [x] Notas
 - [x] Listas personalizadas
 - [x] Transformar e-mail em tarefa
 - [x] Abrir e-mail relacionado
-- [ ] Visualização de tarefas do dia
-- [ ] Tarefas atrasadas
+- [x] Visualização de tarefas do dia
+- [x] Tarefas atrasadas
 - [x] Tarefas concluídas
 - [x] Minha agenda / Meu dia
-- [ ] Tarefas para hoje
-- [ ] Próximas tarefas
+- [x] Tarefas para hoje
+- [x] Próximas tarefas
 - [ ] E-mails sinalizados como tarefas
 
 ---
@@ -626,7 +630,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 - [x] Nova mensagem
 - [ ] Mensagem importante
-- [ ] Lembrete de evento
+- [x] Lembrete de evento
 - [x] Lembrete de tarefa
 - [ ] Configuração por conta
 - [ ] Configuração por pasta
@@ -641,32 +645,32 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 ## Importação
 
-- [ ] Mensagens
+- [x] Mensagens
 - [x] Pastas
-- [ ] Contatos
-- [ ] Calendários
+- [x] Contatos
+- [x] Calendários
 - [ ] Tarefas
-- [ ] Arquivos EML
+- [x] Arquivos EML
 - [ ] Arquivos MSG quando tecnicamente viável
 - [ ] Arquivos OFT quando tecnicamente viável
 - [ ] Arquivos MBOX
 - [ ] Arquivos PST quando tecnicamente disponível
-- [ ] CSV
-- [ ] ICS
-- [ ] vCard
-- [ ] Configurações do aplicativo
+- [x] CSV
+- [x] ICS
+- [x] vCard
+- [x] Configurações do aplicativo
 - [x] Regras
 - [ ] Perfis
 
 ## Exportação
 
-- [ ] EML
+- [x] EML
 - [ ] MBOX
-- [ ] CSV
-- [ ] ICS
-- [ ] vCard
+- [x] CSV
+- [x] ICS
+- [x] vCard
 - [x] Regras
-- [ ] Configurações
+- [x] Configurações
 - [ ] Perfis
 - [ ] Backup completo do perfil
 - [ ] Backup criptografado
@@ -747,7 +751,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Formato de hora
 - [ ] Primeiro dia da semana
 - [ ] Fuso horário
-- [ ] Verificação ortográfica
+- [x] Verificação ortográfica
 - [ ] Autocorreção
 - [ ] Capitalização automática
 - [ ] Dicionários personalizados
@@ -765,8 +769,8 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Marcar como lida
 - [x] Marcar como não lida
 - [x] Pesquisa
-- [ ] Próxima mensagem
-- [ ] Mensagem anterior
+- [x] Próxima mensagem
+- [x] Mensagem anterior
 - [ ] Abrir calendário
 - [ ] Abrir contatos
 - [ ] Abrir tarefas
@@ -1001,14 +1005,14 @@ A aplicação deverá utilizar:
 ## 0.5.0 — Calendário
 
 - [ ] CalDAV e/ou API do provedor
-- [ ] Calendários
+- [x] Calendários
 - [ ] Eventos
 - [ ] Recorrência
 - [ ] Convites
 - [ ] Assistente de agendamento
 - [ ] Livre/ocupado
 - [ ] Compartilhamento e delegação
-- [ ] ICS
+- [x] ICS
 - [x] Lembretes
 
 ## 0.6.0 — Contatos
@@ -1019,8 +1023,8 @@ A aplicação deverá utilizar:
 - [x] Categorias
 - [ ] Grupos
 - [ ] Diretório corporativo / LDAP
-- [ ] CSV
-- [ ] vCard
+- [x] CSV
+- [x] vCard
 
 ## 0.7.0 — Tarefas
 
