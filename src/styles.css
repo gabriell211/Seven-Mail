@@ -498,3 +498,17 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .global-search-group em{font-style:normal;font-size:8px;color:var(--muted);padding:7px}
 .global-search-popover>footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 7px 4px;border-top:1px solid var(--line);font-size:8px;color:var(--muted)}
 @media(max-width:850px){.global-search-popover{left:12px;right:12px;transform:none;width:auto}.mail-advanced-filters select{flex:1}}
+
+
+/* Rich contacts */
+.people-toolbar select{height:34px;border:1px solid var(--line);border-radius:9px;background:var(--solid);color:var(--text);padding:0 9px;font-size:9px}
+.contact-groups{display:flex;flex-wrap:wrap;gap:6px;margin:-7px 0 14px}
+.contact-groups span{display:flex;align-items:center;border:1px solid var(--line);border-radius:999px;background:var(--soft);overflow:hidden}
+.contact-groups button{border:0;background:transparent;color:var(--text);padding:6px 8px;font-size:8px}
+.contact-groups button:last-child{padding-left:3px;color:var(--muted)}
+.contact-card{position:relative}
+.contact-card.selected{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 12%,transparent)}
+.contact-select{display:grid;place-items:center;flex:none}
+.contact-select input{accent-color:var(--accent)}
+.contact-photo{object-fit:cover}
+.entity-form select[multiple]{height:100px;padding:6px}
