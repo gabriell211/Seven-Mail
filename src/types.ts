@@ -25,6 +25,7 @@ export interface AccountProfile {
   securityMode?: "tls" | "starttls";
   aliases?: string[];
   muted?: boolean;
+  connectionTimeoutSeconds?: 10 | 20 | 30 | 60 | 120;
 }
 
 export interface ProviderSettings {
