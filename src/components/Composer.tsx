@@ -660,7 +660,7 @@ export function Composer({
           <progress max={uploadProgress.total} value={uploadProgress.done}/>
           <button className="secondary" onClick={()=>{cancelUploadRef.current=true;}}>Cancelar upload</button>
         </div>}
-        {error && <div className="form-error composer-error">{error}</div>
+        {error && <div className="form-error composer-error">{error}</div>}
 
         <footer className="compose-footer composer-footer">
           <div>
