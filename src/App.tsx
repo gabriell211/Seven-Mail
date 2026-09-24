@@ -24,6 +24,7 @@ import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccoun
 import { syncWorkspaceCollection } from "./lib/workspace-sync";
 import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
 import { pendingRulesForMessage } from "./lib/rules";
+import { takePendingOAuth } from "./lib/oauth-client";
 import { contactsFromVcard, eventsFromIcs, messageToEml, safeExportName } from "./lib/interchange";
 import type { AccountProfile, AppSection, AppSettings, CalendarEvent, CalendarListItem, CategoryItem, ContactItem, MailFolder, MailMessage, ProfileItem, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
 
@@ -1871,6 +1872,31 @@ export default function App() {
   async function handleExternalOpen(value:string) {
     const request=value.trim();
     if(!request) return;
+
+    if(/^seven-mail:\/\/oauth\/callback/i.test(request)){
+      const url=new URL(request);
+      const error=url.searchParams.get("error");
+      if(error){
+        window.alert(`OAuth recusado pelo provedor: ${error}`);
+        return;
+      }
+      const code=url.searchParams.get("code");
+      const state=url.searchParams.get("state");
+      if(!code||!state){
+        window.alert("Callback OAuth inválido: código ou estado ausente.");
+        return;
+      }
+      const pending=takePendingOAuth(state);
+      if(!pending){
+        window.alert("A sessão OAuth expirou ou não corresponde à autorização iniciada.");
+        return;
+      }
+      await bridge.oauthExchangeCode(pending.accountId,code,pending.verifier,pending.redirectUri);
+      window.dispatchEvent(new Event("seven-mail:oauth-authorized"));
+      window.alert("Conta autorizada por OAuth com sucesso.");
+      return;
+    }
+
     if(/^mailto:/i.test(request)){
       if(profileAccounts.length===0){
         setAccountOpen(true);
