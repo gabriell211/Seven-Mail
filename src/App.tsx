@@ -484,7 +484,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
     };
     window.addEventListener("keydown",onKeyDown);
     return ()=>window.removeEventListener("keydown",onKeyDown);
-  },[selectedId,folderMessages,messages]);
+  },[selectedId,folderMessages,messages,settings.shortcuts,settings.quickSteps]);
 
   useEffect(()=>{
     setVisibleCount(settings.mailPageSize ?? 50);
