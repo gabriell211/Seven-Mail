@@ -67,6 +67,8 @@ pub struct AccountProfile {
     #[serde(default)]
     pub shared_owner_account_id: Option<String>,
     #[serde(default)]
+    pub shared_owner_email: Option<String>,
+    #[serde(default)]
     pub shared_mode: Option<String>,
     #[serde(default)]
     pub shared_permissions: Vec<String>,
