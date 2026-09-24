@@ -8,7 +8,7 @@ use async_imap::{types::{Flag, NameAttribute}, Client};
 use async_native_tls::{TlsConnector, TlsStream};
 use async_std::net::TcpStream;
 use futures::TryStreamExt;
-use mail_parser::MessageParser;
+use mail_parser::{MessageParser, MimeHeaders};
 
 type SecureClient = Client<TlsStream<TcpStream>>;
 
@@ -102,6 +102,10 @@ fn parse_message(
         .body_preview(180)
         .map(|value| value.into_owned())
         .unwrap_or_default();
+    let attachment_names = (0..parsed.attachment_count())
+        .filter_map(|index| parsed.attachment(index))
+        .map(|part| part.attachment_name().unwrap_or("anexo").to_string())
+        .collect::<Vec<_>>();
 
     Some(MailMessage {
         id: if remote_folder.eq_ignore_ascii_case("INBOX") {
@@ -126,6 +130,13 @@ fn parse_message(
         body_text,
         categories: Vec::new(),
         applied_rule_ids: Vec::new(),
+        size_bytes: Some(raw.len() as u64),
+        attachment_names,
+        importance: Some("normal".to_string()),
+        snoozed_until: None,
+        is_muted: false,
+        is_phishing: false,
+        is_important: false,
     })
 }
 
@@ -261,6 +272,9 @@ pub fn sync_folder(
         for item in &fetched {
             if let Some(message) = parse_message(account, item, remote_folder, folder_label) {
                 storage::cache_message(paths, &message)?;
+                if let Some(raw) = item.body() {
+                    storage::cache_raw_message(paths, &message.account_id, &message.id, raw)?;
+                }
                 cached += 1;
             }
         }
