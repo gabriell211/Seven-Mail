@@ -127,6 +127,18 @@ export interface TaskItem {
   relatedMessageId?: string;
 }
 
+export interface CategoryItem {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface SavedSearchItem {
+  id: string;
+  name: string;
+  query: string;
+}
+
 export interface NoteItem {
   id: string;
   title: string;
