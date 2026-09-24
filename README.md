@@ -110,7 +110,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Responder
 - [x] Responder a todos
 - [x] Encaminhar
-- [ ] Encaminhar como anexo
+- [x] Encaminhar como anexo
 - [x] Editar rascunhos
 - [x] Salvar rascunhos automaticamente
 - [x] Excluir mensagens
@@ -132,9 +132,9 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Marcar como phishing
 - [x] Bloquear remetente
 - [x] Liberar remetente
-- [ ] Ignorar conversa
+- [x] Ignorar conversa
 - [x] Silenciar conversa
-- [ ] Reenviar mensagem
+- [x] Reenviar mensagem
 - [ ] Recuperar/recolher mensagem enviada quando suportado pelo provedor
 - [ ] Reações em mensagens quando suportadas
 - [ ] Arrastar mensagens entre pastas
@@ -156,14 +156,14 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Alinhamento
 - [x] Links
 - [x] Tabelas
-- [ ] Imagens inline
+- [x] Imagens inline
 - [x] Emojis
 - [x] Campo De selecionável
 - [x] Envio usando aliases
 - [x] Corretor ortográfico
 - [ ] Correção automática
-- [ ] Capitalização automática
-- [ ] Dicionários por idioma
+- [x] Capitalização automática
+- [x] Dicionários por idioma
 - [ ] Ditado por voz quando disponível no sistema
 - [x] Assinaturas
 - [x] Assinatura diferente por conta
@@ -180,7 +180,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Modelos de mensagem
 - [ ] Modelos baseados em arquivo quando suportado
 - [x] Reutilização de blocos de conteúdo
-- [ ] Pré-visualização de links
+- [x] Pré-visualização de links
 - [x] Verificação de destinatários
 - [x] Aviso de anexo esquecido
 - [x] Aviso de assunto vazio
@@ -191,12 +191,12 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Arrastar e soltar
 - [x] Download
 - [x] Download de todos
-- [ ] Pré-visualização
-- [ ] Imagens
-- [ ] PDFs
-- [ ] Documentos
-- [ ] Planilhas
-- [ ] Arquivos compactados
+- [x] Pré-visualização
+- [x] Imagens
+- [x] PDFs
+- [x] Documentos
+- [x] Planilhas
+- [x] Arquivos compactados
 - [x] Limite configurável
 - [ ] Indicador de progresso
 - [ ] Cancelamento de upload
@@ -212,7 +212,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Limpeza automática por remetente
 - [ ] Ignorar e limpar conversas
 - [ ] Respostas automáticas / ausência temporária
-- [ ] Encaminhamento automático
+- [x] Encaminhamento automático
 - [ ] Mala direta / envio personalizado em massa
 - [ ] Leitura em voz alta
 - [ ] Modo de leitura imersiva
@@ -737,7 +737,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Tempo para marcar como lida
 - [x] Confirmação antes de excluir
 - [x] Confirmação antes de enviar
-- [ ] Respostas automáticas
+- [x] Respostas automáticas
 - [ ] Encaminhamento
 - [x] Atraso padrão de envio
 - [x] Comportamento do botão fechar
@@ -752,8 +752,8 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Primeiro dia da semana
 - [ ] Fuso horário
 - [x] Verificação ortográfica
-- [ ] Autocorreção
-- [ ] Capitalização automática
+- [x] Autocorreção
+- [x] Capitalização automática
 - [ ] Dicionários personalizados
 
 ---
@@ -977,7 +977,7 @@ A aplicação deverá utilizar:
 - [ ] Caixa prioritária
 - [ ] Ações rápidas
 - [ ] Limpeza automática
-- [ ] Respostas automáticas
+- [x] Respostas automáticas
 
 ## 0.3.0 — Múltiplas contas
 
