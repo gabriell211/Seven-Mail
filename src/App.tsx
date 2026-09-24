@@ -730,10 +730,23 @@ function RulesView() {
 function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signatures,onSaveSignature,onDeleteSignature,profiles,activeProfileId,onActivateProfile,onSaveProfile,onDeleteProfile}:{settings:AppSettings;onChange:(s:AppSettings)=>void;runtime?:RuntimeInfo;accounts:AccountProfile[];onAccountsChange:(accounts:AccountProfile[])=>void;signatures:SignatureItem[];onSaveSignature:(signature:SignatureItem)=>Promise<void>;onDeleteSignature:(signature:SignatureItem)=>Promise<void>;profiles:ProfileItem[];activeProfileId?:string;onActivateProfile:(profile:ProfileItem|null)=>void;onSaveProfile:(profile:ProfileItem)=>Promise<void>;onDeleteProfile:(profile:ProfileItem)=>Promise<void>}) {
   const set = <K extends keyof AppSettings>(key:K,value:AppSettings[K])=>onChange({...settings,[key]:value});
 
-  async function exportBackup() {
+  async function exportBackup(encrypted=false) {
+    const password=encrypted?window.prompt("Senha para criptografar o backup")?.trim():"";
+    if(encrypted&&(!password||password.length<6)){
+      if(password!==undefined) window.alert("Use uma senha com pelo menos 6 caracteres.");
+      return;
+    }
+    if(encrypted){
+      const confirmation=window.prompt("Confirme a senha do backup")?.trim();
+      if(confirmation!==password){
+        window.alert("As senhas não coincidem.");
+        return;
+      }
+    }
+
     const destination = await saveDialog({
-      defaultPath:"seven-mail-backup.json",
-      filters:[{name:"Backup Seven Mail",extensions:["json"]}],
+      defaultPath:encrypted?"seven-mail-backup.encrypted.json":"seven-mail-backup.json",
+      filters:[{name:encrypted?"Backup criptografado Seven Mail":"Backup Seven Mail",extensions:["json"]}],
     });
     if (!destination) return;
     const workspace = await bridge.exportWorkspace();
@@ -745,7 +758,8 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
       accounts,
       workspace,
     };
-    await bridge.writeTextFile(destination,JSON.stringify(backup,null,2));
+    const plain=JSON.stringify(backup,null,2);
+    await bridge.writeTextFile(destination,encrypted?await encryptBackupJson(plain,password!):plain);
   }
 
   async function importBackup() {
@@ -755,7 +769,13 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
       filters:[{name:"Backup Seven Mail",extensions:["json"]}],
     });
     if (!selected || Array.isArray(selected)) return;
-    const raw = await bridge.readTextFile(selected);
+    let raw = await bridge.readTextFile(selected);
+    const envelope=JSON.parse(raw) as {format?:string};
+    if(envelope.format==="seven-mail-backup-encrypted"){
+      const password=window.prompt("Senha do backup criptografado")??"";
+      if(!password) return;
+      raw=await decryptBackupJson(raw,password);
+    }
     const backup = JSON.parse(raw) as {
       format?:string;
       settings?:Partial<AppSettings>;
@@ -776,6 +796,40 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
       onChange({...DEFAULT_SETTINGS,...backup.settings});
     }
     window.alert("Backup restaurado. Credenciais de e-mail não fazem parte do backup e continuam protegidas pelo Keyring do sistema.");
+    window.location.reload();
+  }
+
+  async function configureAppLock() {
+    const pin=window.prompt("Crie um PIN para bloquear o Seven Mail")?.trim();
+    if(!pin) return;
+    const confirmation=window.prompt("Confirme o PIN")?.trim();
+    if(confirmation!==pin){
+      window.alert("Os PINs não coincidem.");
+      return;
+    }
+    await bridge.setAppLock(pin);
+    set("appLockEnabled",true);
+    window.dispatchEvent(new CustomEvent("seven-mail:app-lock-changed",{detail:true}));
+    window.alert("Bloqueio do aplicativo ativado.");
+  }
+
+  async function disableAppLock() {
+    const pin=window.prompt("Digite o PIN atual para desativar o bloqueio")??"";
+    if(!await bridge.verifyAppLock(pin)){
+      window.alert("PIN incorreto.");
+      return;
+    }
+    await bridge.clearAppLock();
+    set("appLockEnabled",false);
+    window.dispatchEvent(new CustomEvent("seven-mail:app-lock-changed",{detail:false}));
+  }
+
+  async function secureWipeLocalData() {
+    if(!window.confirm("Isso apagará de forma segura cache, fila offline e workspace local. Contas e credenciais do Keyring serão preservadas. Continuar?")) return;
+    if(!window.confirm("Confirma a limpeza segura dos dados locais?")) return;
+    await bridge.secureClearLocalData();
+    localStorage.removeItem("seven-mail:search-history");
+    window.alert("Dados locais removidos com sobrescrita. O Seven Mail será reiniciado.");
     window.location.reload();
   }
 
@@ -804,8 +858,9 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
     <div className="settings-row"><div><h3>Escrita e idioma</h3><p>Assistência local de composição e dicionário personalizado.</p></div><div className="send-settings"><label><span>Idioma de composição</span><select value={settings.composeLanguage??"pt-BR"} onChange={e=>set("composeLanguage",e.target.value)}><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en-US">English (US)</option><option value="es-ES">Español</option></select></label><label><input type="checkbox" checked={settings.autoCorrectEnabled!==false} onChange={e=>set("autoCorrectEnabled",e.target.checked)}/> Autocorreção conservadora</label><label><input type="checkbox" checked={settings.autoCapitalizeEnabled!==false} onChange={e=>set("autoCapitalizeEnabled",e.target.checked)}/> Capitalização automática</label><div className="dictionary-editor"><b>Dicionário personalizado</b><div>{(settings.customDictionary??[]).map((word)=><span key={word}>{word}<button onClick={()=>set("customDictionary",(settings.customDictionary??[]).filter((item)=>item!==word))}><Icon name="x" size={10}/></button></span>)}</div><button className="secondary" onClick={()=>{const word=window.prompt("Palavra para adicionar ao dicionário")?.trim();if(word)set("customDictionary",[...new Set([...(settings.customDictionary??[]),word])]);}}><Icon name="plus" size={12}/> Palavra</button></div></div></div>
     <div className="settings-row"><div><h3>Sincronização e notificações</h3><p>Atualização automática da caixa de entrada em segundo plano.</p></div><div className="send-settings"><select value={settings.syncIntervalMinutes} onChange={e=>set("syncIntervalMinutes",Number(e.target.value) as AppSettings["syncIntervalMinutes"])}><option value={1}>A cada 1 minuto</option><option value={5}>A cada 5 minutos</option><option value={10}>A cada 10 minutos</option><option value={15}>A cada 15 minutos</option><option value={30}>A cada 30 minutos</option></select><label><input type="checkbox" checked={settings.notificationsEnabled} onChange={e=>set("notificationsEnabled",e.target.checked)}/> Notificações nativas de novas mensagens</label><label><input type="checkbox" checked={Boolean(settings.quietHoursEnabled)} onChange={e=>set("quietHoursEnabled",e.target.checked)}/> Horário silencioso</label>{settings.quietHoursEnabled&&<div className="quiet-hours"><label><span>De</span><input type="time" value={settings.quietHoursStart??"22:00"} onChange={e=>set("quietHoursStart",e.target.value)}/></label><label><span>Até</span><input type="time" value={settings.quietHoursEnd??"07:00"} onChange={e=>set("quietHoursEnd",e.target.value)}/></label></div>}</div></div>
     <div className="settings-row"><div><h3>Ausência e encaminhamento</h3><p>Automação local executada durante sincronizações enquanto o Seven Mail estiver em execução.</p></div><div className="send-settings"><label><input type="checkbox" checked={Boolean(settings.autoReplyEnabled)} onChange={e=>set("autoReplyEnabled",e.target.checked)}/> Resposta automática</label>{settings.autoReplyEnabled&&<><input value={settings.autoReplySubject??""} onChange={e=>set("autoReplySubject",e.target.value)} placeholder="Assunto"/><textarea value={settings.autoReplyBody??""} onChange={e=>set("autoReplyBody",e.target.value)} placeholder="Mensagem de ausência"/><div className="quiet-hours"><label><span>Início</span><input type="datetime-local" value={settings.autoReplyStart?.slice(0,16)??""} onChange={e=>set("autoReplyStart",e.target.value||undefined)}/></label><label><span>Fim</span><input type="datetime-local" value={settings.autoReplyEnd?.slice(0,16)??""} onChange={e=>set("autoReplyEnd",e.target.value||undefined)}/></label></div></>}<label><input type="checkbox" checked={Boolean(settings.autoForwardEnabled)} onChange={e=>set("autoForwardEnabled",e.target.checked)}/> Encaminhamento automático</label>{settings.autoForwardEnabled&&<input type="email" value={settings.autoForwardAddress??""} onChange={e=>set("autoForwardAddress",e.target.value)} placeholder="destino@dominio.com"/>}</div></div>
-    <div className="settings-row"><div><h3>Dados locais</h3><p>Cache pode ser limpo sem tocar na fila de saída. Backup inclui workspace, preferências e metadados das contas; senhas ficam somente no Keyring.</p></div><div className="paths"><span><b>Dados</b>{runtime?.dataDir||"Carregando..."}</span><span><b>Cache</b>{runtime?.cacheDir||"Carregando..."}</span><span><b>Fila</b>{runtime?.queueDir||"Carregando..."}</span><div className="data-actions"><button className="secondary" onClick={()=>void exportBackup()}><Icon name="download" size={14}/> Exportar backup</button><button className="secondary" onClick={()=>void importBackup()}><Icon name="upload" size={14}/> Restaurar backup</button><button className="secondary" onClick={()=>bridge.clearCache()}>Limpar apenas cache</button></div></div></div>
+    <div className="settings-row"><div><h3>Dados locais</h3><p>Cache pode ser limpo sem tocar na fila de saída. Backup inclui workspace, preferências e metadados das contas; senhas ficam somente no Keyring.</p></div><div className="paths"><span><b>Dados</b>{runtime?.dataDir||"Carregando..."}</span><span><b>Cache</b>{runtime?.cacheDir||"Carregando..."}</span><span><b>Fila</b>{runtime?.queueDir||"Carregando..."}</span><div className="data-actions"><button className="secondary" onClick={()=>void exportBackup(false)}><Icon name="download" size={14}/> Exportar backup</button><button className="secondary" onClick={()=>void exportBackup(true)}><Icon name="lock" size={14}/> Backup criptografado</button><button className="secondary" onClick={()=>void importBackup()}><Icon name="upload" size={14}/> Restaurar backup</button><button className="secondary" onClick={()=>bridge.clearCache()}>Limpar apenas cache</button><button className="danger-link" onClick={()=>void secureWipeLocalData()}>Limpeza segura</button></div></div></div>
     <div className="settings-row"><div><h3>Privacidade de mensagens</h3><p>Reduz rastreamento e alerta sobre conteúdo potencialmente perigoso.</p></div><div className="toggles"><label><input type="checkbox" checked={settings.blockRemoteContent!==false} onChange={e=>set("blockRemoteContent",e.target.checked)}/> Bloquear imagens e conteúdo remoto</label><label><input type="checkbox" checked={settings.warnSuspiciousLinks!==false} onChange={e=>set("warnSuspiciousLinks",e.target.checked)}/> Avisar antes de abrir links suspeitos</label><label><input type="checkbox" checked={settings.externalSenderWarning!==false} onChange={e=>set("externalSenderWarning",e.target.checked)}/> Avisar remetente externo</label></div></div>
+    <div className="settings-row"><div><h3>Bloqueio do aplicativo</h3><p>PIN protegido pelo Keyring. Pode bloquear automaticamente após inatividade.</p></div><div className="send-settings">{settings.appLockEnabled?<><button className="secondary" onClick={()=>void configureAppLock()}><Icon name="lock" size={14}/> Alterar PIN</button><button className="danger-link" onClick={()=>void disableAppLock()}>Desativar bloqueio</button></>:<button className="secondary" onClick={()=>void configureAppLock()}><Icon name="lock" size={14}/> Ativar bloqueio</button>}<label><span>Bloquear após</span><select disabled={!settings.appLockEnabled} value={settings.appLockMinutes??5} onChange={e=>set("appLockMinutes",Number(e.target.value) as AppSettings["appLockMinutes"])}><option value={0}>Somente manual</option><option value={1}>1 minuto</option><option value={5}>5 minutos</option><option value={15}>15 minutos</option><option value={30}>30 minutos</option></select></label></div></div>
         <SenderPoliciesPanel settings={settings} onChange={onChange}/>
     <ProfilesPanel accounts={accounts} profiles={profiles} activeProfileId={activeProfileId} onActivate={onActivateProfile} onSave={onSaveProfile} onDelete={onDeleteProfile}/>
     <AccountsPanel accounts={accounts} onChange={onAccountsChange}/>
