@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { disable as disableAutostart, enable as enableAutostart } from "@tauri-apps/plugin-autostart";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -22,7 +24,7 @@ import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccoun
 import { syncWorkspaceCollection } from "./lib/workspace-sync";
 import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
 import { pendingRulesForMessage } from "./lib/rules";
-import { messageToEml, safeExportName } from "./lib/interchange";
+import { eventsFromIcs, messageToEml, safeExportName } from "./lib/interchange";
 import type { AccountProfile, AppSection, AppSettings, CalendarEvent, CategoryItem, MailFolder, MailMessage, ProfileItem, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -1076,6 +1078,7 @@ export default function App() {
   const [profiles,setProfiles] = useState<ProfileItem[]>([]);
   const [activeProfileId,setActiveProfileId] = useState<string|undefined>(()=>localStorage.getItem("seven-mail:active-profile")||undefined);
   const [syncState,setSyncState] = useState<"idle"|"syncing"|"error">("idle");
+  const externalOpenInitialized = useRef(false);
   const [bootState,setBootState] = useState({
     runtime: false,
     accounts: false,
@@ -1692,19 +1695,99 @@ export default function App() {
     setSection("mail");
   }
 
-  async function importEml() {
+  async function importEmlPath(path:string) {
     const account = activeAccount ?? profileAccounts.find((item)=>item.isDefault) ?? profileAccounts[0];
-    if (!account) return;
+    if (!account) {
+      setAccountOpen(true);
+      window.alert("Adicione uma conta antes de abrir um arquivo EML.");
+      return;
+    }
+    const imported = await bridge.importEml(account.id,path);
+    setMessages((current)=>[imported,...current.filter((item)=>item.id!==imported.id)]);
+    setSelectedFolder(FALLBACK_FOLDERS[0]);
+    setFocusMessageId(imported.id);
+    setSection("mail");
+  }
+
+  async function importEml() {
     const selected = await open({
       multiple:false,
       directory:false,
       filters:[{name:"Mensagem EML",extensions:["eml"]}],
     });
     if (!selected || Array.isArray(selected)) return;
-    const imported = await bridge.importEml(account.id,selected);
-    setMessages((current)=>[imported,...current.filter((item)=>item.id!==imported.id)]);
-    setSelectedFolder(FALLBACK_FOLDERS[0]);
-    setFocusMessageId(imported.id);
+    await importEmlPath(selected);
+  }
+
+  async function importIcsPath(path:string) {
+    const raw=await bridge.readTextFile(path);
+    const events=eventsFromIcs(raw);
+    if(events.length===0){
+      window.alert("Nenhum evento válido foi encontrado no arquivo ICS.");
+      return;
+    }
+    for(const event of events){
+      const document:WorkspaceDocument<CalendarEvent>={
+        id:event.id,
+        kind:"calendar",
+        updatedAt:new Date().toISOString(),
+        payload:event,
+      };
+      await bridge.upsertWorkspace(document);
+      void pushCloudDocument(document).catch(()=>undefined);
+    }
+    setSection("calendar");
+  }
+
+  function mailtoDraft(value:string):ComposeDraft {
+    const url=new URL(value);
+    const to=decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+    return {
+      id:crypto.randomUUID(),
+      accountId:(activeAccount ?? profileAccounts.find((item)=>item.isDefault) ?? profileAccounts[0])?.id,
+      to,
+      cc:url.searchParams.get("cc")??"",
+      bcc:url.searchParams.get("bcc")??"",
+      subject:url.searchParams.get("subject")??"",
+      bodyText:url.searchParams.get("body")??"",
+      bodyHtml:"",
+      mode:"plain",
+      attachments:[],
+    };
+  }
+
+  function normalizeExternalPath(value:string):string {
+    const trimmed=value.trim().replace(/^["']|["']$/g,"");
+    if(!/^file:/i.test(trimmed)) return trimmed;
+    try{
+      const url=new URL(trimmed);
+      let path=decodeURIComponent(url.pathname);
+      if(/^\/[A-Za-z]:\//.test(path)) path=path.slice(1);
+      return path;
+    }catch{
+      return trimmed;
+    }
+  }
+
+  async function handleExternalOpen(value:string) {
+    const request=value.trim();
+    if(!request) return;
+    if(/^mailto:/i.test(request)){
+      if(profileAccounts.length===0){
+        setAccountOpen(true);
+        return;
+      }
+      setDraftToOpen(mailtoDraft(request));
+      setComposeOpen(true);
+      return;
+    }
+
+    const path=normalizeExternalPath(request);
+    if(/\.eml$/i.test(path)){
+      await importEmlPath(path);
+    }else if(/\.ics$/i.test(path)){
+      await importIcsPath(path);
+    }
   }
 
   async function exportEml(message: MailMessage) {
@@ -1775,6 +1858,47 @@ export default function App() {
     void refreshDrafts();
   }
 
+
+  useEffect(()=>{
+    if(!bootState.accounts || externalOpenInitialized.current) return;
+    externalOpenInitialized.current=true;
+    let disposed=false;
+    let unlistenDesktop:(()=>void)|undefined;
+    let unlistenDeep:(()=>void)|undefined;
+
+    const register=async()=>{
+      const initial=await bridge.initialOpenRequests().catch(()=>[]);
+      for(const request of initial){
+        if(disposed) return;
+        await handleExternalOpen(request).catch(console.error);
+      }
+
+      const current=await getCurrent().catch(()=>null);
+      for(const request of current??[]){
+        if(disposed) return;
+        await handleExternalOpen(request).catch(console.error);
+      }
+
+      unlistenDesktop=await listen<string[]>("seven-mail:desktop-open",(event)=>{
+        for(const request of event.payload){
+          void handleExternalOpen(request).catch(console.error);
+        }
+      });
+
+      unlistenDeep=await onOpenUrl((urls)=>{
+        for(const request of urls){
+          void handleExternalOpen(request).catch(console.error);
+        }
+      });
+    };
+
+    void register();
+    return ()=>{
+      disposed=true;
+      unlistenDesktop?.();
+      unlistenDeep?.();
+    };
+  },[bootState.accounts]);
 
   useEffect(()=>{
     let disposed = false;
