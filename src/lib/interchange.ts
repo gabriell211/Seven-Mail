@@ -160,6 +160,14 @@ export function eventsFromIcs(raw: string): CalendarEvent[] {
       const endLine = Object.entries(current).find(([key]) => key.startsWith("DTEND"));
       const start = parseIcsDate(startLine?.[1]?.[0] ?? new Date().toISOString());
       const end = parseIcsDate(endLine?.[1]?.[0] ?? start.value);
+      const rrule=current.RRULE?.[0]??"";
+      const frequency=rrule.match(/(?:^|;)FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)/i)?.[1]?.toLowerCase() as CalendarEvent["recurrence"]|undefined;
+      const untilRaw=rrule.match(/(?:^|;)UNTIL=([^;]+)/i)?.[1];
+      const until=untilRaw?parseIcsDate(untilRaw).value.slice(0,10):undefined;
+      const attendeeLines=current.ATTENDEE??[];
+      const required=attendeeLines.filter((value)=>!/ROLE=OPT-PARTICIPANT|CUTYPE=RESOURCE/i.test(value)).map((value)=>value.replace(/^.*mailto:/i,"").trim()).filter(Boolean);
+      const optional=attendeeLines.filter((value)=>/ROLE=OPT-PARTICIPANT/i.test(value)).map((value)=>value.replace(/^.*mailto:/i,"").trim()).filter(Boolean);
+      const resources=attendeeLines.filter((value)=>/CUTYPE=RESOURCE/i.test(value)).map((value)=>value.replace(/^.*mailto:/i,"").trim()).filter(Boolean);
       events.push({
         id: (current.UID?.[0] ?? crypto.randomUUID()).split("@")[0] || crypto.randomUUID(),
         title: unescapeText(current.SUMMARY?.[0] ?? "Evento importado"),
@@ -169,9 +177,19 @@ export function eventsFromIcs(raw: string): CalendarEvent[] {
         endAt: end.value,
         allDay: start.allDay,
         color: current["X-SEVEN-COLOR"]?.[0] ?? "#7868ff",
-        participants: (current.ATTENDEE ?? [])
-          .map((value) => value.replace(/^mailto:/i, "").trim())
-          .filter(Boolean),
+        participants:required,
+        requiredParticipants:required,
+        optionalParticipants:optional,
+        resources,
+        organizer:(current.ORGANIZER?.[0]??"").replace(/^mailto:/i,"").trim()||undefined,
+        recurrence:frequency??"none",
+        recurrenceUntil:until,
+        recurrenceExceptions:(current.EXDATE??[]).flatMap((value)=>value.split(",")).map((value)=>parseIcsDate(value).value),
+        isPrivate:(current.CLASS?.[0]??"").toUpperCase()==="PRIVATE",
+        status:(current.STATUS?.[0]??"").toUpperCase()==="CANCELLED"?"cancelled":(current.STATUS?.[0]??"").toUpperCase()==="TENTATIVE"?"draft":"confirmed",
+        freeBusyStatus:(current.TRANSP?.[0]??"").toUpperCase()==="TRANSPARENT"?"free":"busy",
+        onlineMeetingUrl:current.URL?.[0] ? unescapeText(current.URL[0]) : undefined,
+        timezone:current["X-WR-TIMEZONE"]?.[0],
       });
       current = null;
       continue;
