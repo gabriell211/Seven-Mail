@@ -83,3 +83,13 @@ pub struct QueueOperation {
     pub attempts: u32,
     pub payload: Value,
 }
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDocument {
+    pub id: String,
+    pub kind: String,
+    pub updated_at: String,
+    pub payload: Value,
+}
