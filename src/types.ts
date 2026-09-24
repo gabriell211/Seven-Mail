@@ -38,6 +38,7 @@ export interface MailAddress { name?: string; email: string; }
 export interface MailMessage {
   id: string;
   accountId: string;
+  remoteId?: string;
   folder: string;
   subject: string;
   preview: string;

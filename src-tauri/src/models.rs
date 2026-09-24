@@ -56,6 +56,8 @@ pub struct MailAddress {
 pub struct MailMessage {
     pub id: String,
     pub account_id: String,
+    #[serde(default)]
+    pub remote_id: Option<String>,
     pub folder: String,
     pub subject: String,
     pub preview: String,

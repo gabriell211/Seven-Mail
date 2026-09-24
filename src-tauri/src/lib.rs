@@ -122,8 +122,13 @@ fn flush_outbox() -> Result<usize, String> {
 }
 
 #[tauri::command]
+fn message_action(account_id: String, message_id: String, action: String) -> Result<MailMessage, String> {
+    storage::apply_message_action(&AppPaths::resolve()?, &account_id, &message_id, &action)
+}
+
+#[tauri::command]
 fn clear_cache() -> Result<(), String> {
-    Ok(())
+    storage::clear_cache(&AppPaths::resolve()?)
 }
 
 pub fn run() {
@@ -142,6 +147,7 @@ pub fn run() {
             queue_operation,
             list_queue,
             flush_outbox,
+            message_action,
             clear_cache
         ])
         .run(tauri::generate_context!())

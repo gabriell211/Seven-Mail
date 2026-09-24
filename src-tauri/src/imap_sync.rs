@@ -105,6 +105,7 @@ fn parse_message(
     Some(MailMessage {
         id: format!("{}-inbox-{uid}", account.id),
         account_id: account.id.clone(),
+        remote_id: Some(uid.to_string()),
         folder: if is_draft { "Rascunhos" } else { "Caixa de entrada" }.into(),
         subject: parsed.subject().unwrap_or("(sem assunto)").to_owned(),
         preview,

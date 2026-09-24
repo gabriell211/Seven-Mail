@@ -243,3 +243,73 @@ pub fn retry_later(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     let destination = paths.pending.join(format!("{}.json", operation_id));
     fs::rename(source, destination).map_err(io_error)
 }
+
+
+pub fn apply_message_action(
+    paths: &AppPaths,
+    account_id: &str,
+    message_id: &str,
+    action: &str,
+) -> Result<MailMessage, String> {
+    safe_component(account_id)?;
+    safe_component(message_id)?;
+
+    let path = paths
+        .message_cache
+        .join(account_id)
+        .join(format!("{}.json", message_id));
+
+    if !path.exists() {
+        return Err("Mensagem não encontrada no cache local.".to_string());
+    }
+
+    let mut message = read_json::<MailMessage>(&path)?;
+
+    match action {
+        "read" => message.is_read = true,
+        "unread" => message.is_read = false,
+        "flag" => message.is_flagged = true,
+        "unflag" => message.is_flagged = false,
+        "archive" => message.folder = "Arquivados".to_string(),
+        "delete" => message.folder = "Lixeira".to_string(),
+        "spam" => message.folder = "Spam".to_string(),
+        "inbox" => message.folder = "Caixa de entrada".to_string(),
+        _ => return Err("Ação de mensagem não suportada.".to_string()),
+    }
+
+    write_json(&path, &message)?;
+
+    let (kind, payload) = match action {
+        "read" => ("read", serde_json::json!({"remoteId": message.remote_id, "read": true})),
+        "unread" => ("read", serde_json::json!({"remoteId": message.remote_id, "read": false})),
+        "flag" => ("flag", serde_json::json!({"remoteId": message.remote_id, "flagged": true})),
+        "unflag" => ("flag", serde_json::json!({"remoteId": message.remote_id, "flagged": false})),
+        "archive" => ("move", serde_json::json!({"remoteId": message.remote_id, "target": "archive"})),
+        "delete" => ("move", serde_json::json!({"remoteId": message.remote_id, "target": "trash"})),
+        "spam" => ("move", serde_json::json!({"remoteId": message.remote_id, "target": "spam"})),
+        "inbox" => ("move", serde_json::json!({"remoteId": message.remote_id, "target": "inbox"})),
+        _ => unreachable!(),
+    };
+
+    queue_operation(
+        paths,
+        &QueueOperation {
+            id: uuid::Uuid::new_v4().to_string(),
+            kind: kind.to_string(),
+            account_id: account_id.to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            attempts: 0,
+            payload,
+        },
+    )?;
+
+    Ok(message)
+}
+
+pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
+    if paths.message_cache.exists() {
+        fs::remove_dir_all(&paths.message_cache).map_err(io_error)?;
+    }
+    fs::create_dir_all(&paths.message_cache).map_err(io_error)?;
+    Ok(())
+}

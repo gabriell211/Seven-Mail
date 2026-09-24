@@ -23,5 +23,7 @@ export const bridge = {
   queueOperation: (operation: QueueOperation): Promise<void> => command("queue_operation", { operation }),
   listQueue: (): Promise<QueueOperation[]> => command("list_queue"),
   flushOutbox: (): Promise<number> => command("flush_outbox"),
+  messageAction: (accountId: string, messageId: string, action: "read" | "unread" | "flag" | "unflag" | "archive" | "delete" | "spam" | "inbox"): Promise<MailMessage> =>
+    command("message_action", { accountId, messageId, action }),
   clearCache: (): Promise<void> => command("clear_cache")
 };
