@@ -187,6 +187,7 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
   const [editingOccurrence,setEditingOccurrence]=useState<{sourceId:string;originalStart:string}|null>(null);
   const [cursor, setCursor] = useState(() => new Date());
   const [view, setView] = useState<"day" | "three" | "week" | "workweek" | "month" | "agenda" | "side">("month");
+  const [eventClipboard,setEventClipboard]=useState<{event:CalendarEvent;mode:"copy"|"cut"}|null>(null);
 
   const localCalendar:CalendarListItem={id:"local",name:"Local",color:COLORS[0],visible:true};
   const calendarList:CalendarListItem[]=calendars.items.some((item)=>item.id==="local")
@@ -361,6 +362,58 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
     await calendars.remove(calendar.id);
   }
 
+  async function moveOccurrenceToDate(occurrence:CalendarOccurrence,targetDate:Date) {
+    const source=store.items.find((item)=>item.id===occurrence.sourceEventId)??store.items.find((item)=>item.id===occurrence.id);
+    if(!source) return;
+    const oldStart=new Date(occurrence.startAt);
+    const oldEnd=new Date(occurrence.endAt);
+    const duration=Math.max(15*60_000,oldEnd.getTime()-oldStart.getTime());
+    const nextStart=new Date(targetDate);
+    nextStart.setHours(oldStart.getHours(),oldStart.getMinutes(),oldStart.getSeconds(),0);
+    const nextEnd=new Date(nextStart.getTime()+duration);
+
+    if(source.recurrence&&source.recurrence!=="none"&&occurrence.occurrenceOriginalStart){
+      const {series,exception}=exceptionOccurrence(source,occurrence.occurrenceOriginalStart,{
+        ...occurrence,
+        id:undefined as never,
+        startAt:nextStart.toISOString(),
+        endAt:nextEnd.toISOString(),
+        recurrence:"none",
+        recurrenceParentId:source.id,
+      });
+      await store.save(series);
+      await store.save(exception);
+      return;
+    }
+
+    await store.save({...source,startAt:nextStart.toISOString(),endAt:nextEnd.toISOString()});
+  }
+
+  async function pasteCalendarEvent(targetDate?:Date) {
+    if(!eventClipboard) return;
+    const source=eventClipboard.event;
+    const originalStart=new Date(source.startAt);
+    const duration=Math.max(15*60_000,new Date(source.endAt).getTime()-originalStart.getTime());
+    const nextStart=targetDate?new Date(targetDate):new Date(originalStart.getTime()+24*60*60_000);
+    if(targetDate) nextStart.setHours(originalStart.getHours(),originalStart.getMinutes(),originalStart.getSeconds(),0);
+    const next:CalendarEvent={
+      ...source,
+      id:crypto.randomUUID(),
+      title:eventClipboard.mode==="copy"?`${source.title} (cópia)`:source.title,
+      startAt:nextStart.toISOString(),
+      endAt:new Date(nextStart.getTime()+duration).toISOString(),
+      recurrenceParentId:undefined,
+      occurrenceOriginalStart:undefined,
+      reminderNotifiedAt:undefined,
+    };
+    await store.save(next);
+    if(eventClipboard.mode==="cut"){
+      await store.remove(source.id);
+      setEventClipboard(null);
+    }
+    setEditing(next);
+  }
+
   async function duplicateEvent(event:CalendarEvent) {
     await store.save({
       ...event,
@@ -500,12 +553,29 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
   }
 
   const EventButton = ({ event }: { event: CalendarOccurrence }) => (
-    <button className="calendar-event" style={{ borderLeftColor: event.color }} onClick={() => openOccurrence(event)}>
+    <button
+      className="calendar-event"
+      draggable
+      style={{ borderLeftColor: event.color }}
+      onClick={() => openOccurrence(event)}
+      onDragStart={(dragEvent)=>{
+        dragEvent.dataTransfer.effectAllowed="move";
+        dragEvent.dataTransfer.setData("application/x-seven-calendar-event",event.occurrenceId);
+      }}
+    >
       <b>{event.title || "Sem título"}</b>
       {!event.allDay && <small>{new Date(event.startAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</small>}
       {event.location && <small>{event.location}</small>}
     </button>
   );
+
+  function CalendarDropZone({date,children,className}:{date:Date;children:ReactNode;className?:string}){
+    return <div className={className} onDragOver={(event)=>{if(event.dataTransfer.types.includes("application/x-seven-calendar-event"))event.preventDefault();}} onDrop={(event)=>{
+      const id=event.dataTransfer.getData("application/x-seven-calendar-event");
+      const occurrence=expandedEvents.find((item)=>item.occurrenceId===id);
+      if(occurrence){event.preventDefault();void moveOccurrenceToDate(occurrence,date);}
+    }}>{children}</div>;
+  }
 
   return (
     <Workspace
@@ -525,6 +595,7 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
             ))}
           </div>
           <button className="secondary" onClick={() => void createCalendar()}><Icon name="plus" size={14}/> Calendário</button>
+          {eventClipboard&&<button className="secondary" onClick={()=>void pasteCalendarEvent(cursor)}><Icon name="copy" size={14}/> Colar evento</button>}
           <button className="secondary" onClick={() => void importIcs()}><Icon name="upload" size={14}/> Importar ICS</button>
           <button className="secondary" disabled={store.items.length===0} onClick={() => void exportIcs()}><Icon name="download" size={14}/> Exportar ICS</button>
         </div>
@@ -556,13 +627,13 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
             const outside = date.getMonth() !== cursor.getMonth();
             const today = date.toDateString() === new Date().toDateString();
             return (
-              <div className={`day ${outside ? "outside" : ""} ${today ? "today" : ""}`} key={date.toISOString()}>
+              <CalendarDropZone className={`day ${outside ? "outside" : ""} ${today ? "today" : ""}`} date={date} key={date.toISOString()}>
                 <span>{date.getDate()}</span>
                 <div className="day-events">
-                  {events.slice(0, 3).map((event) => <EventButton key={event.id} event={event} />)}
+                  {events.slice(0, 3).map((event) => <EventButton key={event.occurrenceId} event={event} />)}
                   {events.length > 3 && <small className="more-events">+{events.length - 3} eventos</small>}
                 </div>
-              </div>
+              </CalendarDropZone>
             );
           })}
         </div>
@@ -572,10 +643,10 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
         {displayWeekDays.map((date) => {
           const events = eventsByDay.get(date.toDateString()) ?? [];
           const today = date.toDateString() === new Date().toDateString();
-          return <section className={today ? "calendar-week-day today" : "calendar-week-day"} key={date.toISOString()}>
+          return <CalendarDropZone className={today ? "calendar-week-day today" : "calendar-week-day"} date={date} key={date.toISOString()}>
             <header><span>{date.toLocaleDateString("pt-BR", { weekday: "short" }).toUpperCase()}</span><b>{date.getDate()}</b></header>
-            <div>{events.length ? events.map((event)=><EventButton key={event.id} event={event}/>) : <small className="mini-empty">Sem eventos</small>}</div>
-          </section>;
+            <div>{events.length ? events.map((event)=><EventButton key={event.occurrenceId} event={event}/>) : <small className="mini-empty">Sem eventos</small>}</div>
+          </CalendarDropZone>;
         })}
       </div>}
 
@@ -615,6 +686,8 @@ export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountPr
           onRespondMeeting={respondMeeting}
           currentAccount={editing?eventAccount(editing):undefined}
           onDuplicate={store.items.some((item)=>item.id===editing.id)?async()=>{await duplicateEvent(editing);setEditing(null);}:undefined}
+          onCopy={()=>setEventClipboard({event:editing,mode:"copy"})}
+          onCut={store.items.some((item)=>item.id===editing.id)?()=>{setEventClipboard({event:editing,mode:"cut"});setEditing(null);}:undefined}
           onDelete={store.items.some((item) => item.id === editing.id) ? async () => { await store.remove(editing.id); setEditing(null); } : undefined}
         />
       )}
@@ -632,6 +705,8 @@ function CalendarEditor({
   onSave,
   onDelete,
   onDuplicate,
+  onCopy,
+  onCut,
   onSaveFollowing,
   onEditSeries,
   onSendInvite,
@@ -648,6 +723,8 @@ function CalendarEditor({
   onSave: () => Promise<void>;
   onDelete?: () => Promise<void>;
   onDuplicate?: () => Promise<void>;
+  onCopy?: () => void;
+  onCut?: () => void;
   onSaveFollowing?: () => Promise<void>;
   onEditSeries?: () => void;
   onSendInvite?: (event:CalendarEvent) => Promise<void>;
@@ -662,7 +739,7 @@ function CalendarEditor({
     <EditorModal title={value.title || "Novo evento"} eyebrow={occurrence?"OCORRÊNCIA":"EVENTO"} onClose={onClose} onSave={onSave} saveLabel={occurrence?"Salvar esta ocorrência":"Salvar"} disabled={!value.title.trim() || !value.startAt || !value.endAt}>
       <label className="full"><span>Título</span><input autoFocus value={value.title} onChange={(event) => onChange({ ...value, title: event.target.value })} /></label>
       <label><span>Início</span><input type="datetime-local" value={value.startAt.slice(0, 16)} onChange={(event) => onChange({ ...value, startAt: event.target.value })} /></label>
-      <label><span>Fim</span><input type="datetime-local" value={value.endAt.slice(0, 16)} onChange={(event) => onChange({ ...value, endAt: event.target.value })} /></label>
+      <label><span>Fim</span><input type="datetime-local" value={value.endAt.slice(0, 16)} onChange={(event) => onChange({ ...value, endAt: event.target.value })} /><span className="duration-controls"><button type="button" onClick={()=>onChange({...value,endAt:new Date(Math.max(new Date(value.startAt).getTime()+15*60_000,new Date(value.endAt).getTime()-15*60_000)).toISOString()})}>−15 min</button><button type="button" onClick={()=>onChange({...value,endAt:new Date(new Date(value.endAt).getTime()+15*60_000).toISOString()})}>+15 min</button></span></label>
       <label><span>Calendário</span><select value={value.calendarId??"local"} onChange={(event)=>onChange({...value,calendarId:event.target.value,color:calendars.find((item)=>item.id===event.target.value)?.color??value.color})}>{calendars.map((calendar)=><option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</select></label>
       <label><span>Status</span><select value={value.status??"confirmed"} onChange={(event)=>onChange({...value,status:event.target.value as CalendarEvent["status"]})}><option value="confirmed">Confirmado</option><option value="draft">Rascunho</option><option value="cancelled">Cancelado</option></select></label>
       <label className="full"><span>Local</span><input value={value.location} onChange={(event) => onChange({ ...value, location: event.target.value })} placeholder="Local ou sala" /></label>
@@ -691,6 +768,8 @@ function CalendarEditor({
       </div>
       {occurrence&&onEditSeries&&<button className="secondary" onClick={onEditSeries}>Editar série inteira</button>}
       {occurrence&&onSaveFollowing&&<button className="secondary" onClick={()=>void onSaveFollowing()}>Salvar esta e as próximas</button>}
+      {onCopy&&<button className="secondary" onClick={onCopy}><Icon name="copy" size={14}/> Copiar</button>}
+      {onCut&&<button className="secondary" onClick={onCut}>Recortar</button>}
       {onDuplicate && <button className="secondary" onClick={()=>void onDuplicate()}><Icon name="copy" size={14}/> Duplicar evento</button>}
       {onDelete && <button className="danger-link" onClick={() => void onDelete()}><Icon name="trash" size={14} /> Excluir evento</button>}
     </EditorModal>
