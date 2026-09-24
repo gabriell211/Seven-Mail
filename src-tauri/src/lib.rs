@@ -309,6 +309,11 @@ fn clear_cache() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn secure_clear_local_data() -> Result<(), String> {
+    storage::secure_clear_local_data(&AppPaths::resolve()?)
+}
+
+#[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
     interchange::read_text_file(&path)
 }
@@ -562,6 +567,7 @@ pub fn run() {
             message_action,
             move_message_to_folder,
             clear_cache,
+            secure_clear_local_data,
             read_text_file,
             write_text_file,
             import_eml,
