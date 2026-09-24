@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Icon } from "../icons";
 import { bridge } from "../lib/bridge";
-import type { AccountProfile, AppSettings, QueuedAttachment, SignatureItem, WorkspaceDocument } from "../types";
+import type { AccountProfile, AppSettings, ContentBlockItem, MailTemplateItem, QueuedAttachment, SignatureItem, WorkspaceDocument } from "../types";
 
 export interface QueuedSendInfo {
   id: string;
@@ -13,6 +14,7 @@ export interface QueuedSendInfo {
 export interface ComposeDraft {
   id: string;
   accountId: string;
+  fromAddress?: string;
   to: string;
   cc: string;
   bcc: string;
@@ -21,6 +23,9 @@ export interface ComposeDraft {
   bodyHtml: string;
   mode: "rich" | "plain";
   sendAt?: string;
+  priority?: "low" | "normal" | "high";
+  requestReadReceipt?: boolean;
+  requestDeliveryReceipt?: boolean;
   attachments: QueuedAttachment[];
 }
 
@@ -85,6 +90,7 @@ export function Composer({
     return {
       id: crypto.randomUUID(),
       accountId,
+      fromAddress: accounts.find((item)=>item.id===accountId)?.email ?? "",
       to: "",
       cc: "",
       bcc: "",
@@ -92,6 +98,9 @@ export function Composer({
       bodyText: signatureText ? `\n\n${signatureText}` : "",
       bodyHtml: signatureText ? `<br><br>${plainTextToHtml(signatureText)}` : "",
       mode: "rich",
+      priority: "normal",
+      requestReadReceipt: false,
+      requestDeliveryReceipt: false,
       attachments: [],
     };
   });
@@ -100,6 +109,9 @@ export function Composer({
   const [showSchedule, setShowSchedule] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [templates, setTemplates] = useState<MailTemplateItem[]>([]);
+  const [contentBlocks, setContentBlocks] = useState<ContentBlockItem[]>([]);
+  const [draggingFiles, setDraggingFiles] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const finishedRef = useRef(false);
 
@@ -113,12 +125,49 @@ export function Composer({
     [draft.accountId, signatures],
   );
 
+  const fromAddresses = useMemo(() => {
+    if (!account) return [] as string[];
+    return [account.email, ...(account.aliases ?? [])].filter((value,index,array)=>value && array.indexOf(value)===index);
+  }, [account]);
+
+  useEffect(() => {
+    void Promise.all([
+      bridge.listWorkspace<MailTemplateItem>("template").catch(() => []),
+      bridge.listWorkspace<ContentBlockItem>("content-block").catch(() => []),
+    ]).then(([templateDocs,blockDocs])=>{
+      setTemplates(templateDocs.map((document)=>document.payload));
+      setContentBlocks(blockDocs.map((document)=>document.payload));
+    });
+  }, []);
+
   useEffect(() => {
     if (draft.mode !== "rich" || !editorRef.current) return;
     if (document.activeElement !== editorRef.current && editorRef.current.innerHTML !== draft.bodyHtml) {
       editorRef.current.innerHTML = draft.bodyHtml;
     }
   }, [draft.bodyHtml, draft.mode]);
+
+  useEffect(() => {
+    if (!account) return;
+    if (!draft.fromAddress || !fromAddresses.includes(draft.fromAddress)) {
+      setDraft((current)=>({...current,fromAddress:account.email}));
+    }
+  }, [account?.id,fromAddresses.join("|")]);
+
+  useEffect(() => {
+    let unlisten: (()=>void) | undefined;
+    void getCurrentWebview().onDragDropEvent((event)=>{
+      if (event.payload.type === "over") {
+        setDraggingFiles(true);
+      } else if (event.payload.type === "leave") {
+        setDraggingFiles(false);
+      } else if (event.payload.type === "drop") {
+        setDraggingFiles(false);
+        void stageFiles(event.payload.paths);
+      }
+    }).then((fn)=>{unlisten=fn;}).catch(()=>undefined);
+    return ()=>unlisten?.();
+  }, [draft.id,settings.maxAttachmentMb]);
 
   useEffect(() => {
     if (finishedRef.current) return;
@@ -175,17 +224,66 @@ export function Composer({
     format("createLink", normalized);
   }
 
-  async function pickAttachments() {
+  async function stageFiles(sources: string[]) {
+    if (sources.length === 0) return;
     setError("");
     try {
-      const selected = await open({ multiple: true, directory: false });
-      const sources = Array.isArray(selected) ? selected : selected ? [selected] : [];
-      if (sources.length === 0) return;
-      const staged = await bridge.stageAttachments(draft.id, sources);
+      const perFile = settings.maxAttachmentMb ?? 25;
+      const staged = await bridge.stageAttachments(draft.id, sources, perFile, Math.min(perFile * 4, 500));
       setDraft((current) => ({ ...current, attachments: [...current.attachments, ...staged] }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
+  }
+
+  async function pickAttachments() {
+    const selected = await open({ multiple: true, directory: false });
+    const sources = Array.isArray(selected) ? selected : selected ? [selected] : [];
+    await stageFiles(sources);
+  }
+
+  function insertTable() {
+    if (draft.mode !== "rich") return;
+    format("insertHTML", '<table border="1" cellpadding="6" cellspacing="0"><tbody><tr><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td>&nbsp;</td><td>&nbsp;</td></tr></tbody></table><p><br></p>');
+  }
+
+  function insertEmoji() {
+    const emoji = window.prompt("Emoji para inserir", "🙂")?.trim();
+    if (!emoji) return;
+    if (draft.mode === "rich") {
+      format("insertText", emoji);
+    } else {
+      setDraft((current)=>({...current,bodyText:`${current.bodyText}${emoji}`}));
+    }
+  }
+
+  function useTemplate(id: string) {
+    const template = templates.find((item)=>item.id===id);
+    if (!template) return;
+    setDraft((current)=>({
+      ...current,
+      subject:template.subject,
+      bodyText:template.bodyText,
+      bodyHtml:template.bodyHtml,
+      mode:template.bodyHtml.trim()?"rich":"plain",
+    }));
+  }
+
+  function insertContentBlock(id: string) {
+    const block = contentBlocks.find((item)=>item.id===id);
+    if (!block) return;
+    setDraft((current)=>({
+      ...current,
+      bodyText:`${current.bodyText}${current.bodyText.trim()?"\n\n":""}${block.bodyText}`,
+      bodyHtml:current.mode==="rich"
+        ? `${current.bodyHtml}${current.bodyHtml.trim()?"<br><br>":""}${block.bodyHtml || plainTextToHtml(block.bodyText)}`
+        : current.bodyHtml,
+    }));
+  }
+
+  function recipientsValid(raw: string): boolean {
+    const values = raw.split(/[;,]/).map((value)=>value.trim()).filter(Boolean);
+    return values.every((value)=>/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value.replace(/^.*<([^>]+)>$/,"$1")));
   }
 
   async function discard() {
@@ -199,6 +297,10 @@ export function Composer({
   async function queueSend() {
     if (!account || busy || !draft.to.trim()) return;
 
+    if (!recipientsValid(draft.to) || (draft.cc.trim()&&!recipientsValid(draft.cc)) || (draft.bcc.trim()&&!recipientsValid(draft.bcc))) {
+      setError("Revise os destinatários: há um endereço de e-mail inválido.");
+      return;
+    }
     if (settings.confirmBeforeSend && !window.confirm("Enviar esta mensagem?")) return;
     if (!draft.subject.trim() && !window.confirm("O assunto está vazio. Enviar mesmo assim?")) return;
 
@@ -231,6 +333,7 @@ export function Composer({
         createdAt: new Date().toISOString(),
         attempts: 0,
         payload: {
+          fromAddress: draft.fromAddress || account.email,
           to: draft.to.trim(),
           cc: draft.cc.trim(),
           bcc: draft.bcc.trim(),
@@ -238,6 +341,9 @@ export function Composer({
           bodyText,
           bodyHtml,
           attachments: draft.attachments,
+          priority: draft.priority ?? "normal",
+          requestReadReceipt: Boolean(draft.requestReadReceipt),
+          requestDeliveryReceipt: Boolean(draft.requestDeliveryReceipt),
           sendAt: effectiveSendAt.toISOString(),
         },
       });
@@ -265,7 +371,8 @@ export function Composer({
 
   return (
     <div className="modal-backdrop composer-backdrop" onMouseDown={onClose}>
-      <section className="modal compose-modal composer-pro" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+      <section className={draggingFiles?"modal compose-modal composer-pro dragging-files":"modal compose-modal composer-pro"} role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+        {draggingFiles&&<div className="composer-drop-overlay"><Icon name="paperclip" size={28}/><b>Solte para anexar</b></div>}
         <header className="modal-header compact-header">
           <div>
             <span className="eyebrow">NOVA MENSAGEM</span>
@@ -280,13 +387,21 @@ export function Composer({
         <div className="compose-fields composer-fields">
           <label>
             <span>De</span>
-            <select
-              value={account?.id ?? ""}
-              onChange={(event) => setDraft((current) => ({ ...current, accountId: event.target.value }))}
-              disabled={accounts.length === 0}
-            >
-              {accounts.map((item) => <option value={item.id} key={item.id}>{item.displayName} &lt;{item.email}&gt;</option>)}
-            </select>
+            <div className="composer-from-row">
+              <select
+                value={account?.id ?? ""}
+                onChange={(event) => {
+                  const next=accounts.find((item)=>item.id===event.target.value);
+                  setDraft((current) => ({ ...current, accountId: event.target.value, fromAddress: next?.email ?? "" }));
+                }}
+                disabled={accounts.length === 0}
+              >
+                {accounts.map((item) => <option value={item.id} key={item.id}>{item.displayName}</option>)}
+              </select>
+              <select value={draft.fromAddress || account?.email || ""} onChange={(event)=>setDraft((current)=>({...current,fromAddress:event.target.value}))} aria-label="Endereço remetente">
+                {fromAddresses.map((address)=><option key={address} value={address}>{address}</option>)}
+              </select>
+            </div>
           </label>
           <label>
             <span>Para</span>
@@ -320,8 +435,13 @@ export function Composer({
             <button type="button" onClick={() => format("insertOrderedList")}>1. Lista</button>
             <button type="button" onClick={() => format("outdent")}>← Recuo</button>
             <button type="button" onClick={() => format("indent")}>Recuo →</button>
+            <button type="button" onClick={() => format("justifyLeft")}>← Texto</button>
+            <button type="button" onClick={() => format("justifyCenter")}>↔ Texto</button>
+            <button type="button" onClick={() => format("justifyRight")}>Texto →</button>
             <span className="toolbar-separator" />
             <button type="button" onClick={() => void addLink()}>Link</button>
+            <button type="button" onClick={insertTable}>Tabela</button>
+            <button type="button" onClick={insertEmoji}>Emoji</button>
             <button type="button" onClick={() => format("removeFormat")}>Limpar</button>
           </>}
         </div>
@@ -391,6 +511,11 @@ export function Composer({
           <div>
             <button className="icon-button attachment-button" title="Anexar arquivo" onClick={() => void pickAttachments()}><Icon name="paperclip" /></button>
             {accountSignatures.length > 0 && <select className="signature-picker" aria-label="Inserir assinatura" defaultValue="" onChange={(event) => { if (event.target.value) insertSignature(event.target.value); event.currentTarget.value = ""; }}><option value="">Assinatura</option>{accountSignatures.map((signature) => <option key={signature.id} value={signature.id}>{signature.name}{signature.isDefault ? " · padrão" : ""}</option>)}</select>}
+            {templates.length>0&&<select className="signature-picker" aria-label="Aplicar modelo" defaultValue="" onChange={(event)=>{if(event.target.value)useTemplate(event.target.value);event.currentTarget.value="";}}><option value="">Modelo</option>{templates.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select>}
+            {contentBlocks.length>0&&<select className="signature-picker" aria-label="Inserir bloco" defaultValue="" onChange={(event)=>{if(event.target.value)insertContentBlock(event.target.value);event.currentTarget.value="";}}><option value="">Bloco</option>{contentBlocks.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select>}
+            <select className="signature-picker" value={draft.priority??"normal"} onChange={(event)=>setDraft((current)=>({...current,priority:event.target.value as ComposeDraft["priority"]}))} aria-label="Prioridade"><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option></select>
+            <label className="composer-mini-check"><input type="checkbox" checked={Boolean(draft.requestReadReceipt)} onChange={(event)=>setDraft((current)=>({...current,requestReadReceipt:event.target.checked}))}/> Recibo leitura</label>
+            <label className="composer-mini-check"><input type="checkbox" checked={Boolean(draft.requestDeliveryReceipt)} onChange={(event)=>setDraft((current)=>({...current,requestDeliveryReceipt:event.target.checked}))}/> Recibo entrega</label>
             <button className={showSchedule ? "ghost active" : "ghost"} onClick={() => setShowSchedule((value) => !value)}><Icon name="clock" size={15} /> Programar</button>
             <span className="send-delay">{settings.sendDelaySeconds > 0 ? `Desfazer por ${settings.sendDelaySeconds}s` : "Envio imediato"}</span>
           </div>
