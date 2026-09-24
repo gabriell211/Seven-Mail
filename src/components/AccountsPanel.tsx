@@ -87,7 +87,7 @@ export function AccountsPanel({
               <div className="account-settings-copy">
                 <b>{account.displayName}</b>
                 <span>{account.email}</span>
-                <small>{status[account.id] || (account.isDefault ? "Conta padrão" : account.provider)}</small>
+                <small>{status[account.id] || (account.muted ? "Conta silenciada" : account.isDefault ? "Conta padrão" : account.provider)}</small>
               </div>
               <div className="account-settings-actions">
                 {!account.isDefault && <button className="ghost" disabled={busyId === account.id} onClick={() => void setDefault(account.id)}>Tornar padrão</button>}
@@ -115,7 +115,9 @@ export function AccountsPanel({
               <label><span>Servidor SMTP</span><input value={editing.smtpHost ?? ""} onChange={(event) => setEditing({ ...editing, smtpHost: event.target.value })} /></label>
               <label><span>Porta SMTP</span><input type="number" value={editing.smtpPort ?? 465} onChange={(event) => setEditing({ ...editing, smtpPort: Number(event.target.value) })} /></label>
               <label><span>Segurança</span><select value={editing.securityMode ?? "tls"} onChange={(event) => setEditing({ ...editing, securityMode: event.target.value as AccountProfile["securityMode"] })}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
+              <label><span>Timeout</span><select value={editing.connectionTimeoutSeconds ?? 30} onChange={(event) => setEditing({ ...editing, connectionTimeoutSeconds: Number(event.target.value) as AccountProfile["connectionTimeoutSeconds"] })}><option value={10}>10 s</option><option value={20}>20 s</option><option value={30}>30 s</option><option value={60}>60 s</option><option value={120}>120 s</option></select></label>
               <label><span>Cor</span><input type="color" value={editing.color} onChange={(event) => setEditing({ ...editing, color: event.target.value })} /></label>
+              <label className="inline-check"><input type="checkbox" checked={Boolean(editing.muted)} onChange={(event) => setEditing({ ...editing, muted: event.target.checked })} /> Silenciar sincronização e notificações desta conta</label>
               <label className="full"><span>Aliases de envio</span><input value={(editing.aliases??[]).join(", ")} onChange={(event) => setEditing({ ...editing, aliases: event.target.value.split(",").map((value)=>value.trim()).filter(Boolean) })} placeholder="alias@dominio.com, outro@dominio.com" /></label>
               <label className="full"><span>Nova senha / senha de aplicativo</span><input type="password" value={secret} onChange={(event) => setSecret(event.target.value)} placeholder="Deixe vazio para manter a credencial atual" /></label>
             </div>
