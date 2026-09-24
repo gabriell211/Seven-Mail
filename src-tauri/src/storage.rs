@@ -430,6 +430,39 @@ pub fn stage_attachments(
     Ok(output)
 }
 
+pub fn stage_message_as_eml(
+    paths: &AppPaths,
+    operation_id: &str,
+    account_id: &str,
+    message_id: &str,
+    suggested_name: &str,
+) -> Result<QueuedAttachment, String> {
+    safe_component(operation_id)?;
+    safe_component(account_id)?;
+    safe_component(message_id)?;
+
+    let raw = read_raw_message(paths, account_id, message_id)?;
+    if raw.len() as u64 > 64 * 1024 * 1024 {
+        return Err("A mensagem excede o limite de 64 MB para encaminhamento como anexo.".to_string());
+    }
+
+    let destination = paths.queue_attachments.join(operation_id);
+    fs::create_dir_all(&destination).map_err(io_error)?;
+
+    let mut base = safe_attachment_name(suggested_name);
+    if !base.to_ascii_lowercase().ends_with(".eml") {
+        base.push_str(".eml");
+    }
+    let staged_path = destination.join(format!("000-{base}"));
+    fs::write(&staged_path, &raw).map_err(io_error)?;
+
+    Ok(QueuedAttachment {
+        name: base,
+        path: staged_path.display().to_string(),
+        size: raw.len() as u64,
+    })
+}
+
 pub fn cancel_operation(paths: &AppPaths, operation_id: &str) -> Result<bool, String> {
     safe_component(operation_id)?;
     let pending = paths.pending.join(format!("{operation_id}.json"));
