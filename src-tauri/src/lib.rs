@@ -1,3 +1,4 @@
+mod credentials;
 mod models;
 mod storage;
 
@@ -20,8 +21,8 @@ fn save_account(account: AccountProfile) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn store_secret(_account_id: String, _secret: String) -> Result<(), String> {
-    Ok(())
+fn store_secret(account_id: String, secret: String) -> Result<(), String> {
+    credentials::store(&account_id, &secret)
 }
 
 #[tauri::command]
