@@ -5,12 +5,13 @@ import { bridge } from "./lib/bridge";
 import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, PersistentRulesView, PersistentTasksView } from "./components/WorkspaceViews";
 import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
+import { SignaturesPanel } from "./components/SignaturesPanel";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
 import { ensureNotificationPermission, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
 import { deleteCloudDocument, pullCloudAccounts, pullCloudDocuments, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
 import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
 import { pendingRulesForMessage } from "./lib/rules";
-import type { AccountProfile, AppSection, AppSettings, CategoryItem, MailFolder, MailMessage, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
+import type { AccountProfile, AppSection, AppSettings, CategoryItem, MailFolder, MailMessage, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
@@ -389,6 +390,7 @@ export default function App() {
   const [focusMessageId,setFocusMessageId] = useState<string>();
   const [categories,setCategories] = useState<CategoryItem[]>([]);
   const [savedSearches,setSavedSearches] = useState<SavedSearchItem[]>([]);
+  const [signatures,setSignatures] = useState<SignatureItem[]>([]);
   const [syncState,setSyncState] = useState<"idle"|"syncing"|"error">("idle");
   const [settings,setSettings] = useState<AppSettings>(()=>{
     try { return {...DEFAULT_SETTINGS,...JSON.parse(localStorage.getItem("seven-mail:settings")||"{}")}; } catch { return DEFAULT_SETTINGS; }
@@ -429,12 +431,14 @@ export default function App() {
   }
 
   async function refreshMailOrganization() {
-    const [nextCategories,nextSavedSearches] = await Promise.all([
+    const [nextCategories,nextSavedSearches,nextSignatures] = await Promise.all([
       loadWorkspaceCollection<CategoryItem>("category"),
       loadWorkspaceCollection<SavedSearchItem>("saved-search"),
+      loadWorkspaceCollection<SignatureItem>("signature"),
     ]);
     setCategories(nextCategories);
     setSavedSearches(nextSavedSearches);
+    setSignatures(nextSignatures);
   }
 
   async function refreshActiveFolders(account = activeAccount) {
