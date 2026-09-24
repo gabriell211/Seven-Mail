@@ -89,6 +89,22 @@ function folderIcon(role: MailFolder["role"]): IconName {
 
 const COLORS = ["#7868ff","#21a6a1","#ef7350","#cb59d8","#3d83f6"];
 
+function notificationsMutedNow(settings: AppSettings): boolean {
+  if(!settings.quietHoursEnabled) return false;
+  const start=settings.quietHoursStart??"22:00";
+  const end=settings.quietHoursEnd??"07:00";
+  const [sh,sm]=start.split(":").map(Number);
+  const [eh,em]=end.split(":").map(Number);
+  if(!Number.isFinite(sh)||!Number.isFinite(sm)||!Number.isFinite(eh)||!Number.isFinite(em)) return false;
+  const now=new Date();
+  const minutes=now.getHours()*60+now.getMinutes();
+  const startMinutes=sh*60+sm;
+  const endMinutes=eh*60+em;
+  return startMinutes<=endMinutes
+    ? minutes>=startMinutes&&minutes<endMinutes
+    : minutes>=startMinutes||minutes<endMinutes;
+}
+
 function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:AccountProfile)=>void}) {
   const [provider,setProvider] = useState<AccountProfile["provider"]>("gmail");
   const [displayName,setDisplayName] = useState("");
@@ -615,7 +631,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
     <div className="settings-row"><div><h3>Painel de leitura</h3><p>Posição padrão e tempo para marcar mensagens como lidas.</p></div><div className="appearance-settings"><select value={settings.readingPane} onChange={e=>set("readingPane",e.target.value as AppSettings["readingPane"])}><option value="right">À direita</option><option value="bottom">Abaixo</option><option value="off">Desativado</option></select><label><span>Marcar como lida</span><select value={settings.markReadDelayMs} onChange={e=>set("markReadDelayMs",Number(e.target.value))}><option value={0}>Imediatamente</option><option value={500}>Após 0,5 s</option><option value={1200}>Após 1,2 s</option><option value={3000}>Após 3 s</option></select></label></div></div>
     <div className="settings-row"><div><h3>Lista de mensagens</h3><p>Caixa prioritária, paginação e comportamento após ações.</p></div><div className="toggles"><label><input type="checkbox" checked={settings.focusInboxEnabled!==false} onChange={e=>set("focusInboxEnabled",e.target.checked)}/> Usar Prioritária e Outros</label><label><input type="checkbox" checked={settings.showSenderPhotos!==false} onChange={e=>set("showSenderPhotos",e.target.checked)}/> Mostrar fotos/iniciais dos remetentes</label><label><input type="checkbox" checked={settings.openNextAfterDelete!==false} onChange={e=>set("openNextAfterDelete",e.target.checked)}/> Abrir próxima mensagem após mover/excluir</label><label><span>Mensagens por página</span><select value={settings.mailPageSize??50} onChange={e=>set("mailPageSize",Number(e.target.value) as AppSettings["mailPageSize"])}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label><label><span>Limite por anexo</span><select value={settings.maxAttachmentMb??25} onChange={e=>set("maxAttachmentMb",Number(e.target.value) as AppSettings["maxAttachmentMb"])}><option value={10}>10 MB</option><option value={25}>25 MB</option><option value={50}>50 MB</option><option value={100}>100 MB</option></select></label></div></div>
     <div className="settings-row"><div><h3>Envio</h3><p>Defina o atraso usado para desfazer um envio e a confirmação antes de colocar a mensagem na fila.</p></div><div className="send-settings"><select value={settings.sendDelaySeconds} onChange={e=>set("sendDelaySeconds",Number(e.target.value) as AppSettings["sendDelaySeconds"])}><option value={0}>Imediato</option><option value={5}>Desfazer por 5 s</option><option value={10}>Desfazer por 10 s</option><option value={20}>Desfazer por 20 s</option><option value={30}>Desfazer por 30 s</option></select><label><input type="checkbox" checked={settings.confirmBeforeSend} onChange={e=>set("confirmBeforeSend",e.target.checked)}/> Confirmar antes de enviar</label></div></div>
-    <div className="settings-row"><div><h3>Sincronização e notificações</h3><p>Atualização automática da caixa de entrada em segundo plano.</p></div><div className="send-settings"><select value={settings.syncIntervalMinutes} onChange={e=>set("syncIntervalMinutes",Number(e.target.value) as AppSettings["syncIntervalMinutes"])}><option value={1}>A cada 1 minuto</option><option value={5}>A cada 5 minutos</option><option value={10}>A cada 10 minutos</option><option value={15}>A cada 15 minutos</option><option value={30}>A cada 30 minutos</option></select><label><input type="checkbox" checked={settings.notificationsEnabled} onChange={e=>set("notificationsEnabled",e.target.checked)}/> Notificações nativas de novas mensagens</label></div></div>
+    <div className="settings-row"><div><h3>Sincronização e notificações</h3><p>Atualização automática da caixa de entrada em segundo plano.</p></div><div className="send-settings"><select value={settings.syncIntervalMinutes} onChange={e=>set("syncIntervalMinutes",Number(e.target.value) as AppSettings["syncIntervalMinutes"])}><option value={1}>A cada 1 minuto</option><option value={5}>A cada 5 minutos</option><option value={10}>A cada 10 minutos</option><option value={15}>A cada 15 minutos</option><option value={30}>A cada 30 minutos</option></select><label><input type="checkbox" checked={settings.notificationsEnabled} onChange={e=>set("notificationsEnabled",e.target.checked)}/> Notificações nativas de novas mensagens</label><label><input type="checkbox" checked={Boolean(settings.quietHoursEnabled)} onChange={e=>set("quietHoursEnabled",e.target.checked)}/> Horário silencioso</label>{settings.quietHoursEnabled&&<div className="quiet-hours"><label><span>De</span><input type="time" value={settings.quietHoursStart??"22:00"} onChange={e=>set("quietHoursStart",e.target.value)}/></label><label><span>Até</span><input type="time" value={settings.quietHoursEnd??"07:00"} onChange={e=>set("quietHoursEnd",e.target.value)}/></label></div>}</div></div>
     <div className="settings-row"><div><h3>Dados locais</h3><p>Cache pode ser limpo sem tocar na fila de saída. Backup inclui workspace, preferências e metadados das contas; senhas ficam somente no Keyring.</p></div><div className="paths"><span><b>Dados</b>{runtime?.dataDir||"Carregando..."}</span><span><b>Cache</b>{runtime?.cacheDir||"Carregando..."}</span><span><b>Fila</b>{runtime?.queueDir||"Carregando..."}</span><div className="data-actions"><button className="secondary" onClick={()=>void exportBackup()}><Icon name="download" size={14}/> Exportar backup</button><button className="secondary" onClick={()=>void importBackup()}><Icon name="upload" size={14}/> Restaurar backup</button><button className="secondary" onClick={()=>bridge.clearCache()}>Limpar apenas cache</button></div></div></div>
     <SenderPoliciesPanel settings={settings} onChange={onChange}/>
     <ProfilesPanel accounts={accounts} profiles={profiles} activeProfileId={activeProfileId} onActivate={onActivateProfile} onSave={onSaveProfile} onDelete={onDeleteProfile}/>
@@ -1338,7 +1354,8 @@ export default function App() {
     root.dataset.contrast=settings.highContrast?"high":"normal";
     root.dataset.motion=settings.reduceMotion?"reduce":"full";
     root.dataset.fontSize=settings.fontSize??"medium";
-    root.style.setProperty("--ui-scale",String(settings.uiScale??1));
+    const fontScale=settings.fontSize==="small"?0.94:settings.fontSize==="large"?1.08:1;
+    root.style.setProperty("--ui-scale",String((settings.uiScale??1)*fontScale));
   },[settings]);
 
   useEffect(()=>{
@@ -1397,6 +1414,7 @@ export default function App() {
         const reminderAt = new Date(task.reminderAt).getTime();
         if (!Number.isFinite(reminderAt) || reminderAt > now) continue;
 
+        if (notificationsMutedNow(settings)) continue;
         await notifyTaskReminder(task);
         const updated: TaskItem = { ...task, reminderNotifiedAt: new Date().toISOString() };
         const nextDocument: WorkspaceDocument<TaskItem> = {
@@ -1416,6 +1434,7 @@ export default function App() {
         const reminderAt = new Date(event.reminderAt).getTime();
         if (!Number.isFinite(reminderAt) || reminderAt > now) continue;
 
+        if (notificationsMutedNow(settings)) continue;
         await notifyCalendarReminder(event);
         const updated: CalendarEvent = { ...event, reminderNotifiedAt: new Date().toISOString() };
         const nextDocument: WorkspaceDocument<CalendarEvent> = {
@@ -1480,7 +1499,7 @@ export default function App() {
           if (!disposed && activeAccount?.id===account.id) {
             setMessages(after);
           }
-          if (fresh.length>0 && settings.notificationsEnabled) {
+          if (fresh.length>0 && settings.notificationsEnabled && !notificationsMutedNow(settings)) {
             void notifyNewMessages(fresh.filter((message)=>!message.isMuted));
           }
           void pushCloudMessages(after).catch(() => undefined);
