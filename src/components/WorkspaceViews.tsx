@@ -440,9 +440,11 @@ export function PersistentNotesView({ query = "" }: { query?: string }) {
   );
 }
 
-export function PersistentRulesView() {
+export function PersistentRulesView({ onRunRules }: { onRunRules?: () => Promise<number> }) {
   const store = useWorkspace<RuleItem>("rule");
   const [editing, setEditing] = useState<RuleItem | null>(null);
+  const [running, setRunning] = useState(false);
+  const [runResult, setRunResult] = useState<string>("");
 
   const fresh = (): RuleItem => ({
     id: crypto.randomUUID(),
@@ -453,10 +455,31 @@ export function PersistentRulesView() {
     operator: "contains",
     value: "",
     action: "archive",
+    stopProcessing: false,
   });
+
+  async function runRulesNow() {
+    if (!onRunRules || running) return;
+    setRunning(true);
+    setRunResult("");
+    try {
+      const applied = await onRunRules();
+      setRunResult(applied === 1 ? "1 ação aplicada" : `${applied} ações aplicadas`);
+    } catch (reason) {
+      setRunResult(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setRunning(false);
+    }
+  }
 
   return (
     <Workspace title="Regras" eyebrow="AUTOMAÇÕES" action="Nova regra" onAction={() => setEditing(fresh())}>
+      <div className="rules-toolbar">
+        <button className="secondary" disabled={!onRunRules || running || store.items.length === 0} onClick={() => void runRulesNow()}>
+          <Icon name="refresh" size={14} /> {running ? "Executando..." : "Executar regras agora"}
+        </button>
+        {runResult && <span>{runResult}</span>}
+      </div>
       {store.items.length === 0 ? (
         <div className="rule-card">
           <div className="empty-symbol"><Icon name="rule" size={28} /></div>
@@ -465,7 +488,7 @@ export function PersistentRulesView() {
         </div>
       ) : (
         <div className="rules-list">
-          {store.items.sort((a, b) => a.priority - b.priority).map((rule) => (
+          {[...store.items].sort((a, b) => a.priority - b.priority).map((rule) => (
             <article className={rule.enabled ? "rule-row" : "rule-row disabled"} key={rule.id}>
               <button className="rule-toggle" onClick={() => void store.save({ ...rule, enabled: !rule.enabled })}><i /></button>
               <button className="rule-copy" onClick={() => setEditing(rule)}>
@@ -487,6 +510,7 @@ export function PersistentRulesView() {
           <label><span>Ação</span><select value={editing.action} onChange={(event) => setEditing({ ...editing, action: event.target.value as RuleItem["action"] })}><option value="archive">Arquivar</option><option value="delete">Excluir</option><option value="spam">Marcar como spam</option><option value="flag">Sinalizar</option><option value="read">Marcar como lida</option></select></label>
           <label><span>Prioridade</span><input type="number" min={1} value={editing.priority} onChange={(event) => setEditing({ ...editing, priority: Math.max(1, Number(event.target.value) || 1) })} /></label>
           <label className="inline-check"><input type="checkbox" checked={editing.enabled} onChange={(event) => setEditing({ ...editing, enabled: event.target.checked })} /> Regra ativa</label>
+          <label className="inline-check"><input type="checkbox" checked={Boolean(editing.stopProcessing)} onChange={(event) => setEditing({ ...editing, stopProcessing: event.target.checked })} /> Parar após esta regra</label>
         </EditorModal>
       )}
     </Workspace>
