@@ -1,6 +1,6 @@
 use crate::{
     credentials,
-    models::{AccountProfile, MailAddress, MailMessage},
+    models::{AccountProfile, MailAddress, MailFolder, MailMessage},
     providers,
     storage::{self, AppPaths},
 };
@@ -80,6 +80,8 @@ fn recipients(addresses: Option<&mail_parser::Address<'_>>) -> Vec<MailAddress> 
 fn parse_message(
     account: &AccountProfile,
     fetch: &async_imap::types::Fetch,
+    remote_folder: &str,
+    folder_label: &str,
 ) -> Option<MailMessage> {
     let raw = fetch.body()?;
     let parsed = MessageParser::default().parse(raw)?;
@@ -88,7 +90,6 @@ fn parse_message(
     let flags: Vec<_> = fetch.flags().collect();
     let is_read = flags.iter().any(|flag| matches!(flag, Flag::Seen));
     let is_flagged = flags.iter().any(|flag| matches!(flag, Flag::Flagged));
-    let is_draft = flags.iter().any(|flag| matches!(flag, Flag::Draft));
     let received_at = parsed
         .date()
         .map(|date| date.to_rfc3339())
@@ -103,10 +104,15 @@ fn parse_message(
         .unwrap_or_default();
 
     Some(MailMessage {
-        id: format!("{}-inbox-{uid}", account.id),
+        id: if remote_folder.eq_ignore_ascii_case("INBOX") {
+            format!("{}-inbox-{uid}", account.id)
+        } else {
+            format!("{}-{}-{uid}", account.id, mailbox_key(remote_folder))
+        },
         account_id: account.id.clone(),
         remote_id: Some(uid.to_string()),
-        folder: if is_draft { "Rascunhos" } else { "Caixa de entrada" }.into(),
+        remote_folder: Some(remote_folder.to_owned()),
+        folder: folder_label.to_owned(),
         subject: parsed.subject().unwrap_or("(sem assunto)").to_owned(),
         preview,
         from: mail_address(parsed.from().and_then(|value| value.first())),
@@ -144,15 +150,93 @@ pub fn test(account: &AccountProfile) -> Result<bool, String> {
     })
 }
 
-pub fn sync_latest(paths: &AppPaths, account: &AccountProfile, limit: u32) -> Result<usize, String> {
+fn mailbox_key(path: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    path.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn folder_identity(path: &str, attributes: &[NameAttribute<'_>]) -> (String, String) {
+    if path.eq_ignore_ascii_case("INBOX") {
+        return ("Caixa de entrada".into(), "inbox".into());
+    }
+
+    if attributes.iter().any(|value| matches!(value, NameAttribute::Sent)) {
+        return ("Enviados".into(), "sent".into());
+    }
+    if attributes.iter().any(|value| matches!(value, NameAttribute::Drafts)) {
+        return ("Rascunhos".into(), "drafts".into());
+    }
+    if attributes.iter().any(|value| matches!(value, NameAttribute::Archive | NameAttribute::All)) {
+        return ("Arquivados".into(), "archive".into());
+    }
+    if attributes.iter().any(|value| matches!(value, NameAttribute::Junk)) {
+        return ("Spam".into(), "spam".into());
+    }
+    if attributes.iter().any(|value| matches!(value, NameAttribute::Trash)) {
+        return ("Lixeira".into(), "trash".into());
+    }
+    if attributes.iter().any(|value| matches!(value, NameAttribute::Flagged)) {
+        return ("Sinalizadas".into(), "flagged".into());
+    }
+
+    (path.to_owned(), "custom".into())
+}
+
+pub fn list_folders(account: &AccountProfile) -> Result<Vec<MailFolder>, String> {
+    async_std::task::block_on(async {
+        let mut session = login(account).await?;
+        let stream = session
+            .list(Some(""), Some("*"))
+            .await
+            .map_err(|error| format!("Falha ao listar pastas IMAP: {error}"))?;
+        let names: Vec<_> = stream
+            .try_collect()
+            .await
+            .map_err(|error| format!("Falha ao receber pastas IMAP: {error}"))?;
+
+        let mut folders = Vec::new();
+        for item in names {
+            if item.attributes().iter().any(|value| matches!(value, NameAttribute::NoSelect)) {
+                continue;
+            }
+            let path = item.name().to_owned();
+            let (name, role) = folder_identity(&path, item.attributes());
+            folders.push(MailFolder { name, path, role });
+        }
+
+        folders.sort_by_key(|folder| match folder.role.as_str() {
+            "inbox" => 0,
+            "drafts" => 1,
+            "sent" => 2,
+            "archive" => 3,
+            "spam" => 4,
+            "trash" => 5,
+            "flagged" => 6,
+            _ => 20,
+        });
+
+        session.logout().await.map_err(|error| error.to_string())?;
+        Ok(folders)
+    })
+}
+
+pub fn sync_folder(
+    paths: &AppPaths,
+    account: &AccountProfile,
+    remote_folder: &str,
+    folder_label: &str,
+    limit: u32,
+) -> Result<usize, String> {
     let limit = limit.clamp(1, 200);
 
     async_std::task::block_on(async {
         let mut session = login(account).await?;
         let mailbox = session
-            .select("INBOX")
+            .select(remote_folder)
             .await
-            .map_err(|error| format!("Não foi possível abrir a caixa de entrada: {error}"))?;
+            .map_err(|error| format!("Não foi possível abrir {remote_folder}: {error}"))?;
 
         if mailbox.exists == 0 {
             session.logout().await.map_err(|error| error.to_string())?;
@@ -164,7 +248,7 @@ pub fn sync_latest(paths: &AppPaths, account: &AccountProfile, limit: u32) -> Re
         let sequence = format!("{start}:{end}");
 
         let fetch_stream = session
-            .fetch(sequence, "(UID FLAGS INTERNALDATE RFC822)")
+            .fetch(sequence, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
             .await
             .map_err(|error| format!("Falha ao buscar mensagens: {error}"))?;
         let fetched: Vec<_> = fetch_stream
@@ -174,7 +258,7 @@ pub fn sync_latest(paths: &AppPaths, account: &AccountProfile, limit: u32) -> Re
 
         let mut cached = 0usize;
         for item in &fetched {
-            if let Some(message) = parse_message(account, item) {
+            if let Some(message) = parse_message(account, item, remote_folder, folder_label) {
                 storage::cache_message(paths, &message)?;
                 cached += 1;
             }
@@ -183,6 +267,10 @@ pub fn sync_latest(paths: &AppPaths, account: &AccountProfile, limit: u32) -> Re
         session.logout().await.map_err(|error| error.to_string())?;
         Ok(cached)
     })
+}
+
+pub fn sync_latest(paths: &AppPaths, account: &AccountProfile, limit: u32) -> Result<usize, String> {
+    sync_folder(paths, account, "INBOX", "Caixa de entrada", limit)
 }
 
 
@@ -310,16 +398,23 @@ pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize
             }
         };
 
-        if let Err(error) = session.select("INBOX").await {
-            storage::retry_later(paths, &first.id)?;
-            return Err(format!("Não foi possível abrir INBOX para sincronizar ações: {error}"));
-        }
-
         let folders = special_folders(&mut session).await.unwrap_or_default();
         let mut applied = 0usize;
         let mut current = Some(first);
 
         while let Some(operation) = current {
+            let source_mailbox = operation
+                .payload
+                .get("mailbox")
+                .and_then(|value| value.as_str())
+                .unwrap_or("INBOX");
+
+            if let Err(error) = session.select(source_mailbox).await {
+                storage::retry_later(paths, &operation.id)?;
+                let _ = session.logout().await;
+                return Err(format!("Não foi possível abrir {source_mailbox} para sincronizar a ação: {error}"));
+            }
+
             match apply_remote_action(&mut session, &operation, &folders).await {
                 Ok(()) => {
                     storage::complete(paths, &operation.id)?;
