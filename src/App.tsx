@@ -924,9 +924,48 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
     set("conditionalMailRules",[...(settings.conditionalMailRules??[]),{id:crypto.randomUUID(),field,value,accent}]);
   }
 
+  function createQuickStep(){
+    const name=window.prompt("Nome da ação rápida composta")?.trim();
+    if(!name) return;
+    const raw=window.prompt(
+      "Ações separadas por vírgula: archive, delete, read, flag, pin, category, move",
+      "read,archive",
+    )?.trim();
+    if(!raw) return;
+    const allowed=new Set(["archive","delete","read","flag","pin","category","move"]);
+    const kinds=raw.split(",").map((value)=>value.trim().toLowerCase()).filter((value)=>allowed.has(value));
+    if(kinds.length===0){
+      window.alert("Nenhuma ação válida informada.");
+      return;
+    }
+    const actions=kinds.map((kind)=>{
+      let target:string|undefined;
+      if(kind==="category") target=window.prompt("Nome da categoria para o Quick Step")?.trim()||undefined;
+      if(kind==="move") target=window.prompt("Pasta IMAP de destino para o Quick Step")?.trim()||undefined;
+      return {kind:kind as NonNullable<AppSettings["quickSteps"]>[number]["actions"][number]["kind"],target};
+    });
+    const shortcut=window.prompt("Atalho opcional (ex.: ctrl+shift+1)")?.trim().toLowerCase()||undefined;
+    set("quickSteps",[...(settings.quickSteps??[]),{id:crypto.randomUUID(),name,shortcut,actions}]);
+  }
+
+  function removeQuickStep(id:string){
+    set("quickSteps",(settings.quickSteps??[]).filter((step)=>step.id!==id));
+  }
+
     return <Workspace title="Configurações" eyebrow="PREFERÊNCIAS">
     <div className="settings-row brand-settings-row"><div><h3>Sobre o Seven Mail</h3><p>Identidade e informações do aplicativo.</p></div><div className="brand-about-card"><BrandLogo variant="about"/><div><strong>Seven Mail</strong><span>Cliente desktop local-first</span><small>Windows · Linux</small></div></div></div>
     <div className="settings-row"><div><h3>Aparência</h3><p>Tema, densidade e pré-visualização da lista.</p></div><div className="appearance-settings"><div className="choices">{(["system","light","dark"] as const).map(t=><button className={settings.theme===t?"choice active":"choice"} key={t} onClick={()=>set("theme",t)}><Icon name={t==="dark"?"moon":"sun"} size={16}/>{t==="system"?"Sistema":t==="light"?"Claro":"Escuro"}</button>)}</div><label><input type="checkbox" checked={settings.compact} onChange={e=>set("compact",e.target.checked)}/> Lista compacta</label><label><span>Linhas de prévia</span><select value={settings.previewLines} onChange={e=>set("previewLines",Number(e.target.value) as AppSettings["previewLines"])}><option value={1}>1 linha</option><option value={2}>2 linhas</option></select></label></div></div>
+    <div className="settings-row"><div><h3>Quick Steps</h3><p>Combine múltiplas ações em um único botão e, opcionalmente, associe um atalho.</p></div><div className="quick-step-settings"><button className="secondary" onClick={createQuickStep}><Icon name="plus" size={13}/> Novo Quick Step</button>{(settings.quickSteps??[]).length===0?<small>Nenhuma ação composta configurada.</small>:(settings.quickSteps??[]).map((step)=><article key={step.id}><span><b>{step.name}</b><small>{step.actions.map((action)=>action.target?`${action.kind} → ${action.target}`:action.kind).join(" · ")}</small></span>{step.shortcut&&<kbd>{step.shortcut}</kbd>}<button className="icon-button" aria-label={`Excluir ${step.name}`} onClick={()=>removeQuickStep(step.id)}><Icon name="trash" size={13}/></button></article>)}</div></div>
+    <div className="settings-row"><div><h3>Atalhos de teclado</h3><p>Personalize os atalhos principais. Use formatos como <code>ctrl+n</code>, <code>shift+r</code> ou <code>delete</code>.</p></div><div className="shortcut-grid">{([
+      ["newMessage","Novo e-mail"],
+      ["search","Pesquisa"],
+      ["reply","Responder"],
+      ["replyAll","Responder a todos"],
+      ["forward","Encaminhar"],
+      ["archive","Arquivar"],
+      ["delete","Excluir"],
+      ["toggleRead","Lida / não lida"],
+    ] as const).map(([key,label])=><label key={key}><span>{label}</span><input value={(settings.shortcuts??DEFAULT_SETTINGS.shortcuts!)[key]} onChange={(event)=>set("shortcuts",{...(settings.shortcuts??DEFAULT_SETTINGS.shortcuts!),[key]:event.target.value.toLowerCase()})}/></label>)}</div></div>
     <div className="settings-row"><div><h3>Lista de mensagens</h3><p>Escolha ações rápidas e destaques condicionais.</p></div><div className="inbox-preferences"><div><b>Ações rápidas</b>{(["archive","delete","flag","read","pin"] as const).map((action)=><label key={action}><input type="checkbox" checked={(settings.quickActions??[]).includes(action)} onChange={()=>toggleQuickAction(action)}/>{action==="archive"?"Arquivar":action==="delete"?"Excluir":action==="flag"?"Sinalizar":action==="read"?"Lida/não lida":"Fixar"}</label>)}</div><div className="conditional-rules"><header><b>Formatação condicional</b><button className="secondary" onClick={addConditionalMailRule}><Icon name="plus" size={12}/> Regra</button></header>{(settings.conditionalMailRules??[]).map((rule)=><span key={rule.id}><i style={{background:rule.accent}}/>{rule.field}: {rule.value}<button aria-label="Excluir regra" onClick={()=>set("conditionalMailRules",(settings.conditionalMailRules??[]).filter((item)=>item.id!==rule.id))}><Icon name="x" size={10}/></button></span>)}</div></div></div>
     <div className="settings-row"><div><h3>Acessibilidade e escala</h3><p>Controles visuais globais, foco de teclado e redução de movimento.</p></div><div className="appearance-settings"><label><span>Tamanho da fonte</span><select value={settings.fontSize??"medium"} onChange={e=>set("fontSize",e.target.value as AppSettings["fontSize"])}><option value="small">Pequena</option><option value="medium">Média</option><option value="large">Grande</option></select></label><label><span>Escala da interface</span><select value={settings.uiScale??1} onChange={e=>set("uiScale",Number(e.target.value) as AppSettings["uiScale"])}><option value={0.9}>90%</option><option value={1}>100%</option><option value={1.1}>110%</option><option value={1.2}>120%</option></select></label><label><input type="checkbox" checked={Boolean(settings.highContrast)} onChange={e=>set("highContrast",e.target.checked)}/> Alto contraste</label><label><input type="checkbox" checked={Boolean(settings.reduceMotion)} onChange={e=>set("reduceMotion",e.target.checked)}/> Reduzir animações</label><small>Atalhos: Alt+1 E-mail · Alt+2 Calendário · Alt+3 Contatos · Alt+4 Tarefas · Ctrl/Cmd+K Pesquisa · Ctrl/Cmd+N Novo e-mail</small></div></div>
     <div className="settings-row"><div><h3>Painel de leitura</h3><p>Posição padrão e tempo para marcar mensagens como lidas.</p></div><div className="appearance-settings"><select value={settings.readingPane} onChange={e=>set("readingPane",e.target.value as AppSettings["readingPane"])}><option value="right">À direita</option><option value="bottom">Abaixo</option><option value="off">Desativado</option></select><label><span>Marcar como lida</span><select value={settings.markReadDelayMs} onChange={e=>set("markReadDelayMs",Number(e.target.value))}><option value={0}>Imediatamente</option><option value={500}>Após 0,5 s</option><option value={1200}>Após 1,2 s</option><option value={3000}>Após 3 s</option></select></label></div></div>
@@ -2053,9 +2092,9 @@ export default function App() {
 
   useEffect(()=>{
     const onKeyDown = (event: KeyboardEvent) => {
-      const modifier = event.ctrlKey || event.metaKey;
+      const bindings=settings.shortcuts??DEFAULT_SETTINGS.shortcuts!;
 
-      if (modifier && event.key.toLowerCase()==="k") {
+      if (shortcutMatches(event,bindings.search)) {
         event.preventDefault();
         const input = document.querySelector<HTMLInputElement>(".search input");
         input?.focus();
@@ -2063,7 +2102,7 @@ export default function App() {
         return;
       }
 
-      if (modifier && event.key.toLowerCase()==="n" && profileAccounts.length>0) {
+      if (shortcutMatches(event,bindings.newMessage) && profileAccounts.length>0) {
         event.preventDefault();
         startNewMessage();
         return;
@@ -2086,7 +2125,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return ()=>window.removeEventListener("keydown", onKeyDown);
-  },[profileAccounts.length]);
+  },[profileAccounts.length,settings.shortcuts]);
 
   async function applyIgnoredConversations(candidates: MailMessage[]): Promise<number> {
     const ignored=new Set(settings.ignoredConversationKeys??[]);
