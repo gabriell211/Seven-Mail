@@ -315,6 +315,11 @@ fn clear_cache() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn prune_message_cache(retention_days: u32) -> Result<usize, String> {
+    storage::prune_message_cache(&AppPaths::resolve()?, retention_days)
+}
+
+#[tauri::command]
 fn secure_clear_local_data() -> Result<(), String> {
     storage::secure_clear_local_data(&AppPaths::resolve()?)
 }
@@ -586,6 +591,7 @@ pub fn run() {
             message_action,
             move_message_to_folder,
             clear_cache,
+            prune_message_cache,
             secure_clear_local_data,
             read_text_file,
             write_text_file,
