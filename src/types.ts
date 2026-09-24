@@ -74,10 +74,11 @@ export interface AppSettings {
   confirmBeforeSend: boolean;
   startWithSystem: boolean;
   minimizeToTray: boolean;
+  sendDelaySeconds: 0 | 5 | 10 | 20 | 30;
 }
 
 
-export type WorkspaceKind = "calendar" | "contact" | "task" | "note" | "rule" | "category" | "saved-search" | "settings";
+export type WorkspaceKind = "calendar" | "contact" | "task" | "note" | "rule" | "category" | "saved-search" | "settings" | "draft";
 
 export interface WorkspaceDocument<T = Record<string, unknown>> {
   id: string;
