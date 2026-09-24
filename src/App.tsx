@@ -44,7 +44,15 @@ const DEFAULT_SETTINGS: AppSettings = {
   trustedSenders: [],
   blockedDomains: [],
   favoriteFolders: {},
-  folderOrder: {}
+  folderOrder: {},
+  fontSize: "medium",
+  uiScale: 1,
+  highContrast: false,
+  reduceMotion: false,
+  closeBehavior: "tray",
+  quietHoursEnabled: false,
+  quietHoursStart: "22:00",
+  quietHoursEnd: "07:00"
 };
 
 const NAV: Array<{id:AppSection;label:string;icon:IconName}> = [
@@ -603,6 +611,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
   return <Workspace title="Configurações" eyebrow="PREFERÊNCIAS">
     <div className="settings-row brand-settings-row"><div><h3>Sobre o Seven Mail</h3><p>Identidade e informações do aplicativo.</p></div><div className="brand-about-card"><BrandLogo variant="about"/><div><strong>Seven Mail</strong><span>Cliente desktop local-first</span><small>Windows · Linux</small></div></div></div>
     <div className="settings-row"><div><h3>Aparência</h3><p>Tema, densidade e pré-visualização da lista.</p></div><div className="appearance-settings"><div className="choices">{(["system","light","dark"] as const).map(t=><button className={settings.theme===t?"choice active":"choice"} key={t} onClick={()=>set("theme",t)}><Icon name={t==="dark"?"moon":"sun"} size={16}/>{t==="system"?"Sistema":t==="light"?"Claro":"Escuro"}</button>)}</div><label><input type="checkbox" checked={settings.compact} onChange={e=>set("compact",e.target.checked)}/> Lista compacta</label><label><span>Linhas de prévia</span><select value={settings.previewLines} onChange={e=>set("previewLines",Number(e.target.value) as AppSettings["previewLines"])}><option value={1}>1 linha</option><option value={2}>2 linhas</option></select></label></div></div>
+    <div className="settings-row"><div><h3>Acessibilidade e escala</h3><p>Controles visuais globais, foco de teclado e redução de movimento.</p></div><div className="appearance-settings"><label><span>Tamanho da fonte</span><select value={settings.fontSize??"medium"} onChange={e=>set("fontSize",e.target.value as AppSettings["fontSize"])}><option value="small">Pequena</option><option value="medium">Média</option><option value="large">Grande</option></select></label><label><span>Escala da interface</span><select value={settings.uiScale??1} onChange={e=>set("uiScale",Number(e.target.value) as AppSettings["uiScale"])}><option value={0.9}>90%</option><option value={1}>100%</option><option value={1.1}>110%</option><option value={1.2}>120%</option></select></label><label><input type="checkbox" checked={Boolean(settings.highContrast)} onChange={e=>set("highContrast",e.target.checked)}/> Alto contraste</label><label><input type="checkbox" checked={Boolean(settings.reduceMotion)} onChange={e=>set("reduceMotion",e.target.checked)}/> Reduzir animações</label><small>Atalhos: Alt+1 E-mail · Alt+2 Calendário · Alt+3 Contatos · Alt+4 Tarefas · Ctrl/Cmd+K Pesquisa · Ctrl/Cmd+N Novo e-mail</small></div></div>
     <div className="settings-row"><div><h3>Painel de leitura</h3><p>Posição padrão e tempo para marcar mensagens como lidas.</p></div><div className="appearance-settings"><select value={settings.readingPane} onChange={e=>set("readingPane",e.target.value as AppSettings["readingPane"])}><option value="right">À direita</option><option value="bottom">Abaixo</option><option value="off">Desativado</option></select><label><span>Marcar como lida</span><select value={settings.markReadDelayMs} onChange={e=>set("markReadDelayMs",Number(e.target.value))}><option value={0}>Imediatamente</option><option value={500}>Após 0,5 s</option><option value={1200}>Após 1,2 s</option><option value={3000}>Após 3 s</option></select></label></div></div>
     <div className="settings-row"><div><h3>Lista de mensagens</h3><p>Caixa prioritária, paginação e comportamento após ações.</p></div><div className="toggles"><label><input type="checkbox" checked={settings.focusInboxEnabled!==false} onChange={e=>set("focusInboxEnabled",e.target.checked)}/> Usar Prioritária e Outros</label><label><input type="checkbox" checked={settings.showSenderPhotos!==false} onChange={e=>set("showSenderPhotos",e.target.checked)}/> Mostrar fotos/iniciais dos remetentes</label><label><input type="checkbox" checked={settings.openNextAfterDelete!==false} onChange={e=>set("openNextAfterDelete",e.target.checked)}/> Abrir próxima mensagem após mover/excluir</label><label><span>Mensagens por página</span><select value={settings.mailPageSize??50} onChange={e=>set("mailPageSize",Number(e.target.value) as AppSettings["mailPageSize"])}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label><label><span>Limite por anexo</span><select value={settings.maxAttachmentMb??25} onChange={e=>set("maxAttachmentMb",Number(e.target.value) as AppSettings["maxAttachmentMb"])}><option value={10}>10 MB</option><option value={25}>25 MB</option><option value={50}>50 MB</option><option value={100}>100 MB</option></select></label></div></div>
     <div className="settings-row"><div><h3>Envio</h3><p>Defina o atraso usado para desfazer um envio e a confirmação antes de colocar a mensagem na fila.</p></div><div className="send-settings"><select value={settings.sendDelaySeconds} onChange={e=>set("sendDelaySeconds",Number(e.target.value) as AppSettings["sendDelaySeconds"])}><option value={0}>Imediato</option><option value={5}>Desfazer por 5 s</option><option value={10}>Desfazer por 10 s</option><option value={20}>Desfazer por 20 s</option><option value={30}>Desfazer por 30 s</option></select><label><input type="checkbox" checked={settings.confirmBeforeSend} onChange={e=>set("confirmBeforeSend",e.target.checked)}/> Confirmar antes de enviar</label></div></div>
@@ -614,7 +623,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
     <SignaturesPanel accounts={accounts} signatures={signatures} onSave={onSaveSignature} onDelete={onDeleteSignature}/>
     <ComposerAssetsPanel/>
     <CloudPanel/>
-    <div className="settings-row"><div><h3>Desktop</h3><p>Integração real com Windows e Linux.</p></div><div className="toggles"><label><input type="checkbox" checked={settings.minimizeToTray} onChange={e=>set("minimizeToTray",e.target.checked)}/> Minimizar para bandeja</label><label><input type="checkbox" checked={settings.startWithSystem} onChange={e=>set("startWithSystem",e.target.checked)}/> Iniciar com o sistema</label><label><input type="checkbox" checked={settings.confirmBeforeDelete} onChange={e=>set("confirmBeforeDelete",e.target.checked)}/> Confirmar exclusão</label></div></div>
+    <div className="settings-row"><div><h3>Desktop</h3><p>Integração real com Windows e Linux.</p></div><div className="toggles"><label><span>Ao fechar a janela</span><select value={settings.closeBehavior??(settings.minimizeToTray?"tray":"exit")} onChange={e=>{const value=e.target.value as AppSettings["closeBehavior"];set("closeBehavior",value);set("minimizeToTray",value==="tray");}}><option value="tray">Minimizar para bandeja</option><option value="exit">Encerrar o aplicativo</option></select></label><label><input type="checkbox" checked={settings.startWithSystem} onChange={e=>set("startWithSystem",e.target.checked)}/> Iniciar com o sistema</label><label><input type="checkbox" checked={settings.confirmBeforeDelete} onChange={e=>set("confirmBeforeDelete",e.target.checked)}/> Confirmar exclusão</label></div></div>
   </Workspace>;
 }
 
@@ -1322,9 +1331,14 @@ export default function App() {
 
   useEffect(()=>{
     localStorage.setItem("seven-mail:settings",JSON.stringify(settings));
+    const root=document.documentElement;
     const theme = settings.theme==="system" ? (matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light") : settings.theme;
-    document.documentElement.dataset.theme=theme;
-    document.documentElement.dataset.density=settings.compact?"compact":"comfortable";
+    root.dataset.theme=theme;
+    root.dataset.density=settings.compact?"compact":"comfortable";
+    root.dataset.contrast=settings.highContrast?"high":"normal";
+    root.dataset.motion=settings.reduceMotion?"reduce":"full";
+    root.dataset.fontSize=settings.fontSize??"medium";
+    root.style.setProperty("--ui-scale",String(settings.uiScale??1));
   },[settings]);
 
   useEffect(()=>{
@@ -1346,8 +1360,9 @@ export default function App() {
   },[search]);
 
   useEffect(()=>{
-    void bridge.setCloseToTray(settings.minimizeToTray).catch(() => undefined);
-  },[settings.minimizeToTray]);
+    const closeToTray=(settings.closeBehavior??(settings.minimizeToTray?"tray":"exit"))==="tray";
+    void bridge.setCloseToTray(closeToTray).catch(() => undefined);
+  },[settings.minimizeToTray,settings.closeBehavior]);
 
   useEffect(()=>{
     const update = settings.startWithSystem ? enableAutostart : disableAutostart;
@@ -1507,6 +1522,21 @@ export default function App() {
       if (event.key.toLowerCase()==="n" && profileAccounts.length>0) {
         event.preventDefault();
         startNewMessage();
+        return;
+      }
+
+      if (event.altKey && event.key==="1") {
+        event.preventDefault();
+        setSection("mail");
+      } else if (event.altKey && event.key==="2") {
+        event.preventDefault();
+        setSection("calendar");
+      } else if (event.altKey && event.key==="3") {
+        event.preventDefault();
+        setSection("people");
+      } else if (event.altKey && event.key==="4") {
+        event.preventDefault();
+        setSection("tasks");
       }
     };
 
