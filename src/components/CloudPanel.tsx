@@ -75,7 +75,7 @@ export function CloudPanel() {
         </div>
         <div className="cloud-status warning">
           <Icon name="cloud" size={18} />
-          <span><b>Configuração necessária</b><small>VITE_NEON_AUTH_URL + VITE_NEON_DATA_API_URL</small></span>
+          <span><b>Configuração necessária</b><small>VITE_NEON_DATABASE_URL (endpoint HTTPS público, sem credenciais)</small></span>
         </div>
       </div>
     );
