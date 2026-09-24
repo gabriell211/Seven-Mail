@@ -291,3 +291,79 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .signature-picker{height:31px;max-width:180px;border:1px solid var(--line);border-radius:8px;background:var(--solid);color:var(--text);padding:0 8px;font-size:9px;outline:none}
 .signature-picker:focus{border-color:var(--accent)}
 @media(max-width:760px){.signature-main{grid-template-columns:1fr}.signature-main p{display:none}}
+
+
+/* Premium startup screen */
+.launch-screen{
+  position:fixed;inset:0;z-index:10000;display:grid;place-items:center;overflow:hidden;
+  background:
+    radial-gradient(circle at 20% 15%,rgba(46,178,255,.13),transparent 30%),
+    radial-gradient(circle at 82% 18%,rgba(110,82,255,.12),transparent 31%),
+    linear-gradient(180deg,#f8fbff 0%,#f2f6ff 54%,#eef2ff 100%);
+  transition:opacity .5s ease,visibility .5s ease,transform .5s ease;
+}
+:root[data-theme="dark"] .launch-screen{
+  background:
+    radial-gradient(circle at 20% 15%,rgba(44,142,255,.16),transparent 30%),
+    radial-gradient(circle at 82% 18%,rgba(115,87,255,.16),transparent 31%),
+    linear-gradient(180deg,#08111f 0%,#0d1627 54%,#111527 100%);
+}
+.launch-screen.is-closing{opacity:0;visibility:hidden;transform:scale(1.012)}
+.launch-screen__aurora{position:absolute;border-radius:999px;filter:blur(18px);opacity:.32;pointer-events:none}
+.launch-screen__aurora--one{width:280px;height:280px;left:8%;top:7%;background:rgba(54,199,255,.18);animation:launchAuroraOne 4.8s ease-in-out infinite alternate}
+.launch-screen__aurora--two{width:340px;height:340px;right:3%;bottom:1%;background:rgba(104,77,255,.15);animation:launchAuroraTwo 5.8s ease-in-out infinite alternate}
+.launch-screen__content{position:relative;display:flex;flex-direction:column;align-items:center;gap:23px;padding:34px}
+.launch-seven{
+  width:138px;height:164px;border-radius:34px;display:grid;place-items:center;
+  background:rgba(255,255,255,.58);border:1px solid rgba(255,255,255,.72);
+  box-shadow:0 28px 75px rgba(21,73,156,.12),inset 0 1px 0 rgba(255,255,255,.88);
+  backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
+}
+:root[data-theme="dark"] .launch-seven{
+  background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.09);
+  box-shadow:0 30px 90px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.04);
+}
+.launch-seven__svg{width:96px;height:118px;overflow:visible;filter:drop-shadow(0 12px 24px rgba(36,103,244,.11))}
+.launch-seven__outline{fill:rgba(56,102,226,.035);stroke:url(#launch-seven-stroke);stroke-width:6;stroke-linejoin:round}
+:root[data-theme="dark"] .launch-seven__outline{fill:rgba(255,255,255,.025)}
+.launch-seven__liquid{
+  transform:translateY(100%);
+  animation:launchSevenRise 1.25s cubic-bezier(.22,.85,.28,1) forwards;
+  transition:transform .36s cubic-bezier(.2,.9,.25,1);
+}
+.launch-screen.is-finishing .launch-seven__liquid{animation:none;transform:translateY(0)}
+.launch-seven__wave{animation:launchWave 2.1s ease-in-out infinite alternate}
+.launch-seven__shine{animation:launchShine 2.3s ease-in-out infinite}
+.launch-seven__edge{fill:none;stroke:rgba(255,255,255,.28);stroke-width:2.1;stroke-linecap:round;filter:url(#launch-seven-glow)}
+.launch-screen__copy{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.launch-screen__copy strong{font-size:19px;line-height:1;font-weight:850;letter-spacing:-.035em;color:#10203f}
+.launch-screen__copy span{font-size:10px;letter-spacing:.03em;color:rgba(43,62,100,.62);transition:opacity .2s ease}
+:root[data-theme="dark"] .launch-screen__copy strong{color:#f5f8ff}
+:root[data-theme="dark"] .launch-screen__copy span{color:rgba(226,234,255,.62)}
+@keyframes launchSevenRise{
+  0%{transform:translateY(102%)}
+  72%{transform:translateY(24%)}
+  100%{transform:translateY(17%)}
+}
+@keyframes launchWave{
+  from{transform:translateX(-10px)}
+  to{transform:translateX(9px)}
+}
+@keyframes launchShine{
+  0%,24%{opacity:0;transform:translateX(-38px) rotate(18deg)}
+  48%{opacity:.22}
+  78%,100%{opacity:0;transform:translateX(90px) rotate(18deg)}
+}
+@keyframes launchAuroraOne{
+  from{transform:translate3d(-12px,-8px,0) scale(.96)}
+  to{transform:translate3d(18px,12px,0) scale(1.07)}
+}
+@keyframes launchAuroraTwo{
+  from{transform:translate3d(10px,14px,0) scale(1.03)}
+  to{transform:translate3d(-18px,-12px,0) scale(.95)}
+}
+@media(prefers-reduced-motion:reduce){
+  .launch-screen,.launch-seven__liquid,.launch-seven__wave,.launch-seven__shine,.launch-screen__aurora{animation:none!important;transition:none!important}
+  .launch-seven__liquid{transform:translateY(18%)}
+  .launch-screen.is-finishing .launch-seven__liquid{transform:translateY(0)}
+}
