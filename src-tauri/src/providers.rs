@@ -3,7 +3,7 @@ use crate::{
     models::{AccountProfile, ProviderSettings, QueueOperation, QueuedAttachment},
 };
 use lettre::{
-    message::{header::ContentType, Attachment, Mailbox, MessageBuilder, MultiPart, SinglePart},
+    message::{header::{ContentType, HeaderName, HeaderValue}, Attachment, Mailbox, MessageBuilder, MultiPart, SinglePart},
     transport::smtp::authentication::Credentials,
     Message, SmtpTransport, Transport,
 };
@@ -167,6 +167,32 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
         .get("subject")
         .and_then(|value| value.as_str())
         .unwrap_or("");
+    let from_address_raw = operation
+        .payload
+        .get("fromAddress")
+        .and_then(|value| value.as_str())
+        .unwrap_or(&account.email);
+    let allowed_from = std::iter::once(account.email.as_str())
+        .chain(account.aliases.iter().map(String::as_str))
+        .any(|value| value.eq_ignore_ascii_case(from_address_raw));
+    if !allowed_from {
+        return Err("Endereço remetente não pertence à conta nem aos aliases configurados.".to_string());
+    }
+    let priority = operation
+        .payload
+        .get("priority")
+        .and_then(|value| value.as_str())
+        .unwrap_or("normal");
+    let request_read_receipt = operation
+        .payload
+        .get("requestReadReceipt")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let request_delivery_receipt = operation
+        .payload
+        .get("requestDeliveryReceipt")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
     let body_text = operation
         .payload
         .get("bodyText")
@@ -188,13 +214,34 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
         .map_err(|error| format!("Lista de anexos inválida: {error}"))?
         .unwrap_or_default();
 
-    let from_address = account
-        .email
+    let from_address = from_address_raw
         .parse()
         .map_err(|error| format!("Remetente inválido: {error}"))?;
     let from = Mailbox::new(Some(account.display_name.clone()), from_address);
 
-    let builder = Message::builder().from(from).subject(subject);
+    let mut builder = Message::builder().from(from).subject(subject);
+    let raw_header = |name: &'static str, value: String| {
+        HeaderValue::new(HeaderName::new_from_ascii_str(name), value)
+    };
+    match priority {
+        "high" => {
+            builder = builder
+                .raw_header(raw_header("X-Priority", "1".to_string()))
+                .raw_header(raw_header("Importance", "high".to_string()));
+        }
+        "low" => {
+            builder = builder
+                .raw_header(raw_header("X-Priority", "5".to_string()))
+                .raw_header(raw_header("Importance", "low".to_string()));
+        }
+        _ => {}
+    }
+    if request_read_receipt {
+        builder = builder.raw_header(raw_header("Disposition-Notification-To", from_address_raw.to_string()));
+    }
+    if request_delivery_receipt {
+        builder = builder.raw_header(raw_header("Return-Receipt-To", from_address_raw.to_string()));
+    }
     let (builder, to_count) = add_recipients(builder, to, "to")?;
     let (builder, cc_count) = add_recipients(builder, cc, "cc")?;
     let (builder, bcc_count) = add_recipients(builder, bcc, "bcc")?;
