@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 import { bridge } from "./lib/bridge";
-import type { AccountProfile, AppSection, AppSettings, MailMessage, RuntimeInfo } from "./types";
+import type { AccountProfile, AppSection, AppSettings, MailMessage, ProviderSettings, RuntimeInfo } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
@@ -45,27 +45,59 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
   const [displayName,setDisplayName] = useState("");
   const [email,setEmail] = useState("");
   const [secret,setSecret] = useState("");
+  const [server,setServer] = useState<ProviderSettings>({
+    imapHost:"",
+    imapPort:993,
+    smtpHost:"",
+    smtpPort:465,
+    securityMode:"tls"
+  });
+  const [busy,setBusy] = useState(false);
+  const [error,setError] = useState("");
+
+  async function resolveServer(): Promise<ProviderSettings> {
+    const discovered = await bridge.discoverProvider(email.trim());
+    if (provider !== "imap") return discovered;
+    return {
+      imapHost: server.imapHost.trim() || discovered.imapHost,
+      imapPort: server.imapPort || discovered.imapPort,
+      smtpHost: server.smtpHost.trim() || discovered.smtpHost,
+      smtpPort: server.smtpPort || discovered.smtpPort,
+      securityMode: server.securityMode
+    };
+  }
 
   async function connect() {
-    if (!email.trim()) return;
-    const account: AccountProfile = {
-      id: crypto.randomUUID(),
-      displayName: displayName.trim() || email.split("@")[0],
-      email: email.trim(),
-      provider,
-      color: COLORS[Math.floor(Math.random()*COLORS.length)],
-      isDefault: false
-    };
-    await bridge.saveAccount(account);
-    if (secret.trim()) await bridge.storeSecret(account.id, secret);
-    onAdded(account);
-    onClose();
+    if (!email.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const settings = await resolveServer();
+      const account: AccountProfile = {
+        id: crypto.randomUUID(),
+        displayName: displayName.trim() || email.split("@")[0],
+        email: email.trim(),
+        username: email.trim(),
+        provider,
+        color: COLORS[Math.floor(Math.random()*COLORS.length)],
+        isDefault: false,
+        ...settings
+      };
+      await bridge.saveAccount(account);
+      if (secret.trim()) await bridge.storeSecret(account.id, secret);
+      onAdded(account);
+      onClose();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return <div className="modal-backdrop" onMouseDown={onClose}>
     <section className="modal account-modal" role="dialog" aria-modal="true" onMouseDown={e=>e.stopPropagation()}>
       <header className="modal-header">
-        <div><span className="eyebrow">NOVA CONTA</span><h2>Conectar e-mail</h2><p>OAuth quando disponível. Segredos ficam no cofre nativo do sistema.</p></div>
+        <div><span className="eyebrow">NOVA CONTA</span><h2>Conectar e-mail</h2><p>Configuração automática para provedores conhecidos e modo manual para servidores corporativos.</p></div>
         <button className="icon-button" onClick={onClose} aria-label="Fechar"><Icon name="x"/></button>
       </header>
       <div className="provider-grid">
@@ -81,8 +113,16 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
         <label><span>E-mail</span><input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="voce@dominio.com"/></label>
         <label className="full"><span>Senha / senha de aplicativo</span><input type="password" value={secret} onChange={e=>setSecret(e.target.value)} placeholder="Armazenada no Windows Credential Manager / Keyring"/></label>
       </div>
-      <div className="secure-note"><Icon name="lock" size={16}/><span>A credencial nunca é escrita no cache ou no banco local.</span></div>
-      <footer className="modal-footer"><button className="secondary" onClick={onClose}>Cancelar</button><button className="primary" disabled={!email.trim()} onClick={connect}>Conectar</button></footer>
+      {provider==="imap"&&<div className="server-grid">
+        <label><span>IMAP</span><input value={server.imapHost} onChange={e=>setServer(v=>({...v,imapHost:e.target.value}))} placeholder="imap.dominio.com"/></label>
+        <label><span>Porta</span><input type="number" value={server.imapPort} onChange={e=>setServer(v=>({...v,imapPort:Number(e.target.value)}))}/></label>
+        <label><span>SMTP</span><input value={server.smtpHost} onChange={e=>setServer(v=>({...v,smtpHost:e.target.value}))} placeholder="smtp.dominio.com"/></label>
+        <label><span>Porta</span><input type="number" value={server.smtpPort} onChange={e=>setServer(v=>({...v,smtpPort:Number(e.target.value)}))}/></label>
+        <label className="full"><span>Segurança SMTP</span><select value={server.securityMode} onChange={e=>setServer(v=>({...v,securityMode:e.target.value as "tls"|"starttls"}))}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
+      </div>}
+      <div className="secure-note"><Icon name="lock" size={16}/><span>A credencial nunca é gravada no cache. A fila offline contém somente a operação e o conteúdo necessário para reenvio.</span></div>
+      {error&&<div className="form-error">{error}</div>}
+      <footer className="modal-footer"><button className="secondary" onClick={onClose}>Cancelar</button><button className="primary" disabled={!email.trim()||busy} onClick={connect}>{busy?"Conectando...":"Conectar"}</button></footer>
     </section>
   </div>;
 }
@@ -103,6 +143,7 @@ function ComposeModal({account,onClose}:{account?:AccountProfile;onClose:()=>voi
       payload: {to,subject,body}
     });
     onClose();
+    void bridge.flushOutbox().catch(() => undefined);
   }
 
   return <div className="modal-backdrop" onMouseDown={onClose}>
