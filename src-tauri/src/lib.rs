@@ -319,6 +319,20 @@ fn list_message_attachments(account_id: String, message_id: String) -> Result<Ve
 }
 
 #[tauri::command]
+fn stage_message_attachments(
+    operation_id: String,
+    account_id: String,
+    message_id: String,
+) -> Result<Vec<QueuedAttachment>, String> {
+    interchange::stage_message_attachments(
+        &AppPaths::resolve()?,
+        &operation_id,
+        &account_id,
+        &message_id,
+    )
+}
+
+#[tauri::command]
 fn save_message_attachment(
     account_id: String,
     message_id: String,
@@ -515,6 +529,7 @@ pub fn run() {
             import_eml,
             read_message_source,
             list_message_attachments,
+            stage_message_attachments,
             save_message_attachment,
             save_all_message_attachments,
             update_message_metadata,
