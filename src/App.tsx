@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   readingPane: "right",
   compact: false,
   previewLines: 2,
-  settings.markReadDelayMs: 1200,
+  markReadDelayMs: 1200,
   confirmBeforeDelete: true,
   confirmBeforeSend: false,
   startWithSystem: false,
