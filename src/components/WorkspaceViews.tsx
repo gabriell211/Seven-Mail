@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Icon, type IconName } from "../icons";
 import { bridge } from "../lib/bridge";
+import { deleteCloudDocument, pullCloudDocuments, pushCloudDocument } from "../lib/neon";
 import type {
   CalendarEvent,
   ContactItem,
@@ -25,8 +26,30 @@ function useWorkspace<T extends { id: string }>(kind: WorkspaceKind) {
 
   async function reload() {
     try {
-      const docs = await bridge.listWorkspace<T>(kind);
-      setItems(docs.map((doc) => doc.payload));
+      const localDocs = await bridge.listWorkspace<T>(kind);
+      const merged = new Map(localDocs.map((doc) => [doc.id, doc]));
+
+      try {
+        const cloudDocs = await pullCloudDocuments<T>(kind);
+        for (const cloudDoc of cloudDocs) {
+          const localDoc = merged.get(cloudDoc.id);
+          if (!localDoc || cloudDoc.updatedAt > localDoc.updatedAt) {
+            await bridge.upsertWorkspace(cloudDoc);
+            merged.set(cloudDoc.id, cloudDoc);
+          } else if (localDoc.updatedAt > cloudDoc.updatedAt) {
+            void pushCloudDocument(localDoc).catch(() => undefined);
+          }
+        }
+        for (const localDoc of localDocs) {
+          if (!cloudDocs.some((cloudDoc) => cloudDoc.id === localDoc.id)) {
+            void pushCloudDocument(localDoc).catch(() => undefined);
+          }
+        }
+      } catch {
+        // Offline and unauthenticated states intentionally keep the local mirror authoritative.
+      }
+
+      setItems([...merged.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((doc) => doc.payload));
     } catch {
       setItems([]);
     } finally {
@@ -36,6 +59,9 @@ function useWorkspace<T extends { id: string }>(kind: WorkspaceKind) {
 
   useEffect(() => {
     void reload();
+    const sync = () => void reload();
+    window.addEventListener("seven-mail:cloud-session", sync);
+    return () => window.removeEventListener("seven-mail:cloud-session", sync);
   }, [kind]);
 
   async function save(item: T) {
@@ -47,11 +73,13 @@ function useWorkspace<T extends { id: string }>(kind: WorkspaceKind) {
     };
     await bridge.upsertWorkspace(document);
     setItems((current) => [item, ...current.filter((value) => value.id !== item.id)]);
+    void pushCloudDocument(document).catch(() => undefined);
   }
 
   async function remove(id: string) {
     await bridge.deleteWorkspace(kind, id);
     setItems((current) => current.filter((value) => value.id !== id));
+    void deleteCloudDocument(kind, id).catch(() => undefined);
   }
 
   return { items, loading, save, remove, reload };
