@@ -75,6 +75,20 @@ pub struct MailMessage {
     pub categories: Vec<String>,
     #[serde(default)]
     pub applied_rule_ids: Vec<String>,
+    #[serde(default)]
+    pub size_bytes: Option<u64>,
+    #[serde(default)]
+    pub attachment_names: Vec<String>,
+    #[serde(default)]
+    pub importance: Option<String>,
+    #[serde(default)]
+    pub snoozed_until: Option<String>,
+    #[serde(default)]
+    pub is_muted: bool,
+    #[serde(default)]
+    pub is_phishing: bool,
+    #[serde(default)]
+    pub is_important: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,4 +130,15 @@ pub struct QueuedAttachment {
     pub name: String,
     pub path: String,
     pub size: u64,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MailAttachmentInfo {
+    pub index: usize,
+    pub name: String,
+    pub size: u64,
+    pub mime: String,
+    pub inline: bool,
 }
