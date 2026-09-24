@@ -41,7 +41,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   showSenderPhotos: true,
   blockedSenders: [],
   trustedSenders: [],
-  blockedDomains: []
+  blockedDomains: [],
+  favoriteFolders: {},
+  folderOrder: {}
 };
 
 const NAV: Array<{id:AppSection;label:string;icon:IconName}> = [
@@ -216,7 +218,7 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onCreateTaskFromMessage,onCreateEventFromMessage,onImportEml,onExportEml,onCreateCategory,onEditCategory,onDeleteCategory,onToggleCategory,onUseSavedSearch,onDeleteSavedSearch,onCreateFolder,onRenameFolder,onDeleteFolder,onMoveToFolder,onCopyToFolder,onUpdateMetadata,onBlockSender,onTrustSender,onReleaseSender,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,settings}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateEventFromMessage:(message:MailMessage)=>void;onImportEml?:()=>void;onExportEml:(message:MailMessage)=>void;onCreateCategory:()=>void;onEditCategory:(category:CategoryItem)=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;onCreateFolder?:()=>void;onRenameFolder?:(folder:MailFolder)=>void;onDeleteFolder?:(folder:MailFolder)=>void;onMoveToFolder?:(message:MailMessage,folder:MailFolder)=>void;onCopyToFolder?:(message:MailMessage,folder:MailFolder)=>void;onUpdateMetadata:(message:MailMessage,metadata:{importance?:"low"|"normal"|"high";snoozedUntil?:string;isMuted?:boolean;isPhishing?:boolean;isImportant?:boolean})=>void;onBlockSender:(email:string)=>void;onTrustSender:(email:string)=>void;onReleaseSender:(email:string)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;settings:AppSettings}) {
+function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onCreateTaskFromMessage,onCreateEventFromMessage,onImportEml,onExportEml,onCreateCategory,onEditCategory,onDeleteCategory,onToggleCategory,onToggleCategoryFavorite,onUseSavedSearch,onDeleteSavedSearch,onCreateFolder,onRenameFolder,onDeleteFolder,onMoveToFolder,onCopyToFolder,onToggleFolderFavorite,onReorderFolder,onUpdateMetadata,onBlockSender,onTrustSender,onReleaseSender,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,settings}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateEventFromMessage:(message:MailMessage)=>void;onImportEml?:()=>void;onExportEml:(message:MailMessage)=>void;onCreateCategory:()=>void;onEditCategory:(category:CategoryItem)=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onToggleCategoryFavorite:(category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;onCreateFolder?:()=>void;onRenameFolder?:(folder:MailFolder)=>void;onDeleteFolder?:(folder:MailFolder)=>void;onMoveToFolder?:(message:MailMessage,folder:MailFolder)=>void;onCopyToFolder?:(message:MailMessage,folder:MailFolder)=>void;onToggleFolderFavorite?:(folder:MailFolder)=>void;onReorderFolder?:(folder:MailFolder,direction:-1|1)=>void;onUpdateMetadata:(message:MailMessage,metadata:{importance?:"low"|"normal"|"high";snoozedUntil?:string;isMuted?:boolean;isPhishing?:boolean;isImportant?:boolean})=>void;onBlockSender:(email:string)=>void;onTrustSender:(email:string)=>void;onReleaseSender:(email:string)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;settings:AppSettings}) {
   const [selectedId,setSelectedId] = useState<string>();
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
   const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread"|"size"|"status">("newest");
@@ -319,7 +321,20 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
     setVisibleCount(settings.mailPageSize ?? 50);
   },[folder.path,quickFilter,sort,focusTab,conversationView,settings.mailPageSize]);
 
-  const visibleFolders = folders.length ? folders : FALLBACK_FOLDERS;
+  const folderPrefKey=activeAccount?.id??"__all__";
+  const preferredOrder=settings.folderOrder?.[folderPrefKey]??[];
+  const baseVisibleFolders=folders.length?folders:FALLBACK_FOLDERS;
+  const visibleFolders=[...baseVisibleFolders].sort((a,b)=>{
+    const ai=preferredOrder.indexOf(a.path);
+    const bi=preferredOrder.indexOf(b.path);
+    if(ai===-1&&bi===-1) return 0;
+    if(ai===-1) return 1;
+    if(bi===-1) return -1;
+    return ai-bi;
+  });
+  const favoriteFolderPaths=settings.favoriteFolders?.[folderPrefKey]??[];
+  const favoriteFolders=visibleFolders.filter((item)=>favoriteFolderPaths.includes(item.path));
+  const favoriteCategories=categories.filter((item)=>item.favorite);
 
   async function act(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox") {
     const currentIndex=folderMessages.findIndex((message)=>message.id===messageId);
@@ -378,18 +393,20 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
           const button=<button className={folder.path===item.path?"folder active":"folder"} onClick={()=>onFolderChange(item)}>
             <Icon name={folderIcon(item.role)} size={17}/><span>{item.name}</span>{unread>0&&<b>{unread}</b>}
           </button>;
-          if(item.role!=="custom"||!activeAccount) return <div key={item.path}>{button}</div>;
-          return <div className="organizer-row folder-organizer" key={item.path}>{button}<div className="folder-actions"><button className="organizer-delete folder-edit" aria-label={`Renomear ${item.name}`} onClick={()=>onRenameFolder?.(item)}><Icon name="settings" size={12}/></button><button className="organizer-delete" aria-label={`Excluir ${item.name}`} onClick={()=>onDeleteFolder?.(item)}><Icon name="x" size={12}/></button></div></div>;
+          if(item.role!=="custom"||!activeAccount) return <div className="organizer-row folder-organizer" key={item.path}>{button}<div className="folder-actions"><button className={favoriteFolderPaths.includes(item.path)?"organizer-delete active":"organizer-delete"} aria-label={`Favoritar ${item.name}`} onClick={()=>onToggleFolderFavorite?.(item)}><Icon name="star" size={12}/></button></div></div>;
+          return <div className="organizer-row folder-organizer" key={item.path}>{button}<div className="folder-actions"><button className={favoriteFolderPaths.includes(item.path)?"organizer-delete active":"organizer-delete"} aria-label={`Favoritar ${item.name}`} onClick={()=>onToggleFolderFavorite?.(item)}><Icon name="star" size={12}/></button><button className="organizer-delete" title="Mover acima" onClick={()=>onReorderFolder?.(item,-1)}>↑</button><button className="organizer-delete" title="Mover abaixo" onClick={()=>onReorderFolder?.(item,1)}>↓</button><button className="organizer-delete folder-edit" aria-label={`Renomear ${item.name}`} onClick={()=>onRenameFolder?.(item)}><Icon name="settings" size={12}/></button><button className="organizer-delete" aria-label={`Excluir ${item.name}`} onClick={()=>onDeleteFolder?.(item)}><Icon name="x" size={12}/></button></div></div>;
         })}
       </nav>
       <div className="group-title"><span>FAVORITOS</span></div>
       <button className="folder" onClick={()=>setQuickFilter("flagged")}><Icon name="star" size={17}/><span>Importantes</span></button>
+      {favoriteFolders.map((item)=><button className={folder.path===item.path?"folder active":"folder"} key={`fav-${item.path}`} onClick={()=>onFolderChange(item)}><Icon name={folderIcon(item.role)} size={16}/><span>{item.name}</span></button>)}
+      {favoriteCategories.map((category)=><button className="folder" key={`catfav-${category.id}`} onClick={()=>onUseSavedSearch({id:category.id,name:category.name,query:`category:"${category.name}"`})}><i className="category-dot" style={{background:category.color}}/><span>{category.name}</span></button>)}
       {savedSearches.length>0&&<>
         <div className="group-title"><span>PESQUISAS SALVAS</span></div>
         <div className="organizer-list">{savedSearches.map(item=><div className="organizer-row" key={item.id}><button className="folder" onClick={()=>onUseSavedSearch(item)}><Icon name="search" size={15}/><span>{item.name}</span></button><button className="organizer-delete" aria-label={`Excluir pesquisa ${item.name}`} onClick={()=>onDeleteSavedSearch(item)}><Icon name="x" size={12}/></button></div>)}</div>
       </>}
       <div className="group-title"><span>CATEGORIAS</span><button className="group-add" aria-label="Nova categoria" onClick={onCreateCategory}><Icon name="plus" size={13}/></button></div>
-      <div className="organizer-list">{categories.map(category=><div className="organizer-row category-organizer-row" key={category.id}><button className="folder" onClick={()=>onUseSavedSearch({id:category.id,name:category.name,query:`category:"${category.name}"`})}><i className="category-dot" style={{background:category.color}}/><span>{category.name}</span></button><div className="folder-actions"><button className="organizer-delete folder-edit" aria-label={`Editar categoria ${category.name}`} onClick={()=>onEditCategory(category)}><Icon name="settings" size={12}/></button><button className="organizer-delete" aria-label={`Excluir categoria ${category.name}`} onClick={()=>onDeleteCategory(category)}><Icon name="x" size={12}/></button></div></div>)}</div>
+      <div className="organizer-list">{categories.map(category=><div className="organizer-row category-organizer-row" key={category.id}><button className="folder" onClick={()=>onUseSavedSearch({id:category.id,name:category.name,query:`category:"${category.name}"`})}><i className="category-dot" style={{background:category.color}}/><span>{category.name}</span></button><div className="folder-actions"><button className={category.favorite?"organizer-delete active":"organizer-delete"} aria-label={`Favoritar categoria ${category.name}`} onClick={()=>onToggleCategoryFavorite(category)}><Icon name="star" size={12}/></button><button className="organizer-delete folder-edit" aria-label={`Editar categoria ${category.name}`} onClick={()=>onEditCategory(category)}><Icon name="settings" size={12}/></button><button className="organizer-delete" aria-label={`Excluir categoria ${category.name}`} onClick={()=>onDeleteCategory(category)}><Icon name="x" size={12}/></button></div></div>)}</div>
       <div className="local-card"><div><Icon name="cloud" size={18}/></div><span><b>Local-first</b><small>Fila offline protegida</small></span></div>
     </aside>
 
@@ -780,6 +797,44 @@ export default function App() {
       }
       setMessages(await bridge.listCachedMessages(unified ? undefined : activeAccount?.id));
     }
+  }
+
+  async function toggleCategoryFavorite(category: CategoryItem) {
+    const updated={...category,favorite:!category.favorite};
+    const document:WorkspaceDocument<CategoryItem>={
+      id:updated.id,
+      kind:"category",
+      updatedAt:new Date().toISOString(),
+      payload:updated,
+    };
+    await bridge.upsertWorkspace(document);
+    setCategories((current)=>current.map((item)=>item.id===updated.id?updated:item));
+    void pushCloudDocument(document).catch(()=>undefined);
+  }
+
+  async function toggleFolderFavorite(folder:MailFolder){
+    if(!activeAccount) return;
+    const key=activeAccount.id;
+    setSettings((current)=>{
+      const existing=current.favoriteFolders?.[key]??[];
+      const next=existing.includes(folder.path)?existing.filter((value)=>value!==folder.path):[...existing,folder.path];
+      return {...current,favoriteFolders:{...(current.favoriteFolders??{}),[key]:next}};
+    });
+  }
+
+  function reorderFolder(folder:MailFolder,direction:-1|1){
+    if(!activeAccount) return;
+    const key=activeAccount.id;
+    setSettings((current)=>{
+      const all=current.folderOrder?.[key]?.length?current.folderOrder[key]:mailFolders.map((item)=>item.path);
+      const list=[...all];
+      const index=list.indexOf(folder.path);
+      if(index<0) return current;
+      const nextIndex=index+direction;
+      if(nextIndex<0||nextIndex>=list.length) return current;
+      [list[index],list[nextIndex]]=[list[nextIndex],list[index]];
+      return {...current,folderOrder:{...(current.folderOrder??{}),[key]:list}};
+    });
   }
 
   async function deleteCategory(category: CategoryItem) {
@@ -1520,7 +1575,7 @@ export default function App() {
         <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={settings}/>} 
+        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={settings}/>} 
         {section==="calendar"&&<PersistentCalendarView/>}
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
