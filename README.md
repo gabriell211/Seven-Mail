@@ -114,7 +114,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Editar rascunhos
 - [x] Salvar rascunhos automaticamente
 - [x] Excluir mensagens
-- [ ] Restaurar mensagens excluídas
+- [x] Restaurar mensagens excluídas
 - [x] Arquivar
 - [x] Marcar como lida
 - [x] Marcar como não lida
@@ -164,7 +164,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Correção automática
 - [x] Capitalização automática
 - [x] Dicionários por idioma
-- [ ] Ditado por voz quando disponível no sistema
+- [x] Ditado por voz quando disponível no sistema
 - [x] Assinaturas
 - [x] Assinatura diferente por conta
 - [x] Assinatura para novas mensagens
@@ -198,8 +198,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Planilhas
 - [x] Arquivos compactados
 - [x] Limite configurável
-- [ ] Indicador de progresso
-- [ ] Cancelamento de upload
+- [x] Indicador de progresso
+- [x] Cancelamento de upload
 - [x] Bloqueio de extensões perigosas
 - [ ] Arrastar anexos para a área de trabalho
 - [ ] Arrastar anexos para outros aplicativos
@@ -214,12 +214,12 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Respostas automáticas / ausência temporária
 - [x] Encaminhamento automático
 - [ ] Mala direta / envio personalizado em massa
-- [ ] Leitura em voz alta
-- [ ] Modo de leitura imersiva
+- [x] Leitura em voz alta
+- [x] Modo de leitura imersiva
 - [x] Abrir e salvar EML
 - [ ] Abrir e salvar MSG quando tecnicamente viável
 - [ ] Abrir e reutilizar modelos OFT quando tecnicamente viável
-- [ ] Importar e exportar regras
+- [x] Importar e exportar regras
 - [x] Favoritar categorias
 - [ ] Ações por gesto quando suportadas pela plataforma
 
@@ -738,7 +738,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Confirmação antes de excluir
 - [x] Confirmação antes de enviar
 - [x] Respostas automáticas
-- [ ] Encaminhamento
+- [x] Encaminhamento
 - [x] Atraso padrão de envio
 - [x] Comportamento do botão fechar
 - [x] Minimizar para bandeja
@@ -782,9 +782,9 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 - [x] Navegação completa por teclado
 - [ ] Leitores de tela
-- [ ] Leitura em voz alta
-- [ ] Leitura imersiva
-- [ ] Ditado
+- [x] Leitura em voz alta
+- [x] Leitura imersiva
+- [x] Ditado
 - [x] ARIA
 - [x] Alto contraste
 - [x] Escala de interface
@@ -1045,8 +1045,8 @@ A aplicação deverá utilizar:
 - [x] Regras avançadas
 - [x] Formatação condicional
 - [x] Reenvio e recuperação de mensagens quando suportados
-- [ ] Leitura em voz alta
-- [ ] Leitura imersiva
+- [x] Leitura em voz alta
+- [x] Leitura imersiva
 - [ ] Mala direta
 
 ## 0.9.0 — Segurança e migração
