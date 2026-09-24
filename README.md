@@ -361,8 +361,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Assinatura por conta
 - [x] Configurações por conta
 - [x] Sincronização independente
-- [ ] Perfis separados de e-mail
-- [ ] Perfis com conjuntos diferentes de contas e configurações
+- [x] Perfis separados de e-mail
+- [x] Perfis com conjuntos diferentes de contas e configurações
 - [x] Aliases por conta
 
 ## Caixas compartilhadas e delegação
@@ -460,7 +460,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Evento de dia inteiro
 - [x] Evento privado
 - [x] Lembretes
-- [ ] Recorrência
+- [x] Recorrência
 - [ ] Exceções de recorrência
 - [ ] Editar somente esta ocorrência
 - [ ] Editar esta e as próximas ocorrências
@@ -574,7 +574,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Data de início
 - [x] Data de vencimento
 - [x] Lembretes
-- [ ] Recorrência
+- [x] Recorrência
 - [x] Categorias
 - [x] Notas
 - [x] Listas personalizadas
@@ -636,7 +636,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Configuração por pasta
 - [ ] Silenciar conta
 - [x] Silenciar conversa
-- [ ] Horário silencioso
+- [x] Horário silencioso
 - [ ] Ações rápidas pela notificação
 
 ---
@@ -649,7 +649,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Pastas
 - [x] Contatos
 - [x] Calendários
-- [ ] Tarefas
+- [x] Tarefas
 - [x] Arquivos EML
 - [ ] Arquivos MSG quando tecnicamente viável
 - [ ] Arquivos OFT quando tecnicamente viável
@@ -660,7 +660,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] vCard
 - [x] Configurações do aplicativo
 - [x] Regras
-- [ ] Perfis
+- [x] Perfis
 
 ## Exportação
 
@@ -671,7 +671,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] vCard
 - [x] Regras
 - [x] Configurações
-- [ ] Perfis
+- [x] Perfis
 - [ ] Backup completo do perfil
 - [ ] Backup criptografado
 
@@ -720,7 +720,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Seguir sistema
 - [x] Densidade confortável
 - [x] Densidade compacta
-- [ ] Tamanho da fonte
+- [x] Tamanho da fonte
 - [ ] Personalização da lista de mensagens
 - [x] Painel de leitura à direita
 - [x] Painel de leitura abaixo
@@ -728,7 +728,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Personalização do menu lateral
 - [ ] Personalização de ações rápidas
 - [ ] Personalização do painel de pastas
-- [ ] Mostrar/ocultar fotos dos remetentes
+- [x] Mostrar/ocultar fotos dos remetentes
 
 ## Comportamento
 
@@ -740,7 +740,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Respostas automáticas
 - [ ] Encaminhamento
 - [x] Atraso padrão de envio
-- [ ] Comportamento do botão fechar
+- [x] Comportamento do botão fechar
 - [x] Minimizar para bandeja
 - [x] Iniciar com o sistema
 
@@ -771,27 +771,27 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Pesquisa
 - [x] Próxima mensagem
 - [x] Mensagem anterior
-- [ ] Abrir calendário
-- [ ] Abrir contatos
-- [ ] Abrir tarefas
+- [x] Abrir calendário
+- [x] Abrir contatos
+- [x] Abrir tarefas
 - [ ] Atalhos personalizáveis
 
 ---
 
 # Acessibilidade
 
-- [ ] Navegação completa por teclado
+- [x] Navegação completa por teclado
 - [ ] Leitores de tela
 - [ ] Leitura em voz alta
 - [ ] Leitura imersiva
 - [ ] Ditado
-- [ ] ARIA
-- [ ] Alto contraste
-- [ ] Escala de interface
-- [ ] Foco visível
-- [ ] Labels acessíveis
-- [ ] Redução de animações
-- [ ] Compatibilidade com configurações de acessibilidade do sistema
+- [x] ARIA
+- [x] Alto contraste
+- [x] Escala de interface
+- [x] Foco visível
+- [x] Labels acessíveis
+- [x] Redução de animações
+- [x] Compatibilidade com configurações de acessibilidade do sistema
 
 ---
 
@@ -988,7 +988,7 @@ A aplicação deverá utilizar:
 - [ ] iCloud
 - [x] Microsoft 365
 - [x] Configuração manual
-- [ ] Perfis
+- [x] Perfis
 - [ ] Caixas compartilhadas
 - [ ] Delegação
 - [ ] Enviar como / em nome de
@@ -1007,7 +1007,7 @@ A aplicação deverá utilizar:
 - [ ] CalDAV e/ou API do provedor
 - [x] Calendários
 - [ ] Eventos
-- [ ] Recorrência
+- [x] Recorrência
 - [ ] Convites
 - [ ] Assistente de agendamento
 - [ ] Livre/ocupado
@@ -1031,7 +1031,7 @@ A aplicação deverá utilizar:
 - [x] Listas
 - [x] Prioridades
 - [x] Lembretes
-- [ ] Recorrência
+- [x] Recorrência
 - [x] Integração com e-mails
 - [x] Notas
 
