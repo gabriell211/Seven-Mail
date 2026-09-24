@@ -111,6 +111,8 @@ export interface AppSettings {
   autoReplyBody?: string;
   autoReplyStart?: string;
   autoReplyEnd?: string;
+  autoForwardEnabled?: boolean;
+  autoForwardAddress?: string;
 }
 
 
