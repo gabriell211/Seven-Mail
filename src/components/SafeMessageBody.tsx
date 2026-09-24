@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type MouseEvent } from "react";
 import type { AppSettings, MailMessage } from "../types";
 
 function hostOf(value: string): string {
@@ -104,7 +104,7 @@ export function SafeMessageBody({
   const senderDomain = sender.split("@")[1] ?? "";
   const external = Boolean(settings.externalSenderWarning && accountDomain && senderDomain && accountDomain !== senderDomain);
 
-  function handleClick(event: React.MouseEvent<HTMLElement>) {
+  function handleClick(event: MouseEvent<HTMLElement>) {
     const target = event.target as HTMLElement;
     const anchor = target.closest("a") as HTMLAnchorElement | null;
     if (!anchor?.href) return;
