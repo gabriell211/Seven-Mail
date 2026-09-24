@@ -654,10 +654,62 @@ export function PersistentTasksView({ onOpenRelatedMessage }: { onOpenRelatedMes
     notes: "",
     priority: "normal",
     listName: "Meu dia",
+    recurrence:"none",
+    categories:[],
   });
+
+  function shiftRecurringDate(value:string|undefined, recurrence:TaskItem["recurrence"]): string|undefined {
+    if(!value||!recurrence||recurrence==="none") return value;
+    const date=new Date(value);
+    if(!Number.isFinite(date.getTime())) return value;
+    if(recurrence==="daily") date.setDate(date.getDate()+1);
+    if(recurrence==="weekly") date.setDate(date.getDate()+7);
+    if(recurrence==="monthly") date.setMonth(date.getMonth()+1);
+    if(recurrence==="yearly") date.setFullYear(date.getFullYear()+1);
+    return date.toISOString();
+  }
+
+  async function completeTask(task:TaskItem) {
+    const completedAt=new Date().toISOString();
+    await store.save({...task,completedAt});
+    if(task.recurrence&&task.recurrence!=="none"){
+      const next:TaskItem={
+        ...task,
+        id:crypto.randomUUID(),
+        completedAt:undefined,
+        startsAt:shiftRecurringDate(task.startsAt,task.recurrence),
+        dueAt:shiftRecurringDate(task.dueAt,task.recurrence),
+        reminderAt:shiftRecurringDate(task.reminderAt,task.recurrence),
+        reminderNotifiedAt:undefined,
+      };
+      await store.save(next);
+    }
+  }
+
+  async function exportTasks(){
+    const destination=await saveDialog({defaultPath:"seven-mail-tasks.json",filters:[{name:"Tarefas Seven Mail",extensions:["json"]}]});
+    if(!destination) return;
+    await bridge.writeTextFile(destination,JSON.stringify({format:"seven-mail-tasks",version:1,exportedAt:new Date().toISOString(),tasks:store.items},null,2));
+  }
+
+  async function importTasks(){
+    const selected=await open({multiple:false,directory:false,filters:[{name:"Tarefas Seven Mail",extensions:["json"]}]});
+    if(!selected||Array.isArray(selected)) return;
+    const raw=await bridge.readTextFile(selected);
+    const parsed=JSON.parse(raw) as {format?:string;tasks?:TaskItem[]};
+    if(parsed.format!=="seven-mail-tasks"||!Array.isArray(parsed.tasks)){
+      window.alert("Arquivo de tarefas inválido.");
+      return;
+    }
+    for(const task of parsed.tasks){
+      if(!task?.title) continue;
+      await store.save({...task,id:crypto.randomUUID(),reminderNotifiedAt:undefined});
+    }
+  }
 
   return (
     <Workspace title="Tarefas" eyebrow="MINHA AGENDA" action="Nova tarefa" onAction={() => setEditing(fresh())}>
+      <div className="workspace-toolbar task-io-toolbar"><button className="secondary" onClick={()=>void importTasks()}><Icon name="upload" size={14}/> Importar</button><button className="secondary" disabled={store.items.length===0} onClick={()=>void exportTasks()}><Icon name="download" size={14}/> Exportar</button></div>
       <div className="task-filter-bar">
         <button className={filter==="all"?"active":""} onClick={()=>setFilter("all")}>Todas <b>{open.length}</b></button>
         <button className={filter==="today"?"active":""} onClick={()=>setFilter("today")}>Hoje <b>{todayTasks.length}</b></button>
@@ -672,10 +724,10 @@ export function PersistentTasksView({ onOpenRelatedMessage }: { onOpenRelatedMes
             const due = task.dueAt ? new Date(task.dueAt) : null;
             const isOverdue = due ? due.getTime() < Date.now() : false;
             return <div className={isOverdue ? "task-card overdue" : "task-card"} key={task.id}>
-              <button className="task-check" aria-label="Concluir" onClick={() => void store.save({ ...task, completedAt: new Date().toISOString() })}><Icon name="check" size={13} /></button>
+              <button className="task-check" aria-label="Concluir" onClick={() => void completeTask(task)}><Icon name="check" size={13} /></button>
               <button className="task-copy" onClick={() => setEditing(task)}>
                 <b>{task.title}</b>
-                <small>{task.dueAt ? `${isOverdue ? "Atrasada · " : "Vence "}${new Date(task.dueAt).toLocaleString("pt-BR")}` : task.listName}</small>
+                <small>{task.dueAt ? `${isOverdue ? "Atrasada · " : "Vence "}${new Date(task.dueAt).toLocaleString("pt-BR")}` : task.listName}{task.recurrence&&task.recurrence!=="none" ? " · recorrente" : ""}{(task.categories??[]).length ? " · "+(task.categories??[]).join(", ") : ""}</small>
               </button>
               <span className={`priority ${task.priority}`}>{task.priority === "high" ? "Alta" : task.priority === "low" ? "Baixa" : "Normal"}</span>
               {task.relatedMessageId && onOpenRelatedMessage && <button className="icon-button" title="Abrir e-mail relacionado" onClick={() => onOpenRelatedMessage(task.relatedMessageId!)}><Icon name="mail" size={14} /></button>}
@@ -703,6 +755,8 @@ export function PersistentTasksView({ onOpenRelatedMessage }: { onOpenRelatedMes
           <label><span>Início</span><input type="datetime-local" value={editing.startsAt?.slice(0, 16) ?? ""} onChange={(event) => setEditing({ ...editing, startsAt: event.target.value || undefined })} /></label>
           <label><span>Vencimento</span><input type="datetime-local" value={editing.dueAt?.slice(0, 16) ?? ""} onChange={(event) => setEditing({ ...editing, dueAt: event.target.value || undefined })} /></label>
           <label><span>Lembrete</span><input type="datetime-local" value={editing.reminderAt?.slice(0, 16) ?? ""} onChange={(event) => setEditing({ ...editing, reminderAt: event.target.value || undefined, reminderNotifiedAt: undefined })} /></label>
+          <label><span>Recorrência</span><select value={editing.recurrence??"none"} onChange={(event)=>setEditing({...editing,recurrence:event.target.value as TaskItem["recurrence"]})}><option value="none">Não repetir</option><option value="daily">Diária</option><option value="weekly">Semanal</option><option value="monthly">Mensal</option><option value="yearly">Anual</option></select></label>
+          <label className="full"><span>Categorias</span><input value={(editing.categories??[]).join(", ")} onChange={(event)=>setEditing({...editing,categories:event.target.value.split(",").map((value)=>value.trim()).filter(Boolean)})}/></label>
           <label className="full"><span>Notas</span><textarea value={editing.notes} onChange={(event) => setEditing({ ...editing, notes: event.target.value })} /></label>
         </EditorModal>
       )}
