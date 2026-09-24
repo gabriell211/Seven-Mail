@@ -249,3 +249,6 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .category-chip i{width:8px;height:8px;border-radius:50%}
 .category-chip.active{border-color:color-mix(in srgb,var(--accent) 35%,var(--line));background:var(--accent-soft);color:var(--text)}
 .save-search-button{flex:none}
+.pane-tools{display:flex;align-items:center;gap:6px}
+.mail-sort{max-width:126px;height:31px;border:1px solid var(--line);border-radius:8px;background:var(--solid);color:var(--muted);padding:0 8px;font-size:9px}
+.mail-sort:focus{border-color:var(--accent)}
