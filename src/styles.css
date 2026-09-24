@@ -455,3 +455,24 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
   .reading-header,.sender,.mail-body{padding-left:0!important;padding-right:0!important;margin-left:0!important;margin-right:0!important}
   .reading-header h1,.sender b,.mail-body{color:#000!important}
 }
+
+
+/* Composer productivity */
+.composer-from-row{display:grid!important;grid-template-columns:minmax(130px,.65fr) minmax(190px,1fr);gap:7px;width:100%}
+.composer-from-row select{min-width:0}
+.composer-mini-check{display:inline-flex!important;align-items:center;gap:5px;font-size:8px;color:var(--muted);white-space:nowrap}
+.composer-mini-check input{accent-color:var(--accent)}
+.composer-pro{position:relative}
+.composer-drop-overlay{position:absolute;inset:8px;z-index:30;border:2px dashed var(--accent);border-radius:16px;background:color-mix(in srgb,var(--solid) 88%,transparent);backdrop-filter:blur(7px);display:grid;place-content:center;justify-items:center;gap:10px;color:var(--accent);pointer-events:none}
+.composer-drop-overlay b{font-size:13px}
+.composer-pro.dragging-files{box-shadow:0 30px 120px rgba(0,0,0,.27),0 0 0 3px color-mix(in srgb,var(--accent) 30%,transparent)}
+.composer-assets{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.composer-assets>section{border:1px solid var(--line);border-radius:13px;background:var(--solid);padding:11px;min-width:0}
+.composer-assets>section>header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
+.composer-assets>section>header b{font-size:10px}
+.composer-assets>section>small{font-size:9px;color:var(--muted)}
+.composer-assets article{display:grid;grid-template-columns:minmax(0,1fr) 32px;align-items:center;gap:4px;border-top:1px solid var(--line);padding:7px 0}
+.composer-assets article>button:first-child{border:0;background:transparent;color:var(--text);text-align:left;display:flex;flex-direction:column;gap:3px;min-width:0}
+.composer-assets article b,.composer-assets article span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.composer-assets article b{font-size:9px}.composer-assets article span{font-size:8px;color:var(--muted)}
+@media(max-width:800px){.composer-assets{grid-template-columns:1fr}.composer-from-row{grid-template-columns:1fr}}
