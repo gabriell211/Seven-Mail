@@ -566,10 +566,12 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
   return <Workspace title="Configurações" eyebrow="PREFERÊNCIAS">
     <div className="settings-row brand-settings-row"><div><h3>Sobre o Seven Mail</h3><p>Identidade e informações do aplicativo.</p></div><div className="brand-about-card"><BrandLogo variant="about"/><div><strong>Seven Mail</strong><span>Cliente desktop local-first</span><small>Windows · Linux</small></div></div></div>
     <div className="settings-row"><div><h3>Aparência</h3><p>Tema, densidade e pré-visualização da lista.</p></div><div className="appearance-settings"><div className="choices">{(["system","light","dark"] as const).map(t=><button className={settings.theme===t?"choice active":"choice"} key={t} onClick={()=>set("theme",t)}><Icon name={t==="dark"?"moon":"sun"} size={16}/>{t==="system"?"Sistema":t==="light"?"Claro":"Escuro"}</button>)}</div><label><input type="checkbox" checked={settings.compact} onChange={e=>set("compact",e.target.checked)}/> Lista compacta</label><label><span>Linhas de prévia</span><select value={settings.previewLines} onChange={e=>set("previewLines",Number(e.target.value) as AppSettings["previewLines"])}><option value={1}>1 linha</option><option value={2}>2 linhas</option></select></label></div></div>
-    <div className="settings-row"><div><h3>Painel de leitura</h3><p>Posição padrão e tempo para marcar mensagens como lidas.</p></div><div className="appearance-settings"><select value={settings.readingPane} onChange={e=>set("readingPane",e.target.value as AppSettings["readingPane"])}><option value="right">À direita</option><option value="bottom">Abaixo</option><option value="off">Desativado</option></select><label><span>Marcar como lida</span><select value={settings.markReadDelayMs} onChange={e=>set("settings.markReadDelayMs",Number(e.target.value))}><option value={0}>Imediatamente</option><option value={500}>Após 0,5 s</option><option value={1200}>Após 1,2 s</option><option value={3000}>Após 3 s</option></select></label></div></div>
+    <div className="settings-row"><div><h3>Painel de leitura</h3><p>Posição padrão e tempo para marcar mensagens como lidas.</p></div><div className="appearance-settings"><select value={settings.readingPane} onChange={e=>set("readingPane",e.target.value as AppSettings["readingPane"])}><option value="right">À direita</option><option value="bottom">Abaixo</option><option value="off">Desativado</option></select><label><span>Marcar como lida</span><select value={settings.markReadDelayMs} onChange={e=>set("markReadDelayMs",Number(e.target.value))}><option value={0}>Imediatamente</option><option value={500}>Após 0,5 s</option><option value={1200}>Após 1,2 s</option><option value={3000}>Após 3 s</option></select></label></div></div>
+    <div className="settings-row"><div><h3>Lista de mensagens</h3><p>Caixa prioritária, paginação e comportamento após ações.</p></div><div className="toggles"><label><input type="checkbox" checked={settings.focusInboxEnabled!==false} onChange={e=>set("focusInboxEnabled",e.target.checked)}/> Usar Prioritária e Outros</label><label><input type="checkbox" checked={settings.showSenderPhotos!==false} onChange={e=>set("showSenderPhotos",e.target.checked)}/> Mostrar fotos/iniciais dos remetentes</label><label><input type="checkbox" checked={settings.openNextAfterDelete!==false} onChange={e=>set("openNextAfterDelete",e.target.checked)}/> Abrir próxima mensagem após mover/excluir</label><label><span>Mensagens por página</span><select value={settings.mailPageSize??50} onChange={e=>set("mailPageSize",Number(e.target.value) as AppSettings["mailPageSize"])}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label><label><span>Limite por anexo</span><select value={settings.maxAttachmentMb??25} onChange={e=>set("maxAttachmentMb",Number(e.target.value) as AppSettings["maxAttachmentMb"])}><option value={10}>10 MB</option><option value={25}>25 MB</option><option value={50}>50 MB</option><option value={100}>100 MB</option></select></label></div></div>
     <div className="settings-row"><div><h3>Envio</h3><p>Defina o atraso usado para desfazer um envio e a confirmação antes de colocar a mensagem na fila.</p></div><div className="send-settings"><select value={settings.sendDelaySeconds} onChange={e=>set("sendDelaySeconds",Number(e.target.value) as AppSettings["sendDelaySeconds"])}><option value={0}>Imediato</option><option value={5}>Desfazer por 5 s</option><option value={10}>Desfazer por 10 s</option><option value={20}>Desfazer por 20 s</option><option value={30}>Desfazer por 30 s</option></select><label><input type="checkbox" checked={settings.confirmBeforeSend} onChange={e=>set("confirmBeforeSend",e.target.checked)}/> Confirmar antes de enviar</label></div></div>
     <div className="settings-row"><div><h3>Sincronização e notificações</h3><p>Atualização automática da caixa de entrada em segundo plano.</p></div><div className="send-settings"><select value={settings.syncIntervalMinutes} onChange={e=>set("syncIntervalMinutes",Number(e.target.value) as AppSettings["syncIntervalMinutes"])}><option value={1}>A cada 1 minuto</option><option value={5}>A cada 5 minutos</option><option value={10}>A cada 10 minutos</option><option value={15}>A cada 15 minutos</option><option value={30}>A cada 30 minutos</option></select><label><input type="checkbox" checked={settings.notificationsEnabled} onChange={e=>set("notificationsEnabled",e.target.checked)}/> Notificações nativas de novas mensagens</label></div></div>
     <div className="settings-row"><div><h3>Dados locais</h3><p>Cache pode ser limpo sem tocar na fila de saída. Backup inclui workspace, preferências e metadados das contas; senhas ficam somente no Keyring.</p></div><div className="paths"><span><b>Dados</b>{runtime?.dataDir||"Carregando..."}</span><span><b>Cache</b>{runtime?.cacheDir||"Carregando..."}</span><span><b>Fila</b>{runtime?.queueDir||"Carregando..."}</span><div className="data-actions"><button className="secondary" onClick={()=>void exportBackup()}><Icon name="download" size={14}/> Exportar backup</button><button className="secondary" onClick={()=>void importBackup()}><Icon name="upload" size={14}/> Restaurar backup</button><button className="secondary" onClick={()=>bridge.clearCache()}>Limpar apenas cache</button></div></div></div>
+    <SenderPoliciesPanel settings={settings} onChange={onChange}/>
     <AccountsPanel accounts={accounts} onChange={onAccountsChange}/>
     <SignaturesPanel accounts={accounts} signatures={signatures} onSave={onSaveSignature} onDelete={onDeleteSignature}/>
     <CloudPanel/>
@@ -583,9 +585,12 @@ function Workspace({title,eyebrow,action,onAction,children}:{title:string;eyebro
 function Feature({icon,title,children}:{icon:IconName;title:string;children:ReactNode}) { return <article className="feature"><div className="empty-symbol small-symbol"><Icon name={icon}/></div><h3>{title}</h3><p>{children}</p></article>; }
 
 export default function App() {
+  const launchParams = new URLSearchParams(window.location.search);
+  const launchMessageId = launchParams.get("message") ?? undefined;
+  const launchAccountId = launchParams.get("account") ?? undefined;
   const [section,setSection] = useState<AppSection>("mail");
   const [accounts,setAccounts] = useState<AccountProfile[]>([]);
-  const [activeId,setActiveId] = useState<string>();
+  const [activeId,setActiveId] = useState<string|undefined>(launchAccountId);
   const [messages,setMessages] = useState<MailMessage[]>([]);
   const [mailFolders,setMailFolders] = useState<MailFolder[]>(FALLBACK_FOLDERS);
   const [selectedFolder,setSelectedFolder] = useState<MailFolder>(FALLBACK_FOLDERS[0]);
@@ -596,7 +601,7 @@ export default function App() {
   const [accountOpen,setAccountOpen] = useState(false);
   const [undoSend,setUndoSend] = useState<{id:string;expiresAt:number}|null>(null);
   const [search,setSearch] = useState("");
-  const [focusMessageId,setFocusMessageId] = useState<string>();
+  const [focusMessageId,setFocusMessageId] = useState<string|undefined>(launchMessageId);
   const [categories,setCategories] = useState<CategoryItem[]>([]);
   const [savedSearches,setSavedSearches] = useState<SavedSearchItem[]>([]);
   const [signatures,setSignatures] = useState<SignatureItem[]>([]);
@@ -680,6 +685,49 @@ export default function App() {
     setMessages(await bridge.listCachedMessages(unified ? undefined : message.accountId));
     void pushCloudMessage(updated).catch(() => undefined);
     void bridge.flushMailActions(message.accountId).catch(() => undefined);
+  }
+
+  async function copyToFolder(message: MailMessage, target: MailFolder) {
+    await bridge.copyMessageToFolder(message.accountId,message.id,target.path);
+    void bridge.flushMailActions(message.accountId).catch(() => undefined);
+  }
+
+  async function updateMessageMetadata(message: MailMessage, metadata: {importance?:"low"|"normal"|"high";snoozedUntil?:string;isMuted?:boolean;isPhishing?:boolean;isImportant?:boolean}) {
+    const updated=await bridge.updateMessageMetadata(message.accountId,message.id,metadata);
+    setMessages((current)=>current.map((item)=>item.id===updated.id?updated:item));
+    void pushCloudMessage(updated).catch(() => undefined);
+  }
+
+  function addPolicy(key:"blockedSenders"|"trustedSenders", email:string) {
+    const normalized=email.trim().toLocaleLowerCase("pt-BR");
+    if(!normalized) return;
+    setSettings((current)=>{
+      const blocked=(current.blockedSenders??[]).filter((value)=>value!==normalized);
+      const trusted=(current.trustedSenders??[]).filter((value)=>value!==normalized);
+      return {
+        ...current,
+        blockedSenders:key==="blockedSenders"?[...new Set([...blocked,normalized])]:blocked,
+        trustedSenders:key==="trustedSenders"?[...new Set([...trusted,normalized])]:trusted,
+      };
+    });
+  }
+
+  function releaseSender(email:string) {
+    const normalized=email.trim().toLocaleLowerCase("pt-BR");
+    setSettings((current)=>({...current,blockedSenders:(current.blockedSenders??[]).filter((value)=>value!==normalized)}));
+  }
+
+  async function applySenderPolicies(candidates: MailMessage[]): Promise<void> {
+    const blockedSenders=new Set((settings.blockedSenders??[]).map((value)=>value.toLocaleLowerCase("pt-BR")));
+    const blockedDomains=new Set((settings.blockedDomains??[]).map((value)=>value.toLocaleLowerCase("pt-BR")));
+    for(const message of candidates){
+      if(message.folder!=="Caixa de entrada") continue;
+      const email=message.from.email.toLocaleLowerCase("pt-BR");
+      const domain=email.split("@")[1]??"";
+      if(!blockedSenders.has(email)&&!blockedDomains.has(domain)) continue;
+      await bridge.messageAction(message.accountId,message.id,"spam").catch(()=>undefined);
+      void bridge.flushMailActions(message.accountId).catch(()=>undefined);
+    }
   }
 
   async function createCategory() {
@@ -1250,7 +1298,9 @@ export default function App() {
 
           await bridge.syncFolder(account.id,"INBOX","Caixa de entrada",50);
           const synced = await bridge.listCachedMessages(account.id);
-          await executeRules(synced.filter((message)=>message.folder==="Caixa de entrada"));
+          await applySenderPolicies(synced);
+          const policyApplied = await bridge.listCachedMessages(account.id);
+          await executeRules(policyApplied.filter((message)=>message.folder==="Caixa de entrada"));
           const after = await bridge.listCachedMessages(account.id);
           const fresh = before.length===0
             ? []
@@ -1260,7 +1310,7 @@ export default function App() {
             setMessages(after);
           }
           if (fresh.length>0 && settings.notificationsEnabled) {
-            void notifyNewMessages(fresh);
+            void notifyNewMessages(fresh.filter((message)=>!message.isMuted));
           }
           void pushCloudMessages(after).catch(() => undefined);
         } catch {
@@ -1361,7 +1411,9 @@ export default function App() {
         await bridge.syncFolder(account.id, path, label, 50);
       }
       const synced = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id);
-      await executeRules(synced.filter((message)=>message.folder==="Caixa de entrada"));
+      await applySenderPolicies(synced);
+      const policyApplied = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id);
+      await executeRules(policyApplied.filter((message)=>message.folder==="Caixa de entrada"));
       const refreshed = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id);
       setMessages(refreshed);
       void pushCloudMessages(refreshed).catch(() => undefined);
@@ -1424,7 +1476,7 @@ export default function App() {
         <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings.markReadDelayMs={settings.markReadDelayMs} readingPane={settings.readingPane} previewLines={settings.previewLines}/>} 
+        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={settings}/>} 
         {section==="calendar"&&<PersistentCalendarView/>}
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
