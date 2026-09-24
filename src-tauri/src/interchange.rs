@@ -73,7 +73,7 @@ pub fn import_eml(paths: &AppPaths, account: &AccountProfile, path: &str) -> Res
         .map(|value| value.into_owned())
         .unwrap_or_default();
     let attachment_names = (0..parsed.attachment_count())
-        .filter_map(|index| parsed.attachment(index))
+        .filter_map(|index| parsed.attachment(index as u32))
         .map(|part| part.attachment_name().unwrap_or("anexo").to_string())
         .collect::<Vec<_>>();
 
@@ -161,7 +161,7 @@ pub fn list_message_attachments(
 
     let mut attachments = Vec::new();
     for index in 0..parsed.attachment_count() {
-        let Some(part) = parsed.attachment(index) else { continue; };
+        let Some(part) = parsed.attachment(index as u32) else { continue; };
         let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
         attachments.push(MailAttachmentInfo {
             index,
@@ -211,7 +211,7 @@ pub fn save_all_message_attachments(
 
     let mut saved = 0usize;
     for index in 0..parsed.attachment_count() {
-        let Some(part) = parsed.attachment(index) else { continue; };
+        let Some(part) = parsed.attachment(index as u32) else { continue; };
         let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
         let mut path = directory.join(&name);
         if path.exists() {
