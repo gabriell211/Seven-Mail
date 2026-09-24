@@ -314,6 +314,11 @@ pub fn stage_attachments(
 
     let mut output = Vec::new();
     let mut total = 0u64;
+    let offset = fs::read_dir(&destination)
+        .map_err(io_error)?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_file())
+        .count();
 
     for (index, source) in sources.iter().enumerate() {
         let source_path = Path::new(source);
@@ -338,7 +343,7 @@ pub fn stage_attachments(
             .and_then(|value| value.to_str())
             .unwrap_or("arquivo");
         let name = safe_attachment_name(original_name);
-        let staged_name = format!("{index:03}-{name}");
+        let staged_name = format!("{:03}-{name}", offset + index);
         let staged_path = destination.join(staged_name);
         fs::copy(source_path, &staged_path).map_err(io_error)?;
 
@@ -355,16 +360,18 @@ pub fn stage_attachments(
 pub fn cancel_operation(paths: &AppPaths, operation_id: &str) -> Result<bool, String> {
     safe_component(operation_id)?;
     let pending = paths.pending.join(format!("{operation_id}.json"));
-    if !pending.exists() {
-        return Ok(false);
+    let existed = pending.exists();
+
+    if existed {
+        fs::remove_file(&pending).map_err(io_error)?;
     }
 
-    fs::remove_file(pending).map_err(io_error)?;
     let attachments = paths.queue_attachments.join(operation_id);
     if attachments.exists() {
         fs::remove_dir_all(attachments).map_err(io_error)?;
     }
-    Ok(true)
+
+    Ok(existed)
 }
 
 pub fn claim_next_mail_action(paths: &AppPaths, account_id: &str) -> Result<Option<QueueOperation>, String> {
