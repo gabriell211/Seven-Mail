@@ -31,3 +31,11 @@ pub fn load(account_id: &str) -> Result<String, String> {
         .get_password()
         .map_err(|error| error.to_string())
 }
+
+
+pub fn delete(account_id: &str) -> Result<(), String> {
+    match entry(account_id)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
+}
