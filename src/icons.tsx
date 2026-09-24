@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-export type IconName = "mail"|"calendar"|"people"|"check"|"note"|"rule"|"settings"|"search"|"plus"|"inbox"|"send"|"draft"|"archive"|"trash"|"spam"|"star"|"flag"|"paperclip"|"refresh"|"chevron"|"more"|"reply"|"forward"|"filter"|"cloud"|"shield"|"moon"|"sun"|"x"|"userplus"|"clock"|"lock"|"pin"|"upload"|"download"|"copy";
+export type IconName = "mail"|"calendar"|"people"|"check"|"note"|"rule"|"settings"|"search"|"plus"|"inbox"|"send"|"draft"|"archive"|"trash"|"spam"|"star"|"flag"|"paperclip"|"refresh"|"chevron"|"more"|"reply"|"forward"|"filter"|"cloud"|"shield"|"moon"|"sun"|"x"|"userplus"|"clock"|"lock"|"pin"|"upload"|"download"|"copy"|"volume"|"expand"|"mic";
 
 const paths: Record<IconName, string[]> = {
   mail:["M4 6h16v12H4z","m4 7 8 6 8-6"], calendar:["M5 5h14v14H5z","M8 3v4M16 3v4M5 9h14"],
@@ -24,7 +24,10 @@ const paths: Record<IconName, string[]> = {
   pin:["M12 17v5","M5 4h14","m8 4 1 7 3 2 3-2 1-7","M9 15h6"],
   upload:["M12 16V4","m7 9 5-5 5 5","M5 20h14"],
   download:["M12 4v12","m7-5 5 5 5-5","M5 20h14"],
-  copy:["M8 8h11v11H8z","M5 16H4V5h11v1"]
+  copy:["M8 8h11v11H8z","M5 16H4V5h11v1"],
+  volume:["M11 5 6 9H3v6h3l5 4z","M15 9a4 4 0 0 1 0 6","M17.5 6.5a8 8 0 0 1 0 11"],
+  expand:["M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"],
+  mic:["M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z","M5 11a7 7 0 0 0 14 0","M12 18v3","M9 21h6"]
 };
 
 export function Icon({name,size=20,...props}: SVGProps<SVGSVGElement> & {name:IconName;size?:number}) {
