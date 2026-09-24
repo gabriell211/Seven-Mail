@@ -101,7 +101,6 @@ export function MessageDetailsModal({
               {previewBusy?<div className="mini-empty">Preparando pré-visualização...</div>:preview?.kind==="image"&&preview.dataUrl?<img src={preview.dataUrl} alt={preview.name}/>:preview?.kind==="pdf"&&preview.dataUrl?<iframe title={preview.name} src={preview.dataUrl}/>:<pre>{preview?.text??"Pré-visualização indisponível."}</pre>}
             </div>}
           </div> : <div className="mini-empty">Nenhum anexo disponível na fonte local. Mensagens antigas podem precisar ser sincronizadas novamente.</div>
-          </div> : <div className="mini-empty">Nenhum anexo disponível na fonte local. Mensagens antigas podem precisar ser sincronizadas novamente.</div>
         )}
         {!busy && tab==="headers" && <pre className="message-source">{headers || "Cabeçalhos originais indisponíveis. Sincronize a mensagem novamente."}</pre>}
         {!busy && tab==="source" && <pre className="message-source">{source || "Fonte original indisponível. Sincronize a mensagem novamente."}</pre>}
