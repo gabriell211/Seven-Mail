@@ -6,9 +6,11 @@ import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, Pers
 import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
-import { ensureNotificationPermission, notifyNewMessages } from "./lib/notifications";
-import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudMessage, pushCloudMessages } from "./lib/neon";
-import type { AccountProfile, AppSection, AppSettings, MailFolder, MailMessage, ProviderSettings, RuntimeInfo } from "./types";
+import { ensureNotificationPermission, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
+import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
+import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
+import { pendingRulesForMessage } from "./lib/rules";
+import type { AccountProfile, AppSection, AppSettings, MailFolder, MailMessage, ProviderSettings, RuleItem, RuntimeInfo, TaskItem, WorkspaceDocument } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
@@ -203,8 +205,9 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
 
 function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,onOpenDraft,onComposeFromMessage,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,markReadDelayMs}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"forward")=>void;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;markReadDelayMs:number}) {
   const [selectedId,setSelectedId] = useState<string>();
+  const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
   const selected = messages.find(m=>m.id===selectedId);
-  const folderMessages = messages.filter(message=>message.folder===folder.name);
+  const folderMessages = messages.filter(message=>message.folder===folder.name && matchesQuickFilter(message,quickFilter));
   const visibleFolders = folders.length ? folders : FALLBACK_FOLDERS;
 
   async function act(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox") {
@@ -234,7 +237,12 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,on
         <div><span className="eyebrow">{folder.name.toUpperCase()}</span><h2>{folder.name}</h2></div>
         <div className="icon-group"><button className="icon-button"><Icon name="filter"/></button><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div>
       </header>
-      <div className="segmented"><button className="active">Prioritários</button><button>Outros</button></div>
+      <div className="segmented mail-filters">
+        <button className={quickFilter==="all"?"active":""} onClick={()=>setQuickFilter("all")}>Todas</button>
+        <button className={quickFilter==="unread"?"active":""} onClick={()=>setQuickFilter("unread")}>Não lidas</button>
+        <button className={quickFilter==="flagged"?"active":""} onClick={()=>setQuickFilter("flagged")}>Sinalizadas</button>
+        <button className={quickFilter==="attachments"?"active":""} onClick={()=>setQuickFilter("attachments")}>Anexos</button>
+      </div>
       {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : folderMessages.length===0 && (folder.role!=="drafts" || localDrafts.length===0) ? <div className="empty-state small"><div className="empty-symbol"><Icon name={folder.role==="drafts"?"draft":"inbox"} size={30}/></div><h3>{folder.role==="drafts"?"Nenhum rascunho":"Tudo limpo"}</h3><p>{folder.role==="drafts"?"Mensagens em edição aparecerão aqui automaticamente.":"As mensagens sincronizadas aparecerão aqui."}</p></div> :
         <div className="message-list">
           {folder.role==="drafts"&&localDrafts.map(draft=><button key={draft.id} className="message local-draft-message" onClick={()=>onOpenDraft(draft)}>
@@ -526,6 +534,42 @@ export default function App() {
   },[settings.notificationsEnabled]);
 
   useEffect(()=>{
+    if (!settings.notificationsEnabled) return;
+
+    let disposed = false;
+    const checkTaskReminders = async () => {
+      const documents = await bridge.listWorkspace<TaskItem>("task").catch(() => []);
+      const now = Date.now();
+
+      for (const document of documents) {
+        if (disposed) return;
+        const task = document.payload;
+        if (task.completedAt || !task.reminderAt || task.reminderNotifiedAt) continue;
+
+        const reminderAt = new Date(task.reminderAt).getTime();
+        if (!Number.isFinite(reminderAt) || reminderAt > now) continue;
+
+        await notifyTaskReminder(task);
+        const updated: TaskItem = { ...task, reminderNotifiedAt: new Date().toISOString() };
+        const nextDocument: WorkspaceDocument<TaskItem> = {
+          ...document,
+          updatedAt: new Date().toISOString(),
+          payload: updated,
+        };
+        await bridge.upsertWorkspace(nextDocument);
+        void pushCloudDocument(nextDocument).catch(() => undefined);
+      }
+    };
+
+    void checkTaskReminders();
+    const timer = window.setInterval(()=>void checkTaskReminders(),30_000);
+    return ()=>{
+      disposed=true;
+      window.clearInterval(timer);
+    };
+  },[settings.notificationsEnabled]);
+
+  useEffect(()=>{
     const flush = () => {
       if (!navigator.onLine) return;
       void bridge.flushOutbox().catch(() => undefined);
@@ -557,6 +601,8 @@ export default function App() {
           const known = new Set(before.map((message)=>message.id));
 
           await bridge.syncFolder(account.id,"INBOX","Caixa de entrada",50);
+          const synced = await bridge.listCachedMessages(account.id);
+          await executeRules(synced.filter((message)=>message.folder==="Caixa de entrada"));
           const after = await bridge.listCachedMessages(account.id);
           const fresh = before.length===0
             ? []
@@ -614,6 +660,47 @@ export default function App() {
     return ()=>window.removeEventListener("keydown", onKeyDown);
   },[accounts.length]);
 
+  async function executeRules(candidates: MailMessage[]): Promise<number> {
+    const documents = await bridge.listWorkspace<RuleItem>("rule").catch(() => []);
+    const rules = documents.map((document) => document.payload);
+    if (rules.length===0 || candidates.length===0) return 0;
+
+    let actions = 0;
+    const touchedAccounts = new Set<string>();
+
+    for (const candidate of candidates) {
+      let current = candidate;
+      const matching = pendingRulesForMessage(rules,current);
+
+      for (const rule of matching) {
+        current = await bridge.messageAction(current.accountId,current.id,rule.action);
+        current = {
+          ...current,
+          appliedRuleIds: [...new Set([...(current.appliedRuleIds ?? []),rule.id])],
+        };
+        await bridge.cacheMessage(current);
+        void pushCloudMessage(current).catch(() => undefined);
+        touchedAccounts.add(current.accountId);
+        actions += 1;
+        if (rule.stopProcessing) break;
+      }
+    }
+
+    for (const accountId of touchedAccounts) {
+      void bridge.flushMailActions(accountId).catch(() => undefined);
+    }
+
+    return actions;
+  }
+
+  async function runRulesNow(): Promise<number> {
+    const cached = await bridge.listCachedMessages();
+    const actions = await executeRules(cached);
+    const refreshed = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id);
+    setMessages(refreshed);
+    return actions;
+  }
+
   async function syncNow() {
     if (accounts.length===0 || syncState==="syncing") return;
     setSyncState("syncing");
@@ -625,6 +712,8 @@ export default function App() {
         const label = unified ? "Caixa de entrada" : selectedFolder.name;
         await bridge.syncFolder(account.id, path, label, 50);
       }
+      const synced = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id);
+      await executeRules(synced.filter((message)=>message.folder==="Caixa de entrada"));
       const refreshed = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id);
       setMessages(refreshed);
       void pushCloudMessages(refreshed).catch(() => undefined);
@@ -668,10 +757,10 @@ export default function App() {
     await bridge.cancelOperation(current.id).catch(() => false);
   }
 
-  const filtered = useMemo(()=>{
-    const q=search.trim().toLowerCase();
-    return q ? messages.filter(m=>[m.subject,m.preview,m.from.name,m.from.email].filter(Boolean).some(v=>v!.toLowerCase().includes(q))) : messages;
-  },[messages,search]);
+  const filtered = useMemo(
+    ()=>messages.filter((message)=>matchesMailQuery(message,search)),
+    [messages,search],
+  );
 
   return <div className="app-shell">
     <aside className="nav-rail">
@@ -692,7 +781,7 @@ export default function App() {
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView/>}
         {section==="notes"&&<PersistentNotesView query={search}/>}
-        {section==="rules"&&<PersistentRulesView/>}
+        {section==="rules"&&<PersistentRulesView onRunRules={runRulesNow}/>} 
         {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime} accounts={accounts} onAccountsChange={(next)=>{setAccounts(next);if(!next.some((account)=>account.id===activeId)){setActiveId(next.find((account)=>account.isDefault)?.id??next[0]?.id);}}}/>}
       </div>
     </main>
