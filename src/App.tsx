@@ -3,6 +3,7 @@ import { Icon, type IconName } from "./icons";
 import { bridge } from "./lib/bridge";
 import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, PersistentRulesView, PersistentTasksView } from "./components/WorkspaceViews";
 import { CloudPanel } from "./components/CloudPanel";
+import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudMessage, pushCloudMessages } from "./lib/neon";
 import type { AccountProfile, AppSection, AppSettings, MailMessage, ProviderSettings, RuntimeInfo } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -317,9 +318,72 @@ export default function App() {
 
   useEffect(()=>{
     bridge.runtimeInfo().then(setRuntime).catch(console.error);
-    bridge.listAccounts().then(list=>{setAccounts(list);setActiveId(list.find(a=>a.isDefault)?.id||list[0]?.id);}).catch(()=>undefined);
+
+    const loadAccounts = async () => {
+      const local = await bridge.listAccounts().catch(() => [] as AccountProfile[]);
+      const merged = new Map(local.map((account) => [account.id, account]));
+
+      try {
+        const cloud = await pullCloudAccounts();
+        for (const account of cloud) {
+          if (!merged.has(account.id)) {
+            await bridge.saveAccount(account);
+            merged.set(account.id, account);
+          }
+        }
+        void pushCloudAccounts(local).catch(() => undefined);
+      } catch {
+        // Offline or signed out: local account metadata remains available.
+      }
+
+      const list = [...merged.values()];
+      setAccounts(list);
+      setActiveId((current) => current || list.find((account) => account.isDefault)?.id || list[0]?.id);
+    };
+
+    void loadAccounts();
+    const onCloudSession = () => void loadAccounts();
+    window.addEventListener("seven-mail:cloud-session", onCloudSession);
+    return () => window.removeEventListener("seven-mail:cloud-session", onCloudSession);
   },[]);
-  useEffect(()=>{bridge.listCachedMessages(activeAccount?.id).then(setMessages).catch(()=>setMessages([]));},[activeAccount?.id]);
+
+  useEffect(()=>{
+    if (!activeAccount) {
+      setMessages([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadMessages = async () => {
+      const local = await bridge.listCachedMessages(activeAccount.id).catch(() => [] as MailMessage[]);
+      const merged = new Map(local.map((message) => [message.id, message]));
+
+      try {
+        const cloud = await pullCloudMessages(activeAccount.id);
+        for (const message of cloud) {
+          if (!merged.has(message.id)) {
+            await bridge.cacheMessage(message);
+            merged.set(message.id, message);
+          }
+        }
+        void pushCloudMessages(local).catch(() => undefined);
+      } catch {
+        // Offline or signed out: keep using the APPDATA cache.
+      }
+
+      if (!cancelled) {
+        setMessages([...merged.values()].sort((a,b)=>b.receivedAt.localeCompare(a.receivedAt)));
+      }
+    };
+
+    void loadMessages();
+    const onCloudSession = () => void loadMessages();
+    window.addEventListener("seven-mail:cloud-session", onCloudSession);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("seven-mail:cloud-session", onCloudSession);
+    };
+  },[activeAccount?.id]);
   useEffect(()=>{
     localStorage.setItem("seven-mail:settings",JSON.stringify(settings));
     const theme = settings.theme==="system" ? (matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light") : settings.theme;
@@ -335,6 +399,7 @@ export default function App() {
       await bridge.syncInbox(activeAccount.id, 50);
       const refreshed = await bridge.listCachedMessages(activeAccount.id);
       setMessages(refreshed);
+      void pushCloudMessages(refreshed).catch(() => undefined);
       setSyncState("idle");
     } catch (reason) {
       console.error(reason);
@@ -344,8 +409,9 @@ export default function App() {
 
   async function applyMessageAction(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox") {
     if (!activeAccount) return;
-    await bridge.messageAction(activeAccount.id, messageId, action);
+    const updated = await bridge.messageAction(activeAccount.id, messageId, action);
     setMessages(await bridge.listCachedMessages(activeAccount.id));
+    void pushCloudMessage(updated).catch(() => undefined);
     void bridge.flushMailActions(activeAccount.id).catch(() => undefined);
   }
 
@@ -377,6 +443,6 @@ export default function App() {
       </div>
     </main>
     {composeOpen&&<ComposeModal account={activeAccount} onClose={()=>setComposeOpen(false)}/>}
-    {accountOpen&&<AddAccountModal onClose={()=>setAccountOpen(false)} onAdded={account=>{setAccounts(v=>[...v,account]);setActiveId(account.id);}}/>}
+    {accountOpen&&<AddAccountModal onClose={()=>setAccountOpen(false)} onAdded={account=>{setAccounts(v=>[...v,account]);setActiveId(account.id);void pushCloudAccount(account).catch(()=>undefined);}}/>}
   </div>;
 }
