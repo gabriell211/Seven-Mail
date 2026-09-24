@@ -99,7 +99,7 @@ export interface AppSettings {
 }
 
 
-export type WorkspaceKind = "calendar" | "contact" | "contact-group" | "task" | "note" | "rule" | "category" | "saved-search" | "signature" | "settings" | "draft" | "template" | "content-block" | "folder-pref" | "profile";
+export type WorkspaceKind = "calendar" | "calendar-list" | "contact" | "contact-group" | "task" | "note" | "rule" | "category" | "saved-search" | "signature" | "settings" | "draft" | "template" | "content-block" | "folder-pref" | "profile";
 
 export interface WorkspaceDocument<T = Record<string, unknown>> {
   id: string;
@@ -121,6 +121,26 @@ export interface CalendarEvent {
   participants: string[];
   reminderAt?: string;
   reminderNotifiedAt?: string;
+  calendarId?: string;
+  accountId?: string;
+  requiredParticipants?: string[];
+  optionalParticipants?: string[];
+  resources?: string[];
+  isPrivate?: boolean;
+  recurrence?: "none" | "daily" | "weekly" | "monthly" | "yearly";
+  recurrenceUntil?: string;
+  categories?: string[];
+  status?: "confirmed" | "draft" | "cancelled";
+  timezone?: string;
+  onlineMeetingUrl?: string;
+}
+
+export interface CalendarListItem {
+  id: string;
+  name: string;
+  color: string;
+  accountId?: string;
+  visible: boolean;
 }
 
 export interface ContactItem {
