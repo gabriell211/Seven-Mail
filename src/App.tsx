@@ -16,7 +16,7 @@ import { syncWorkspaceCollection } from "./lib/workspace-sync";
 import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
 import { pendingRulesForMessage } from "./lib/rules";
 import { messageToEml, safeExportName } from "./lib/interchange";
-import type { AccountProfile, AppSection, AppSettings, CategoryItem, MailFolder, MailMessage, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
+import type { AccountProfile, AppSection, AppSettings, CalendarEvent, CategoryItem, MailFolder, MailMessage, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
@@ -496,6 +496,36 @@ export default function App() {
     void pushCloudDocument(document).catch(() => undefined);
   }
 
+  async function editCategory(category: CategoryItem) {
+    const name = window.prompt("Nome da categoria",category.name)?.trim();
+    if (!name) return;
+    const color = window.prompt("Cor da categoria (hex)",category.color)?.trim() || category.color;
+    const updated: CategoryItem = {...category,name,color};
+    const document: WorkspaceDocument<CategoryItem> = {
+      id:updated.id,
+      kind:"category",
+      updatedAt:new Date().toISOString(),
+      payload:updated,
+    };
+    await bridge.upsertWorkspace(document);
+    setCategories((current)=>current.map((item)=>item.id===updated.id?updated:item));
+    void pushCloudDocument(document).catch(() => undefined);
+
+    if (name !== category.name) {
+      const cached = await bridge.listCachedMessages();
+      for (const message of cached) {
+        if (!message.categories.includes(category.name)) continue;
+        const next = {
+          ...message,
+          categories:message.categories.map((value)=>value===category.name?name:value),
+        };
+        await bridge.cacheMessage(next);
+        void pushCloudMessage(next).catch(() => undefined);
+      }
+      setMessages(await bridge.listCachedMessages(unified ? undefined : activeAccount?.id));
+    }
+  }
+
   async function deleteCategory(category: CategoryItem) {
     if (!window.confirm(`Excluir a categoria "${category.name}"?`)) return;
     const tombstone = await bridge.deleteWorkspace("category",category.id);
@@ -659,6 +689,55 @@ export default function App() {
     setSearch("");
     setFocusMessageId(message.id);
     setSection("mail");
+  }
+
+  async function importEml() {
+    const account = activeAccount ?? accounts.find((item)=>item.isDefault) ?? accounts[0];
+    if (!account) return;
+    const selected = await open({
+      multiple:false,
+      directory:false,
+      filters:[{name:"Mensagem EML",extensions:["eml"]}],
+    });
+    if (!selected || Array.isArray(selected)) return;
+    const imported = await bridge.importEml(account.id,selected);
+    setMessages((current)=>[imported,...current.filter((item)=>item.id!==imported.id)]);
+    setSelectedFolder(FALLBACK_FOLDERS[0]);
+    setFocusMessageId(imported.id);
+  }
+
+  async function exportEml(message: MailMessage) {
+    const destination = await saveDialog({
+      defaultPath:`${safeExportName(message.subject,"mensagem")}.eml`,
+      filters:[{name:"Mensagem EML",extensions:["eml"]}],
+    });
+    if (!destination) return;
+    await bridge.writeTextFile(destination,messageToEml(message));
+  }
+
+  async function createEventFromMessage(message: MailMessage) {
+    const start = new Date(Date.now()+60*60*1000);
+    const end = new Date(start.getTime()+60*60*1000);
+    const event: CalendarEvent = {
+      id:crypto.randomUUID(),
+      title:message.subject || "Evento a partir de e-mail",
+      description:`Criado a partir de e-mail de ${message.from.name || message.from.email}.\n\n${message.preview}`,
+      location:"",
+      startAt:start.toISOString(),
+      endAt:end.toISOString(),
+      allDay:false,
+      color:"#3d83f6",
+      participants:[message.from.email],
+    };
+    const document: WorkspaceDocument<CalendarEvent> = {
+      id:event.id,
+      kind:"calendar",
+      updatedAt:new Date().toISOString(),
+      payload:event,
+    };
+    await bridge.upsertWorkspace(document);
+    void pushCloudDocument(document).catch(() => undefined);
+    setSection("calendar");
   }
 
   async function createTaskFromMessage(message: MailMessage) {
