@@ -23,6 +23,7 @@ export interface AccountProfile {
   smtpHost?: string;
   smtpPort?: number;
   securityMode?: "tls" | "starttls";
+  aliases?: string[];
 }
 
 export interface ProviderSettings {
