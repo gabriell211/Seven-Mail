@@ -3,8 +3,6 @@ name: Desktop Release
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
     tags:
       - "v*"
 
@@ -70,20 +68,15 @@ jobs:
           tagName: v__VERSION__
           releaseName: "Seven Mail v__VERSION__"
           releaseBody: |
-            Seven Mail 0.3.0 amplia a organização e composição do cliente desktop local-first.
+            Instaladores oficiais do Seven Mail.
 
-            Destaques:
-            - Pastas IMAP personalizadas com criar, renomear, excluir e mover mensagens
-            - Categorias locais com cores e pesquisa por categoria
-            - Pesquisas salvas e mensagens fixadas
-            - Ordenação da lista e painel de leitura configurável
-            - Responder a todos e ação de marcar como não lida
-            - Assinaturas por conta, padrão em novas mensagens, respostas e encaminhamentos
-            - Melhorias de densidade, pré-visualização e ergonomia
+            Windows:
+            - MSI
+            - NSIS (.exe)
 
-            Instaladores:
-            - Windows: MSI e NSIS (.exe)
-            - Linux: DEB e AppImage
+            Linux:
+            - DEB
+            - AppImage
           releaseDraft: false
           prerelease: false
           args: --bundles ${{ matrix.bundles }}
