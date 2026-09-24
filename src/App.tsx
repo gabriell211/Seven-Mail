@@ -638,6 +638,11 @@ export default function App() {
   const [accountOpen,setAccountOpen] = useState(false);
   const [undoSend,setUndoSend] = useState<{id:string;expiresAt:number}|null>(null);
   const [search,setSearch] = useState("");
+  const [searchHistory,setSearchHistory] = useState<string[]>(()=>{
+    try{return JSON.parse(localStorage.getItem("seven-mail:search-history")||"[]");}catch{return [];}
+  });
+  const [workspaceSearchResults,setWorkspaceSearchResults] = useState<WorkspaceDocument[]>([]);
+  const [globalSearchOpen,setGlobalSearchOpen] = useState(false);
   const [focusMessageId,setFocusMessageId] = useState<string|undefined>(launchMessageId);
   const [categories,setCategories] = useState<CategoryItem[]>([]);
   const [savedSearches,setSavedSearches] = useState<SavedSearchItem[]>([]);
@@ -1265,6 +1270,24 @@ export default function App() {
   },[settings]);
 
   useEffect(()=>{
+    localStorage.setItem("seven-mail:search-history",JSON.stringify(searchHistory.slice(0,20)));
+  },[searchHistory]);
+
+  useEffect(()=>{
+    const query=search.trim();
+    if(!query){
+      setWorkspaceSearchResults([]);
+      return;
+    }
+    const timer=window.setTimeout(()=>{
+      void bridge.searchWorkspace(query)
+        .then((documents)=>setWorkspaceSearchResults(documents.slice(0,12)))
+        .catch(()=>setWorkspaceSearchResults([]));
+    },180);
+    return ()=>window.clearTimeout(timer);
+  },[search]);
+
+  useEffect(()=>{
     void bridge.setCloseToTray(settings.minimizeToTray).catch(() => undefined);
   },[settings.minimizeToTray]);
 
@@ -1579,6 +1602,33 @@ export default function App() {
     [messages,search],
   );
 
+  const searchSuggestions=useMemo(()=>{
+    const values=[
+      ...searchHistory,
+      ...messages.slice(0,80).flatMap((message)=>[message.from.email,message.from.name??"",message.subject]),
+    ].map((value)=>value.trim()).filter(Boolean);
+    return [...new Set(values)].slice(0,40);
+  },[searchHistory,messages]);
+
+  const workspaceSection=(kind:WorkspaceKind):AppSection=>{
+    if(kind==="calendar") return "calendar";
+    if(kind==="contact") return "people";
+    if(kind==="task") return "tasks";
+    if(kind==="note") return "notes";
+    if(kind==="rule") return "rules";
+    return "settings";
+  };
+
+  function commitSearchHistory(){
+    const query=search.trim();
+    if(!query) return;
+    setSearchHistory((current)=>[query,...current.filter((value)=>value!==query)].slice(0,20));
+  }
+
+  function clearSearchHistory(){
+    setSearchHistory([]);
+  }
+
   return <><LaunchScreen ready={bootReady}/><div className="app-shell">
     <aside className="nav-rail">
       <div className="rail-brand"><BrandLogo variant="rail"/></div>
@@ -1589,8 +1639,14 @@ export default function App() {
       <header className="topbar" data-tauri-drag-region>
         <div className="product"><strong>Seven Mail</strong><span>{NAV.find(n=>n.id===section)?.label}</span></div>
         {section==="mail"&&accounts.length>0&&<select className="account-switcher" value={unified?"__all__":(activeAccount?.id??"")} onChange={e=>setActiveId(e.target.value)} aria-label="Selecionar conta"><option value="__all__">Todas as contas</option>{accounts.map(account=><option key={account.id} value={account.id}>{account.email}</option>)}</select>}
-        <label className="search"><Icon name="search" size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Pesquisar e-mails, pessoas, eventos..."/><kbd>Ctrl K</kbd></label>{section==="mail"&&search.trim()&&<button className="icon-button save-search-button" title="Salvar pesquisa" aria-label="Salvar pesquisa" onClick={()=>void saveCurrentSearch()}><Icon name="star" size={17}/></button>}
+        <label className="search"><Icon name="search" size={17}/><input list="seven-mail-search-suggestions" value={search} onFocus={()=>setGlobalSearchOpen(true)} onChange={e=>{setSearch(e.target.value);setGlobalSearchOpen(true);}} onKeyDown={e=>{if(e.key==="Enter"){commitSearchHistory();setGlobalSearchOpen(true);}else if(e.key==="Escape"){setGlobalSearchOpen(false);}}} placeholder="Pesquisar em todo o Seven Mail..."/><kbd>Ctrl K</kbd></label><datalist id="seven-mail-search-suggestions">{searchSuggestions.map((value)=><option value={value} key={value}/>)}</datalist>{section==="mail"&&search.trim()&&<button className="icon-button save-search-button" title="Salvar pesquisa" aria-label="Salvar pesquisa" onClick={()=>void saveCurrentSearch()}><Icon name="star" size={17}/></button>}
         <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
+        {globalSearchOpen&&search.trim()&&<div className="global-search-popover">
+          <header><span><Icon name="search" size={15}/><b>Pesquisa global</b></span><button onClick={()=>setGlobalSearchOpen(false)}><Icon name="x" size={13}/></button></header>
+          <div className="global-search-group"><small>E-MAILS</small>{filtered.slice(0,6).map((message)=><button key={message.id} onClick={()=>{setActiveId(message.accountId);setFocusMessageId(message.id);setSection("mail");setGlobalSearchOpen(false);commitSearchHistory();}}><Icon name="mail" size={14}/><span><b>{message.subject||"(sem assunto)"}</b><small>{message.from.name||message.from.email}</small></span></button>)}{filtered.length===0&&<em>Nenhum e-mail encontrado.</em>}</div>
+          <div className="global-search-group"><small>WORKSPACE</small>{workspaceSearchResults.slice(0,8).map((document)=><button key={`${document.kind}-${document.id}`} onClick={()=>{setSection(workspaceSection(document.kind));setGlobalSearchOpen(false);commitSearchHistory();}}><Icon name={document.kind==="calendar"?"calendar":document.kind==="contact"?"people":document.kind==="task"?"check":document.kind==="note"?"note":"settings"} size={14}/><span><b>{String((document.payload as Record<string,unknown>).title??(document.payload as Record<string,unknown>).displayName??(document.payload as Record<string,unknown>).name??document.kind)}</b><small>{document.kind}</small></span></button>)}{workspaceSearchResults.length===0&&<em>Nenhum item encontrado.</em>}</div>
+          {searchHistory.length>0&&<footer><span>Histórico: {searchHistory.slice(0,4).join(" · ")}</span><button onClick={clearSearchHistory}>Limpar histórico</button></footer>}
+        </div>}
       </header>
       <div className="content">
         {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={settings}/>} 
