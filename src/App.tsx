@@ -10,6 +10,7 @@ import { AccountsPanel } from "./components/AccountsPanel";
 import { SignaturesPanel } from "./components/SignaturesPanel";
 import { MessageDetailsModal, SenderPoliciesPanel } from "./components/AdvancedMailPanels";
 import { ComposerAssetsPanel } from "./components/ComposerAssetsPanel";
+import { ProfilesPanel } from "./components/ProfilesPanel";
 import { BrandLogo } from "./components/BrandLogo";
 import { LaunchScreen } from "./components/LaunchScreen";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
@@ -19,7 +20,7 @@ import { syncWorkspaceCollection } from "./lib/workspace-sync";
 import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
 import { pendingRulesForMessage } from "./lib/rules";
 import { messageToEml, safeExportName } from "./lib/interchange";
-import type { AccountProfile, AppSection, AppSettings, CalendarEvent, CategoryItem, MailFolder, MailMessage, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
+import type { AccountProfile, AppSection, AppSettings, CalendarEvent, CategoryItem, MailFolder, MailMessage, ProfileItem, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
@@ -547,7 +548,7 @@ function RulesView() {
   </div></Workspace>;
 }
 
-function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signatures,onSaveSignature,onDeleteSignature}:{settings:AppSettings;onChange:(s:AppSettings)=>void;runtime?:RuntimeInfo;accounts:AccountProfile[];onAccountsChange:(accounts:AccountProfile[])=>void;signatures:SignatureItem[];onSaveSignature:(signature:SignatureItem)=>Promise<void>;onDeleteSignature:(signature:SignatureItem)=>Promise<void>}) {
+function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signatures,onSaveSignature,onDeleteSignature,profiles,activeProfileId,onActivateProfile,onSaveProfile,onDeleteProfile}:{settings:AppSettings;onChange:(s:AppSettings)=>void;runtime?:RuntimeInfo;accounts:AccountProfile[];onAccountsChange:(accounts:AccountProfile[])=>void;signatures:SignatureItem[];onSaveSignature:(signature:SignatureItem)=>Promise<void>;onDeleteSignature:(signature:SignatureItem)=>Promise<void>;profiles:ProfileItem[];activeProfileId?:string;onActivateProfile:(profile:ProfileItem|null)=>void;onSaveProfile:(profile:ProfileItem)=>Promise<void>;onDeleteProfile:(profile:ProfileItem)=>Promise<void>}) {
   const set = <K extends keyof AppSettings>(key:K,value:AppSettings[K])=>onChange({...settings,[key]:value});
 
   async function exportBackup() {
@@ -608,6 +609,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
     <div className="settings-row"><div><h3>Sincronização e notificações</h3><p>Atualização automática da caixa de entrada em segundo plano.</p></div><div className="send-settings"><select value={settings.syncIntervalMinutes} onChange={e=>set("syncIntervalMinutes",Number(e.target.value) as AppSettings["syncIntervalMinutes"])}><option value={1}>A cada 1 minuto</option><option value={5}>A cada 5 minutos</option><option value={10}>A cada 10 minutos</option><option value={15}>A cada 15 minutos</option><option value={30}>A cada 30 minutos</option></select><label><input type="checkbox" checked={settings.notificationsEnabled} onChange={e=>set("notificationsEnabled",e.target.checked)}/> Notificações nativas de novas mensagens</label></div></div>
     <div className="settings-row"><div><h3>Dados locais</h3><p>Cache pode ser limpo sem tocar na fila de saída. Backup inclui workspace, preferências e metadados das contas; senhas ficam somente no Keyring.</p></div><div className="paths"><span><b>Dados</b>{runtime?.dataDir||"Carregando..."}</span><span><b>Cache</b>{runtime?.cacheDir||"Carregando..."}</span><span><b>Fila</b>{runtime?.queueDir||"Carregando..."}</span><div className="data-actions"><button className="secondary" onClick={()=>void exportBackup()}><Icon name="download" size={14}/> Exportar backup</button><button className="secondary" onClick={()=>void importBackup()}><Icon name="upload" size={14}/> Restaurar backup</button><button className="secondary" onClick={()=>bridge.clearCache()}>Limpar apenas cache</button></div></div></div>
     <SenderPoliciesPanel settings={settings} onChange={onChange}/>
+    <ProfilesPanel accounts={accounts} profiles={profiles} activeProfileId={activeProfileId} onActivate={onActivateProfile} onSave={onSaveProfile} onDelete={onDeleteProfile}/>
     <AccountsPanel accounts={accounts} onChange={onAccountsChange}/>
     <SignaturesPanel accounts={accounts} signatures={signatures} onSave={onSaveSignature} onDelete={onDeleteSignature}/>
     <ComposerAssetsPanel/>
@@ -647,6 +649,8 @@ export default function App() {
   const [categories,setCategories] = useState<CategoryItem[]>([]);
   const [savedSearches,setSavedSearches] = useState<SavedSearchItem[]>([]);
   const [signatures,setSignatures] = useState<SignatureItem[]>([]);
+  const [profiles,setProfiles] = useState<ProfileItem[]>([]);
+  const [activeProfileId,setActiveProfileId] = useState<string|undefined>(()=>localStorage.getItem("seven-mail:active-profile")||undefined);
   const [syncState,setSyncState] = useState<"idle"|"syncing"|"error">("idle");
   const [bootState,setBootState] = useState({
     runtime: false,
@@ -658,9 +662,13 @@ export default function App() {
     try { return {...DEFAULT_SETTINGS,...JSON.parse(localStorage.getItem("seven-mail:settings")||"{}")}; } catch { return DEFAULT_SETTINGS; }
   });
 
+  const activeProfile = profiles.find((profile)=>profile.id===activeProfileId);
+  const profileAccounts = activeProfile
+    ? accounts.filter((account)=>activeProfile.accountIds.includes(account.id))
+    : accounts;
   const unified = activeId==="__all__";
-  const activeAccount = unified ? undefined : (accounts.find(a=>a.id===activeId)||accounts[0]);
-  const composeAccount = activeAccount ?? accounts.find((account)=>account.isDefault) ?? accounts[0];
+  const activeAccount = unified ? undefined : (profileAccounts.find(a=>a.id===activeId)||profileAccounts[0]);
+  const composeAccount = activeAccount ?? profileAccounts.find((account)=>account.isDefault) ?? profileAccounts[0];
   const bootReady = bootState.runtime && bootState.accounts && bootState.workspace && bootState.messages;
 
   async function loadWorkspaceCollection<T>(kind: WorkspaceKind): Promise<T[]> {
@@ -669,14 +677,17 @@ export default function App() {
   }
 
   async function refreshMailOrganization() {
-    const [nextCategories,nextSavedSearches,nextSignatures] = await Promise.all([
+    const [nextCategories,nextSavedSearches,nextSignatures,nextProfiles] = await Promise.all([
       loadWorkspaceCollection<CategoryItem>("category"),
       loadWorkspaceCollection<SavedSearchItem>("saved-search"),
       loadWorkspaceCollection<SignatureItem>("signature"),
+      loadWorkspaceCollection<ProfileItem>("profile"),
     ]);
     setCategories(nextCategories);
     setSavedSearches(nextSavedSearches);
     setSignatures(nextSignatures);
+    setProfiles(nextProfiles);
+    setActiveProfileId((current)=>current||nextProfiles.find((profile)=>profile.isDefault)?.id);
   }
 
   async function refreshActiveFolders(account = activeAccount) {
@@ -889,6 +900,49 @@ export default function App() {
     void pushCloudMessage(updated).catch(() => undefined);
   }
 
+  async function saveProfile(profile: ProfileItem) {
+    const now=new Date().toISOString();
+    const documents:WorkspaceDocument<ProfileItem>[]=[];
+    if(profile.isDefault){
+      for(const item of profiles){
+        if(item.id===profile.id||!item.isDefault) continue;
+        const demoted={...item,isDefault:false};
+        const document:WorkspaceDocument<ProfileItem>={id:demoted.id,kind:"profile",updatedAt:now,payload:demoted};
+        await bridge.upsertWorkspace(document);
+        documents.push(document);
+      }
+    }
+    const document:WorkspaceDocument<ProfileItem>={id:profile.id,kind:"profile",updatedAt:now,payload:profile};
+    await bridge.upsertWorkspace(document);
+    documents.push(document);
+    setProfiles((current)=>[profile,...current.map((item)=>profile.isDefault&&item.id!==profile.id?{...item,isDefault:false}:item).filter((item)=>item.id!==profile.id)]);
+    for(const item of documents) void pushCloudDocument(item).catch(()=>undefined);
+  }
+
+  async function deleteProfile(profile: ProfileItem) {
+    if(!window.confirm(`Excluir o perfil "${profile.name}"? As contas não serão removidas.`)) return;
+    const tombstone=await bridge.deleteWorkspace("profile",profile.id);
+    void pushCloudDocument(tombstone).catch(()=>undefined);
+    setProfiles((current)=>current.filter((item)=>item.id!==profile.id));
+    if(activeProfileId===profile.id){
+      setActiveProfileId(undefined);
+      localStorage.removeItem("seven-mail:active-profile");
+    }
+  }
+
+  function activateProfile(profile: ProfileItem | null) {
+    const id=profile?.id;
+    setActiveProfileId(id);
+    if(id) localStorage.setItem("seven-mail:active-profile",id);
+    else localStorage.removeItem("seven-mail:active-profile");
+    if(profile?.settings){
+      setSettings((current)=>({...current,...profile.settings}));
+    }
+    const allowed=profile?accounts.filter((account)=>profile.accountIds.includes(account.id)):accounts;
+    setActiveId((current)=>current==="__all__"||allowed.some((account)=>account.id===current)?current:(allowed.find((account)=>account.isDefault)?.id??allowed[0]?.id));
+    setMessages([]);
+  }
+
   async function saveSignature(signature: SignatureItem) {
     const now = new Date().toISOString();
     const cloudDocuments: Array<WorkspaceDocument<SignatureItem>> = [];
@@ -1026,7 +1080,7 @@ export default function App() {
   }
 
   async function importEml() {
-    const account = activeAccount ?? accounts.find((item)=>item.isDefault) ?? accounts[0];
+    const account = activeAccount ?? profileAccounts.find((item)=>item.isDefault) ?? profileAccounts[0];
     if (!account) return;
     const selected = await open({
       multiple:false,
@@ -1162,16 +1216,20 @@ export default function App() {
     let disposed = false;
 
     const loadInitialWorkspace = async () => {
-      const [categoryDocs,searchDocs,signatureDocs] = await Promise.all([
+      const [categoryDocs,searchDocs,signatureDocs,profileDocs] = await Promise.all([
         bridge.listWorkspace<CategoryItem>("category").catch(() => []),
         bridge.listWorkspace<SavedSearchItem>("saved-search").catch(() => []),
         bridge.listWorkspace<SignatureItem>("signature").catch(() => []),
+        bridge.listWorkspace<ProfileItem>("profile").catch(() => []),
       ]);
 
       if (!disposed) {
+        const nextProfiles=profileDocs.map((document)=>document.payload);
         setCategories(categoryDocs.map((document)=>document.payload));
         setSavedSearches(searchDocs.map((document)=>document.payload));
         setSignatures(signatureDocs.map((document)=>document.payload));
+        setProfiles(nextProfiles);
+        setActiveProfileId((current)=>current||nextProfiles.find((profile)=>profile.isDefault)?.id);
         setBootState((current)=>({...current,workspace:true}));
       }
 
@@ -1208,7 +1266,7 @@ export default function App() {
 
       const merged = new Map(local.map((message) => [message.id, message]));
       try {
-        const targets = unified ? accounts : (activeAccount ? [activeAccount] : []);
+        const targets = unified ? profileAccounts : (activeAccount ? [activeAccount] : []);
         for (const account of targets) {
           const cloud = await pullCloudMessages(account.id);
           for (const message of cloud) {
@@ -1367,7 +1425,7 @@ export default function App() {
     const flush = () => {
       if (!navigator.onLine) return;
       void bridge.flushOutbox().catch(() => undefined);
-      for (const account of accounts) {
+      for (const account of profileAccounts) {
         void bridge.flushMailActions(account.id).catch(() => undefined);
       }
     };
@@ -1379,10 +1437,10 @@ export default function App() {
       window.clearInterval(timer);
       window.removeEventListener("online", flush);
     };
-  },[accounts]);
+  },[profileAccounts]);
 
   useEffect(()=>{
-    if (accounts.length===0) return;
+    if (profileAccounts.length===0) return;
 
     let disposed = false;
     const run = async () => {
@@ -1431,7 +1489,7 @@ export default function App() {
       window.clearInterval(timer);
       window.removeEventListener("online",online);
     };
-  },[accounts,activeAccount?.id,unified,settings.notificationsEnabled,settings.syncIntervalMinutes]);
+  },[profileAccounts,activeAccount?.id,unified,settings.notificationsEnabled,settings.syncIntervalMinutes]);
 
   useEffect(()=>{
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1446,7 +1504,7 @@ export default function App() {
         return;
       }
 
-      if (event.key.toLowerCase()==="n" && accounts.length>0) {
+      if (event.key.toLowerCase()==="n" && profileAccounts.length>0) {
         event.preventDefault();
         startNewMessage();
       }
@@ -1454,7 +1512,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return ()=>window.removeEventListener("keydown", onKeyDown);
-  },[accounts.length]);
+  },[profileAccounts.length]);
 
   async function executeRules(candidates: MailMessage[]): Promise<number> {
     const documents = await bridge.listWorkspace<RuleItem>("rule").catch(() => []);
@@ -1540,10 +1598,10 @@ export default function App() {
   }
 
   async function syncNow() {
-    if (accounts.length===0 || syncState==="syncing") return;
+    if (profileAccounts.length===0 || syncState==="syncing") return;
     setSyncState("syncing");
     try {
-      const targets = unified ? accounts : (activeAccount ? [activeAccount] : []);
+      const targets = unified ? profileAccounts : (activeAccount ? [activeAccount] : []);
       for (const account of targets) {
         await bridge.flushMailActions(account.id).catch(() => 0);
         const path = unified ? "INBOX" : selectedFolder.path;
@@ -1641,7 +1699,7 @@ export default function App() {
     <main className="main">
       <header className="topbar" data-tauri-drag-region>
         <div className="product"><strong>Seven Mail</strong><span>{NAV.find(n=>n.id===section)?.label}</span></div>
-        {section==="mail"&&accounts.length>0&&<select className="account-switcher" value={unified?"__all__":(activeAccount?.id??"")} onChange={e=>setActiveId(e.target.value)} aria-label="Selecionar conta"><option value="__all__">Todas as contas</option>{accounts.map(account=><option key={account.id} value={account.id}>{account.email}</option>)}</select>}
+        {section==="mail"&&profileAccounts.length>0&&<select className="account-switcher" value={unified?"__all__":(activeAccount?.id??"")} onChange={e=>setActiveId(e.target.value)} aria-label="Selecionar conta"><option value="__all__">Todas as contas</option>{profileAccounts.map(account=><option key={account.id} value={account.id}>{account.email}</option>)}</select>}
         <label className="search"><Icon name="search" size={17}/><input list="seven-mail-search-suggestions" value={search} onFocus={()=>setGlobalSearchOpen(true)} onChange={e=>{setSearch(e.target.value);setGlobalSearchOpen(true);}} onKeyDown={e=>{if(e.key==="Enter"){commitSearchHistory();setGlobalSearchOpen(true);}else if(e.key==="Escape"){setGlobalSearchOpen(false);}}} placeholder="Pesquisar em todo o Seven Mail..."/><kbd>Ctrl K</kbd></label><datalist id="seven-mail-search-suggestions">{searchSuggestions.map((value)=><option value={value} key={value}/>)}</datalist>{section==="mail"&&search.trim()&&<button className="icon-button save-search-button" title="Salvar pesquisa" aria-label="Salvar pesquisa" onClick={()=>void saveCurrentSearch()}><Icon name="star" size={17}/></button>}
         <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
         {globalSearchOpen&&search.trim()&&<div className="global-search-popover">
@@ -1652,16 +1710,16 @@ export default function App() {
         </div>}
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={settings}/>} 
+        {section==="mail"&&<MailView accounts={profileAccounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={settings}/>} 
         {section==="calendar"&&<PersistentCalendarView/>}
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
         {section==="notes"&&<PersistentNotesView query={search}/>}
         {section==="rules"&&<PersistentRulesView onRunRules={runRulesNow}/>} 
-        {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime} accounts={accounts} onAccountsChange={(next)=>{setAccounts(next);if(!next.some((account)=>account.id===activeId)){setActiveId(next.find((account)=>account.isDefault)?.id??next[0]?.id);}}} signatures={signatures} onSaveSignature={saveSignature} onDeleteSignature={deleteSignature}/>}
+        {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime} accounts={accounts} onAccountsChange={(next)=>{setAccounts(next);if(!next.some((account)=>account.id===activeId)){setActiveId(next.find((account)=>account.isDefault)?.id??next[0]?.id);}}} signatures={signatures} onSaveSignature={saveSignature} onDeleteSignature={deleteSignature} profiles={profiles} activeProfileId={activeProfileId} onActivateProfile={activateProfile} onSaveProfile={saveProfile} onDeleteProfile={deleteProfile}/>}
       </div>
     </main>
-    {composeOpen&&<Composer accounts={accounts} signatures={signatures} initialAccountId={composeAccount?.id} initialDraft={draftToOpen} settings={settings} onClose={closeComposer} onQueued={(info)=>{handleQueuedSend(info);void refreshDrafts();}}/>}
+    {composeOpen&&<Composer accounts={profileAccounts} signatures={signatures} initialAccountId={composeAccount?.id} initialDraft={draftToOpen} settings={settings} onClose={closeComposer} onQueued={(info)=>{handleQueuedSend(info);void refreshDrafts();}}/>}
     {undoSend&&<div className="undo-send" role="status"><span><Icon name="send" size={16}/><b>Mensagem na fila</b><small>Envio em instantes</small></span><button onClick={()=>void undoQueuedSend()}>Desfazer</button></div>}
     {accountOpen&&<AddAccountModal onClose={()=>setAccountOpen(false)} onAdded={account=>{setAccounts(v=>[...v,account]);setActiveId(account.id);void pushCloudAccount(account).catch(()=>undefined);}}/>}
   </div></>;
