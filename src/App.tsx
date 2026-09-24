@@ -10,7 +10,7 @@ import { SignaturesPanel } from "./components/SignaturesPanel";
 import { BrandLogo } from "./components/BrandLogo";
 import { LaunchScreen } from "./components/LaunchScreen";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
-import { ensureNotificationPermission, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
+import { ensureNotificationPermission, notifyCalendarReminder, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
 import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
 import { syncWorkspaceCollection } from "./lib/workspace-sync";
 import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
@@ -1050,11 +1050,14 @@ export default function App() {
     if (!settings.notificationsEnabled) return;
 
     let disposed = false;
-    const checkTaskReminders = async () => {
-      const documents = await bridge.listWorkspace<TaskItem>("task").catch(() => []);
+    const checkReminders = async () => {
       const now = Date.now();
+      const [taskDocuments,eventDocuments] = await Promise.all([
+        bridge.listWorkspace<TaskItem>("task").catch(() => []),
+        bridge.listWorkspace<CalendarEvent>("calendar").catch(() => []),
+      ]);
 
-      for (const document of documents) {
+      for (const document of taskDocuments) {
         if (disposed) return;
         const task = document.payload;
         if (task.completedAt || !task.reminderAt || task.reminderNotifiedAt) continue;
@@ -1072,10 +1075,29 @@ export default function App() {
         await bridge.upsertWorkspace(nextDocument);
         void pushCloudDocument(nextDocument).catch(() => undefined);
       }
+
+      for (const document of eventDocuments) {
+        if (disposed) return;
+        const event = document.payload;
+        if (!event.reminderAt || event.reminderNotifiedAt) continue;
+
+        const reminderAt = new Date(event.reminderAt).getTime();
+        if (!Number.isFinite(reminderAt) || reminderAt > now) continue;
+
+        await notifyCalendarReminder(event);
+        const updated: CalendarEvent = { ...event, reminderNotifiedAt: new Date().toISOString() };
+        const nextDocument: WorkspaceDocument<CalendarEvent> = {
+          ...document,
+          updatedAt: new Date().toISOString(),
+          payload: updated,
+        };
+        await bridge.upsertWorkspace(nextDocument);
+        void pushCloudDocument(nextDocument).catch(() => undefined);
+      }
     };
 
-    void checkTaskReminders();
-    const timer = window.setInterval(()=>void checkTaskReminders(),30_000);
+    void checkReminders();
+    const timer = window.setInterval(()=>void checkReminders(),30_000);
     return ()=>{
       disposed=true;
       window.clearInterval(timer);
