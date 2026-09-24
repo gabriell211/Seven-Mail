@@ -56,6 +56,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 - [ ] Caixa de entrada por conta
 - [ ] Caixa de entrada unificada
+- [ ] Caixa prioritária e Outros
+- [ ] Ativar/desativar caixa prioritária
 - [ ] Visualização por conversa
 - [ ] Visualização individual de mensagens
 - [ ] Contagem de mensagens não lidas
@@ -64,6 +66,11 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Paginação eficiente
 - [ ] Carregamento incremental
 - [ ] Pré-visualização da mensagem
+- [ ] Uma ou duas linhas de pré-visualização configuráveis
+- [ ] Ordenação por remetente, assunto, data, tamanho e status
+- [ ] Formatação condicional da lista de mensagens
+- [ ] Cabeçalhos recolhíveis na lista
+- [ ] Ações rápidas configuráveis na lista
 - [ ] Painel de leitura configurável
 - [ ] Abrir mensagem em nova janela
 - [ ] Abrir múltiplas mensagens simultaneamente
@@ -96,6 +103,15 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Marcar como phishing
 - [ ] Bloquear remetente
 - [ ] Liberar remetente
+- [ ] Ignorar conversa
+- [ ] Silenciar conversa
+- [ ] Reenviar mensagem
+- [ ] Recuperar/recolher mensagem enviada quando suportado pelo provedor
+- [ ] Reações em mensagens quando suportadas
+- [ ] Arrastar mensagens entre pastas
+- [ ] Arrastar mensagens entre contas quando suportado
+- [ ] Criar evento a partir de um e-mail
+- [ ] Criar tarefa a partir de um e-mail
 
 ### Composição
 
@@ -113,6 +129,13 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Tabelas
 - [ ] Imagens inline
 - [ ] Emojis
+- [ ] Campo De selecionável
+- [ ] Envio usando aliases
+- [ ] Corretor ortográfico
+- [ ] Correção automática
+- [ ] Capitalização automática
+- [ ] Dicionários por idioma
+- [ ] Ditado por voz quando disponível no sistema
 - [ ] Assinaturas
 - [ ] Assinatura diferente por conta
 - [ ] Assinatura para novas mensagens
@@ -123,9 +146,12 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Confirmação de leitura quando suportada
 - [ ] Confirmação de entrega quando suportada
 - [ ] Programar envio
+- [ ] Atraso padrão antes do envio
 - [ ] Desfazer envio
 - [ ] Modelos de mensagem
+- [ ] Modelos baseados em arquivo quando suportado
 - [ ] Reutilização de blocos de conteúdo
+- [ ] Pré-visualização de links
 - [ ] Verificação de destinatários
 - [ ] Aviso de anexo esquecido
 - [ ] Aviso de assunto vazio
@@ -146,6 +172,27 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Indicador de progresso
 - [ ] Cancelamento de upload
 - [ ] Bloqueio de extensões perigosas
+- [ ] Arrastar anexos para a área de trabalho
+- [ ] Arrastar anexos para outros aplicativos
+- [ ] Mover anexos entre mensagens e contas quando permitido
+
+### Produtividade de e-mail
+
+- [ ] Ações rápidas compostas por múltiplas etapas
+- [ ] Atalhos para ações rápidas
+- [ ] Limpeza automática por remetente
+- [ ] Ignorar e limpar conversas
+- [ ] Respostas automáticas / ausência temporária
+- [ ] Encaminhamento automático
+- [ ] Mala direta / envio personalizado em massa
+- [ ] Leitura em voz alta
+- [ ] Modo de leitura imersiva
+- [ ] Abrir e salvar EML
+- [ ] Abrir e salvar MSG quando tecnicamente viável
+- [ ] Abrir e reutilizar modelos OFT quando tecnicamente viável
+- [ ] Importar e exportar regras
+- [ ] Favoritar categorias
+- [ ] Ações por gesto quando suportadas pela plataforma
 
 ---
 
@@ -166,6 +213,9 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Reordenar pastas
 - [ ] Favoritar pastas
 - [ ] Contadores por pasta
+- [ ] Ir diretamente para uma pasta
+- [ ] Pastas compartilhadas
+- [ ] Arquivo de caixa compartilhada
 
 ### Categorias
 
@@ -188,6 +238,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 ## Pesquisa
 
 - [ ] Pesquisa global
+- [ ] Pesquisa em todas as caixas
+- [ ] Pesquisa em caixas compartilhadas
 - [ ] Pesquisa por conta
 - [ ] Pesquisa por pasta
 - [ ] Pesquisa por remetente
@@ -280,6 +332,28 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Assinatura por conta
 - [ ] Configurações por conta
 - [ ] Sincronização independente
+- [ ] Perfis separados de e-mail
+- [ ] Perfis com conjuntos diferentes de contas e configurações
+- [ ] Aliases por conta
+
+## Caixas compartilhadas e delegação
+
+- [ ] Adicionar caixa compartilhada
+- [ ] Caixa compartilhada como recurso
+- [ ] Caixa compartilhada como conta
+- [ ] Pastas compartilhadas
+- [ ] Calendário compartilhado
+- [ ] Arquivo compartilhado
+- [ ] Contagem de não lidas em caixas compartilhadas
+- [ ] Notificações por caixa compartilhada
+- [ ] Regras por caixa compartilhada
+- [ ] Respostas automáticas por caixa compartilhada
+- [ ] Enviar como
+- [ ] Enviar em nome de
+- [ ] Acesso delegado
+- [ ] Permissões de leitura
+- [ ] Permissões de edição
+- [ ] Permissões de gerenciamento de calendário
 
 ## Protocolos e provedores
 
@@ -287,6 +361,12 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] SMTP
 - [ ] POP3
 - [ ] OAuth 2.0
+- [ ] Authorization Code + PKCE
+- [ ] Renovação segura de tokens
+- [ ] Descoberta automática de configuração
+- [ ] CalDAV
+- [ ] CardDAV
+- [ ] APIs nativas de provedores quando necessárias
 - [ ] Autenticação por senha quando suportada
 - [ ] Gmail
 - [ ] Yahoo
@@ -295,6 +375,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Conta Microsoft
 - [ ] Servidores corporativos
 - [ ] Servidores personalizados
+- [ ] Diretórios LDAP quando disponíveis
 
 ## Configuração avançada
 
@@ -329,6 +410,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Semana útil
 - [ ] Mês
 - [ ] Agenda
+- [ ] Visualização de 3 dias
+- [ ] Calendários lado a lado
 - [ ] Hoje
 
 ## Eventos
@@ -342,27 +425,49 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Local
 - [ ] Descrição
 - [ ] Participantes
+- [ ] Participantes obrigatórios
+- [ ] Participantes opcionais
+- [ ] Salas e recursos
 - [ ] Evento de dia inteiro
 - [ ] Evento privado
 - [ ] Lembretes
 - [ ] Recorrência
 - [ ] Exceções de recorrência
+- [ ] Editar somente esta ocorrência
+- [ ] Editar esta e as próximas ocorrências
+- [ ] Copiar, recortar e colar eventos
 - [ ] Anexos
 - [ ] Categorias
 
 ## Reuniões
 
 - [ ] Criar reunião
+- [ ] Salvar reunião como rascunho
 - [ ] Convidar participantes
+- [ ] Assistente de agendamento
+- [ ] Consulta de disponibilidade livre/ocupado
+- [ ] Sugestão de horários disponíveis
+- [ ] Detecção de conflitos de agenda
+- [ ] Reserva de salas e recursos
 - [ ] Responder convite
 - [ ] Aceitar
 - [ ] Aceitar provisoriamente
 - [ ] Recusar
+- [ ] Manter reunião recusada no calendário
+- [ ] Manter convite na caixa de entrada após responder
+- [ ] Acompanhar reunião sem bloquear o horário quando suportado
 - [ ] Sugerir novo horário quando suportado
 - [ ] Acompanhar respostas
 - [ ] Atualizar participantes
+- [ ] Enviar atualização somente para participantes adicionados/removidos
 - [ ] Cancelar reunião
 - [ ] Adicionar reunião online por integração
+- [ ] Recusar automaticamente convites em conflito
+- [ ] Iniciar reuniões mais tarde ou terminar mais cedo
+- [ ] Calendários de grupo
+- [ ] Compartilhar calendário
+- [ ] Permissões de calendário
+- [ ] Delegação de calendário
 
 ## Compatibilidade
 
@@ -373,6 +478,10 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Múltiplos fusos horários
 - [ ] Horário de trabalho
 - [ ] Dias úteis configuráveis
+- [ ] Local de trabalho
+- [ ] Horário de trabalho por dia
+- [ ] Calendários de feriados
+- [ ] Importação de feriados personalizados quando suportado
 
 ---
 
@@ -401,6 +510,11 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Categorias
 - [ ] Grupos
 - [ ] Listas de contatos
+- [ ] Catálogo global de endereços
+- [ ] Diretório corporativo
+- [ ] Consulta LDAP
+- [ ] Grupos de distribuição
+- [ ] Destinatários sugeridos
 - [ ] Pesquisa
 - [ ] Mesclar duplicados
 - [ ] Detecção de duplicados
@@ -412,6 +526,12 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] CSV
 - [ ] vCard
 - [ ] Backup de contatos
+
+## Compartilhamento
+
+- [ ] Contatos compartilhados quando suportados pelo provedor
+- [ ] Listas compartilhadas
+- [ ] Diretórios corporativos somente leitura
 
 ---
 
@@ -434,6 +554,23 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Visualização de tarefas do dia
 - [ ] Tarefas atrasadas
 - [ ] Tarefas concluídas
+- [ ] Minha agenda / Meu dia
+- [ ] Tarefas para hoje
+- [ ] Próximas tarefas
+- [ ] E-mails sinalizados como tarefas
+
+---
+
+# Notas
+
+- [ ] Criar nota
+- [ ] Editar nota
+- [ ] Excluir nota
+- [ ] Pesquisa em notas
+- [ ] Categorias
+- [ ] Fixar notas
+- [ ] Armazenamento local
+- [ ] Sincronização quando suportada pelo provedor
 
 ---
 
@@ -485,11 +622,16 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Calendários
 - [ ] Tarefas
 - [ ] Arquivos EML
+- [ ] Arquivos MSG quando tecnicamente viável
+- [ ] Arquivos OFT quando tecnicamente viável
 - [ ] Arquivos MBOX
 - [ ] Arquivos PST quando tecnicamente disponível
 - [ ] CSV
 - [ ] ICS
 - [ ] vCard
+- [ ] Configurações do aplicativo
+- [ ] Regras
+- [ ] Perfis
 
 ## Exportação
 
@@ -498,6 +640,9 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] CSV
 - [ ] ICS
 - [ ] vCard
+- [ ] Regras
+- [ ] Configurações
+- [ ] Perfis
 - [ ] Backup completo do perfil
 - [ ] Backup criptografado
 
@@ -516,12 +661,17 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Proteção contra XSS
 - [ ] Bloqueio de URLs perigosas
 - [ ] Avisos para links suspeitos
+- [ ] Aviso de remetente externo
 - [ ] Bloqueio de anexos perigosos
+- [ ] Exibição de resultados SPF, DKIM e DMARC quando disponíveis
 - [ ] Suporte a autenticação em duas etapas do provedor
 - [ ] Criptografia do armazenamento local
 - [ ] Bloqueio do aplicativo
 - [ ] Sessões protegidas
 - [ ] Limpeza segura de dados locais
+- [ ] Políticas de retenção quando oferecidas pelo provedor
+- [ ] Rótulos de sensibilidade quando oferecidos pelo provedor
+- [ ] Restrições de encaminhamento/cópia quando oferecidas pelo provedor
 
 ## Criptografia de e-mail
 
@@ -547,6 +697,9 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Painel de leitura abaixo
 - [ ] Painel de leitura desativado
 - [ ] Personalização do menu lateral
+- [ ] Personalização de ações rápidas
+- [ ] Personalização do painel de pastas
+- [ ] Mostrar/ocultar fotos dos remetentes
 
 ## Comportamento
 
@@ -555,6 +708,9 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Tempo para marcar como lida
 - [ ] Confirmação antes de excluir
 - [ ] Confirmação antes de enviar
+- [ ] Respostas automáticas
+- [ ] Encaminhamento
+- [ ] Atraso padrão de envio
 - [ ] Comportamento do botão fechar
 - [ ] Minimizar para bandeja
 - [ ] Iniciar com o sistema
@@ -567,6 +723,9 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Primeiro dia da semana
 - [ ] Fuso horário
 - [ ] Verificação ortográfica
+- [ ] Autocorreção
+- [ ] Capitalização automática
+- [ ] Dicionários personalizados
 
 ---
 
@@ -594,6 +753,9 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 - [ ] Navegação completa por teclado
 - [ ] Leitores de tela
+- [ ] Leitura em voz alta
+- [ ] Leitura imersiva
+- [ ] Ditado
 - [ ] ARIA
 - [ ] Alto contraste
 - [ ] Escala de interface
@@ -650,8 +812,12 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Protocolo mailto:
 - [ ] Definir como cliente padrão
 - [ ] Abrir arquivos EML
+- [ ] Abrir arquivos MSG quando suportado
+- [ ] Abrir arquivos OFT quando suportado
 - [ ] Abrir arquivos ICS
 - [ ] Arrastar arquivos para composição
+- [ ] Arrastar anexos para área de trabalho
+- [ ] Arrastar anexos para outros aplicativos
 - [ ] Múltiplas janelas
 - [ ] Atualizações automáticas
 
@@ -677,13 +843,19 @@ Seven Mail
 │   ├── Folders
 │   ├── Events
 │   ├── Contacts
-│   └── Tasks
+│   ├── Tasks
+│   ├── Notes
+│   └── Shared Resources
 │
 ├── Infrastructure
 │   ├── IMAP
 │   ├── POP3
 │   ├── SMTP
+│   ├── CalDAV
+│   ├── CardDAV
+│   ├── Provider APIs
 │   ├── OAuth
+│   ├── Directory
 │   ├── Storage
 │   ├── Search Index
 │   └── Sync Engine
@@ -693,6 +865,7 @@ Seven Mail
     ├── Calendar
     ├── People
     ├── Tasks
+    ├── Notes
     └── Settings
 ```
 
@@ -750,6 +923,8 @@ A aplicação deverá utilizar:
 - [ ] Armazenamento local
 - [ ] IMAP
 - [ ] SMTP
+- [ ] OAuth 2.0 + PKCE
+- [ ] Descoberta automática de contas
 - [ ] Primeira sincronização
 - [ ] Caixa de entrada
 - [ ] Leitura de mensagem
@@ -766,6 +941,10 @@ A aplicação deverá utilizar:
 - [ ] Favoritos
 - [ ] Spam
 - [ ] Regras
+- [ ] Caixa prioritária
+- [ ] Ações rápidas
+- [ ] Limpeza automática
+- [ ] Respostas automáticas
 
 ## 0.3.0 — Múltiplas contas
 
@@ -776,6 +955,10 @@ A aplicação deverá utilizar:
 - [ ] iCloud
 - [ ] Microsoft 365
 - [ ] Configuração manual
+- [ ] Perfis
+- [ ] Caixas compartilhadas
+- [ ] Delegação
+- [ ] Enviar como / em nome de
 - [ ] Sincronização independente
 
 ## 0.4.0 — Offline
@@ -788,19 +971,25 @@ A aplicação deverá utilizar:
 
 ## 0.5.0 — Calendário
 
+- [ ] CalDAV e/ou API do provedor
 - [ ] Calendários
 - [ ] Eventos
 - [ ] Recorrência
 - [ ] Convites
+- [ ] Assistente de agendamento
+- [ ] Livre/ocupado
+- [ ] Compartilhamento e delegação
 - [ ] ICS
 - [ ] Lembretes
 
 ## 0.6.0 — Contatos
 
+- [ ] CardDAV e/ou API do provedor
 - [ ] Pessoas
 - [ ] Favoritos
 - [ ] Categorias
 - [ ] Grupos
+- [ ] Diretório corporativo / LDAP
 - [ ] CSV
 - [ ] vCard
 
@@ -811,6 +1000,7 @@ A aplicação deverá utilizar:
 - [ ] Lembretes
 - [ ] Recorrência
 - [ ] Integração com e-mails
+- [ ] Notas
 
 ## 0.8.0 — Produtividade
 
@@ -820,6 +1010,11 @@ A aplicação deverá utilizar:
 - [ ] Pastas de pesquisa
 - [ ] Pesquisa avançada
 - [ ] Regras avançadas
+- [ ] Formatação condicional
+- [ ] Reenvio e recuperação de mensagens quando suportados
+- [ ] Leitura em voz alta
+- [ ] Leitura imersiva
+- [ ] Mala direta
 
 ## 0.9.0 — Segurança e migração
 
@@ -829,6 +1024,8 @@ A aplicação deverá utilizar:
 - [ ] Exportação
 - [ ] Backup
 - [ ] Criptografia local
+- [ ] Regras e configurações importáveis/exportáveis
+- [ ] Políticas corporativas quando suportadas pelo provedor
 
 ## 1.0.0 — Stable
 
@@ -842,6 +1039,20 @@ A aplicação deverá utilizar:
 - [ ] Testes de segurança
 - [ ] Testes de sincronização
 - [ ] Documentação completa
+- [ ] Caixas compartilhadas e delegação validadas
+- [ ] Calendário/contatos sincronizados por provedor
+- [ ] Compatibilidade EML/ICS validada
+
+---
+
+# Extensões e integrações
+
+- [ ] Arquitetura de extensões
+- [ ] Integrações de reunião online
+- [ ] Integrações com armazenamento em nuvem
+- [ ] Ações externas seguras
+- [ ] Permissões isoladas por extensão
+- [ ] Ativar/desativar extensões individualmente
 
 ---
 
@@ -867,6 +1078,11 @@ Antes de qualquer versão estável, o Seven Mail deverá possuir testes para:
 - Operação offline
 - Conflitos de sincronização
 - Calendários recorrentes
+- Disponibilidade livre/ocupado
+- Delegação e caixas compartilhadas
+- CalDAV
+- CardDAV
+- Diretórios corporativos
 - Importação e exportação
 
 ---
