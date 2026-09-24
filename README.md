@@ -27,7 +27,7 @@ A proposta é reunir em um único aplicativo tudo o que normalmente é necessár
 - Importação e exportação
 - Segurança e privacidade
 
-> **Status:** Em desenvolvimento ativo. A linha desktop 0.2.x já possui cliente local-first funcional para Windows e Linux, com IMAP/SMTP, múltiplas contas, caixa unificada, composição, fila offline, regras, pesquisa avançada, calendário local, contatos, tarefas, notas e sincronização opcional com Neon.
+> **Status:** Em desenvolvimento ativo. A linha desktop 0.3.x já possui cliente local-first funcional para Windows e Linux, com IMAP/SMTP, múltiplas contas, caixa unificada, composição, fila offline, regras, pesquisa avançada, calendário local, contatos, tarefas, notas e sincronização opcional com Neon.
 
 ### Estado atual
 
@@ -38,7 +38,10 @@ A implementação atual já inclui:
 - IMAP/SMTP com descoberta automática e configuração manual.
 - Múltiplas contas e caixa unificada.
 - Cache local, leitura offline, rascunhos e caixa de saída durável.
-- Resposta, encaminhamento, anexos, envio agendado e desfazer envio.
+- Resposta, responder a todos, encaminhamento, anexos, assinaturas por conta, envio agendado e desfazer envio.
+- Pastas IMAP personalizadas com criação, renomeação, exclusão e movimentação de mensagens.
+- Categorias locais, mensagens fixadas, pesquisas salvas e ordenação configurável.
+- Painel de leitura à direita, abaixo ou desativado, com densidade compacta e linhas de prévia configuráveis.
 - Pesquisa local avançada com operadores como `from:`, `to:`, `subject:`, `body:`, `folder:`, `is:unread`, `is:flagged`, `has:attachment`, `after:` e `before:`.
 - Regras executadas automaticamente após sincronização ou manualmente, com prioridade e opção de interromper o processamento.
 - Calendário, contatos, tarefas e notas persistentes em modo local-first.
