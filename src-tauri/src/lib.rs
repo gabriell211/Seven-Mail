@@ -128,23 +128,36 @@ fn create_mail_folder(account_id: String, name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn rename_mail_folder(account_id: String, path: String, name: String) -> Result<(), String> {
+fn rename_mail_folder(
+    account_id: String,
+    path: String,
+    label: String,
+    name: String,
+) -> Result<(), String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    imap_sync::rename_folder(&account, &path, &name)
+    imap_sync::rename_folder(&account, &path, &name)?;
+    storage::rename_cached_folder(&paths, &account.id, &path, &label, &name, &name)?;
+    Ok(())
 }
 
 #[tauri::command]
-fn delete_mail_folder(account_id: String, path: String) -> Result<(), String> {
+fn delete_mail_folder(
+    account_id: String,
+    path: String,
+    label: String,
+) -> Result<(), String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    imap_sync::delete_folder(&account, &path)
+    imap_sync::delete_folder(&account, &path)?;
+    storage::remove_cached_folder(&paths, &account.id, &path, &label)?;
+    Ok(())
 }
 
 #[tauri::command]
