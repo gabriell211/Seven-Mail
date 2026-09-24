@@ -24,8 +24,8 @@ import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccoun
 import { syncWorkspaceCollection } from "./lib/workspace-sync";
 import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
 import { pendingRulesForMessage } from "./lib/rules";
-import { eventsFromIcs, messageToEml, safeExportName } from "./lib/interchange";
-import type { AccountProfile, AppSection, AppSettings, CalendarEvent, CategoryItem, MailFolder, MailMessage, ProfileItem, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
+import { contactsFromVcard, eventsFromIcs, messageToEml, safeExportName } from "./lib/interchange";
+import type { AccountProfile, AppSection, AppSettings, CalendarEvent, CalendarListItem, CategoryItem, ContactItem, MailFolder, MailMessage, ProfileItem, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
@@ -1760,6 +1760,42 @@ export default function App() {
     await importEmlPath(selected);
   }
 
+  async function syncDavForAccount(account:AccountProfile) {
+    if(!account.caldavUrl?.trim()&&!account.carddavUrl?.trim()) return;
+    const result=await bridge.syncDav(account.id);
+    const now=new Date().toISOString();
+
+    if(result.calendarObjects.length){
+      const calendarId=`dav-${account.id}`;
+      const calendar:CalendarListItem={
+        id:calendarId,
+        name:`${account.displayName} · DAV`,
+        color:account.color,
+        accountId:account.id,
+        visible:true,
+      };
+      await bridge.upsertWorkspace({id:calendar.id,kind:"calendar-list",updatedAt:now,payload:calendar});
+
+      for(const raw of result.calendarObjects){
+        for(const event of eventsFromIcs(raw)){
+          const payload:CalendarEvent={...event,calendarId,accountId:account.id,color:event.color||account.color};
+          const document:WorkspaceDocument<CalendarEvent>={id:payload.id,kind:"calendar",updatedAt:now,payload};
+          await bridge.upsertWorkspace(document);
+          void pushCloudDocument(document).catch(()=>undefined);
+        }
+      }
+    }
+
+    for(const raw of result.contactObjects){
+      for(const contact of contactsFromVcard(raw)){
+        const payload:ContactItem={...contact};
+        const document:WorkspaceDocument<ContactItem>={id:payload.id,kind:"contact",updatedAt:now,payload};
+        await bridge.upsertWorkspace(document);
+        void pushCloudDocument(document).catch(()=>undefined);
+      }
+    }
+  }
+
   async function importIcsPath(path:string) {
     const raw=await bridge.readTextFile(path);
     const events=eventsFromIcs(raw);
@@ -2303,6 +2339,7 @@ export default function App() {
             : after.filter((message)=>message.folder==="Caixa de entrada"&&!known.has(message.id));
 
           await applyFreshAutomations(fresh,account);
+          await syncDavForAccount(account).catch(()=>undefined);
 
           if (!disposed && activeAccount?.id===account.id) {
             setMessages(after);
@@ -2494,6 +2531,7 @@ export default function App() {
         const path = unified ? "INBOX" : selectedFolder.path;
         const label = unified ? "Caixa de entrada" : selectedFolder.name;
         await bridge.syncFolder(account.id,path,label,settings.memorySaverEnabled?25:50);
+        await syncDavForAccount(account).catch(()=>undefined);
       });
       const synced = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id);
       await applySenderPolicies(synced);
