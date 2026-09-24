@@ -71,7 +71,7 @@ export function expandCalendarEvents(
           occurrenceOriginalStart: cursorIso,
           occurrenceId: `${event.id}::${cursorIso}`,
           sourceEventId: event.id,
-          isRecurringOccurrence: cursor.getTime() !== start.getTime() || recurrence !== "none",
+          isRecurringOccurrence: true,
         });
       }
       cursor = addOccurrence(cursor, recurrence);
