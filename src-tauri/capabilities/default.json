@@ -13,6 +13,7 @@
     "notification:default",
     "core:webview:allow-create-webview-window",
     "core:event:default",
-    "deep-link:default"
+    "deep-link:default",
+    "opener:default"
   ]
 }
