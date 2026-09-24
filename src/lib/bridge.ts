@@ -24,6 +24,9 @@ export const bridge = {
   syncInbox: (accountId: string, limit = 50): Promise<number> => command("sync_inbox", { accountId, limit }),
   listFolders: (accountId: string): Promise<MailFolder[]> => command("list_mail_folders", { accountId }),
   syncFolder: (accountId: string, path: string, label: string, limit = 50): Promise<number> => command("sync_mail_folder", { accountId, path, label, limit }),
+  createFolder: (accountId: string, name: string): Promise<void> => command("create_mail_folder", { accountId, name }),
+  renameFolder: (accountId: string, path: string, name: string): Promise<void> => command("rename_mail_folder", { accountId, path, name }),
+  deleteFolder: (accountId: string, path: string): Promise<void> => command("delete_mail_folder", { accountId, path }),
   flushMailActions: (accountId: string): Promise<number> => command("flush_mail_actions", { accountId }),
   listCachedMessages: (accountId?: string): Promise<MailMessage[]> => command("list_cached_messages", { accountId: accountId ?? null }),
   cacheMessage: (message: MailMessage): Promise<void> => command("cache_message", { message }),
@@ -32,8 +35,10 @@ export const bridge = {
   cancelOperation: (operationId: string): Promise<boolean> => command("cancel_operation", { operationId }),
   listQueue: (): Promise<QueueOperation[]> => command("list_queue"),
   flushOutbox: (): Promise<number> => command("flush_outbox"),
-  messageAction: (accountId: string, messageId: string, action: "read" | "unread" | "flag" | "unflag" | "archive" | "delete" | "spam" | "inbox"): Promise<MailMessage> =>
+  messageAction: (accountId: string, messageId: string, action: "read" | "unread" | "flag" | "unflag" | "pin" | "unpin" | "archive" | "delete" | "spam" | "inbox"): Promise<MailMessage> =>
     command("message_action", { accountId, messageId, action }),
+  moveMessageToFolder: (accountId: string, messageId: string, targetPath: string, targetLabel: string): Promise<MailMessage> =>
+    command("move_message_to_folder", { accountId, messageId, targetPath, targetLabel }),
   clearCache: (): Promise<void> => command("clear_cache"),
   listWorkspace: <T = Record<string, unknown>>(kind: WorkspaceKind): Promise<Array<WorkspaceDocument<T>>> => command("list_workspace", { kind }),
   upsertWorkspace: <T = Record<string, unknown>>(document: WorkspaceDocument<T>): Promise<WorkspaceDocument<T>> => command("upsert_workspace", { document }),
