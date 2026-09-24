@@ -197,6 +197,75 @@ pub fn cache_message(paths: &AppPaths, message: &MailMessage) -> Result<(), Stri
     write_json(&path, message)
 }
 
+fn raw_message_path(paths: &AppPaths, account_id: &str, message_id: &str) -> Result<PathBuf, String> {
+    safe_component(account_id)?;
+    safe_component(message_id)?;
+    Ok(paths
+        .message_cache
+        .join(account_id)
+        .join("_raw")
+        .join(format!("{}.eml", message_id)))
+}
+
+pub fn cache_raw_message(paths: &AppPaths, account_id: &str, message_id: &str, raw: &[u8]) -> Result<(), String> {
+    let path = raw_message_path(paths, account_id, message_id)?;
+    let parent = path.parent().ok_or_else(|| "Caminho de mensagem inválido.".to_string())?;
+    fs::create_dir_all(parent).map_err(io_error)?;
+    let mut file = fs::File::create(path).map_err(io_error)?;
+    file.write_all(raw).map_err(io_error)?;
+    file.sync_all().map_err(io_error)?;
+    Ok(())
+}
+
+pub fn read_raw_message(paths: &AppPaths, account_id: &str, message_id: &str) -> Result<Vec<u8>, String> {
+    let path = raw_message_path(paths, account_id, message_id)?;
+    fs::read(path).map_err(|error| format!("Fonte original da mensagem indisponível: {error}"))
+}
+
+pub fn update_message_metadata(
+    paths: &AppPaths,
+    account_id: &str,
+    message_id: &str,
+    importance: Option<String>,
+    snoozed_until: Option<String>,
+    is_muted: Option<bool>,
+    is_phishing: Option<bool>,
+    is_important: Option<bool>,
+) -> Result<MailMessage, String> {
+    safe_component(account_id)?;
+    safe_component(message_id)?;
+    let path = paths
+        .message_cache
+        .join(account_id)
+        .join(format!("{}.json", message_id));
+    if !path.exists() {
+        return Err("Mensagem não encontrada no cache local.".to_string());
+    }
+
+    let mut message = read_json::<MailMessage>(&path)?;
+    if let Some(value) = importance {
+        if !matches!(value.as_str(), "low" | "normal" | "high") {
+            return Err("Prioridade inválida.".to_string());
+        }
+        message.importance = Some(value);
+    }
+    if snoozed_until.is_some() {
+        message.snoozed_until = snoozed_until;
+    }
+    if let Some(value) = is_muted {
+        message.is_muted = value;
+    }
+    if let Some(value) = is_phishing {
+        message.is_phishing = value;
+    }
+    if let Some(value) = is_important {
+        message.is_important = value;
+    }
+
+    write_json(&path, &message)?;
+    Ok(message)
+}
+
 fn collect_messages(dir: &Path, output: &mut Vec<MailMessage>) -> Result<(), String> {
     if !dir.exists() {
         return Ok(());
