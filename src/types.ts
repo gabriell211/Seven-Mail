@@ -94,6 +94,8 @@ export interface AppSettings {
   blockedSenders?: string[];
   trustedSenders?: string[];
   blockedDomains?: string[];
+  favoriteFolders?: Record<string, string[]>;
+  folderOrder?: Record<string, string[]>;
 }
 
 
