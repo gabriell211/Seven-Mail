@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { disable as disableAutostart, enable as enableAutostart } from "@tauri-apps/plugin-autostart";
 import { Icon, type IconName } from "./icons";
 import { bridge } from "./lib/bridge";
 import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, PersistentRulesView, PersistentTasksView } from "./components/WorkspaceViews";
 import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { Composer, type QueuedSendInfo } from "./components/Composer";
+import { ensureNotificationPermission, notifyNewMessages } from "./lib/notifications";
 import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudMessage, pushCloudMessages } from "./lib/neon";
 import type { AccountProfile, AppSection, AppSettings, MailFolder, MailMessage, ProviderSettings, RuntimeInfo } from "./types";
 
@@ -18,7 +20,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   confirmBeforeSend: false,
   startWithSystem: false,
   minimizeToTray: true,
-  sendDelaySeconds: 10
+  sendDelaySeconds: 10,
+  notificationsEnabled: false,
+  syncIntervalMinutes: 5
 };
 
 const NAV: Array<{id:AppSection;label:string;icon:IconName}> = [
@@ -309,10 +313,11 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange}:{set
     <div className="settings-row"><div><h3>Aparência</h3><p>Tema e densidade da interface.</p></div><div className="choices">{(["system","light","dark"] as const).map(t=><button className={settings.theme===t?"choice active":"choice"} key={t} onClick={()=>set("theme",t)}><Icon name={t==="dark"?"moon":"sun"} size={16}/>{t==="system"?"Sistema":t==="light"?"Claro":"Escuro"}</button>)}</div></div>
     <div className="settings-row"><div><h3>Painel de leitura</h3><p>Posição padrão para mensagens.</p></div><select value={settings.readingPane} onChange={e=>set("readingPane",e.target.value as AppSettings["readingPane"])}><option value="right">À direita</option><option value="bottom">Abaixo</option><option value="off">Desativado</option></select></div>
     <div className="settings-row"><div><h3>Envio</h3><p>Defina o atraso usado para desfazer um envio e a confirmação antes de colocar a mensagem na fila.</p></div><div className="send-settings"><select value={settings.sendDelaySeconds} onChange={e=>set("sendDelaySeconds",Number(e.target.value) as AppSettings["sendDelaySeconds"])}><option value={0}>Imediato</option><option value={5}>Desfazer por 5 s</option><option value={10}>Desfazer por 10 s</option><option value={20}>Desfazer por 20 s</option><option value={30}>Desfazer por 30 s</option></select><label><input type="checkbox" checked={settings.confirmBeforeSend} onChange={e=>set("confirmBeforeSend",e.target.checked)}/> Confirmar antes de enviar</label></div></div>
+    <div className="settings-row"><div><h3>Sincronização e notificações</h3><p>Atualização automática da caixa de entrada em segundo plano.</p></div><div className="send-settings"><select value={settings.syncIntervalMinutes} onChange={e=>set("syncIntervalMinutes",Number(e.target.value) as AppSettings["syncIntervalMinutes"])}><option value={1}>A cada 1 minuto</option><option value={5}>A cada 5 minutos</option><option value={10}>A cada 10 minutos</option><option value={15}>A cada 15 minutos</option><option value={30}>A cada 30 minutos</option></select><label><input type="checkbox" checked={settings.notificationsEnabled} onChange={e=>set("notificationsEnabled",e.target.checked)}/> Notificações nativas de novas mensagens</label></div></div>
     <div className="settings-row"><div><h3>Dados locais</h3><p>Cache pode ser limpo sem tocar na fila de saída.</p></div><div className="paths"><span><b>Dados</b>{runtime?.dataDir||"Carregando..."}</span><span><b>Cache</b>{runtime?.cacheDir||"Carregando..."}</span><span><b>Fila</b>{runtime?.queueDir||"Carregando..."}</span><button className="secondary" onClick={()=>bridge.clearCache()}>Limpar apenas cache</button></div></div>
     <AccountsPanel accounts={accounts} onChange={onAccountsChange}/>
     <CloudPanel/>
-    <div className="settings-row"><div><h3>Desktop</h3><p>Integração com o sistema.</p></div><div className="toggles"><label><input type="checkbox" checked={settings.minimizeToTray} onChange={e=>set("minimizeToTray",e.target.checked)}/> Minimizar para bandeja</label><label><input type="checkbox" checked={settings.startWithSystem} onChange={e=>set("startWithSystem",e.target.checked)}/> Iniciar com o sistema</label><label><input type="checkbox" checked={settings.confirmBeforeDelete} onChange={e=>set("confirmBeforeDelete",e.target.checked)}/> Confirmar exclusão</label></div></div>
+    <div className="settings-row"><div><h3>Desktop</h3><p>Integração real com Windows e Linux.</p></div><div className="toggles"><label><input type="checkbox" checked={settings.minimizeToTray} onChange={e=>set("minimizeToTray",e.target.checked)}/> Minimizar para bandeja</label><label><input type="checkbox" checked={settings.startWithSystem} onChange={e=>set("startWithSystem",e.target.checked)}/> Iniciar com o sistema</label><label><input type="checkbox" checked={settings.confirmBeforeDelete} onChange={e=>set("confirmBeforeDelete",e.target.checked)}/> Confirmar exclusão</label></div></div>
   </Workspace>;
 }
 
@@ -436,6 +441,24 @@ export default function App() {
   },[settings]);
 
   useEffect(()=>{
+    void bridge.setCloseToTray(settings.minimizeToTray).catch(() => undefined);
+  },[settings.minimizeToTray]);
+
+  useEffect(()=>{
+    const update = settings.startWithSystem ? enableAutostart : disableAutostart;
+    void update().catch(() => undefined);
+  },[settings.startWithSystem]);
+
+  useEffect(()=>{
+    if (!settings.notificationsEnabled) return;
+    void ensureNotificationPermission().then((granted)=>{
+      if (!granted) {
+        setSettings((current)=>({...current,notificationsEnabled:false}));
+      }
+    });
+  },[settings.notificationsEnabled]);
+
+  useEffect(()=>{
     const flush = () => {
       if (!navigator.onLine) return;
       void bridge.flushOutbox().catch(() => undefined);
@@ -452,6 +475,49 @@ export default function App() {
       window.removeEventListener("online", flush);
     };
   },[accounts]);
+
+  useEffect(()=>{
+    if (accounts.length===0) return;
+
+    let disposed = false;
+    const run = async () => {
+      if (!navigator.onLine || disposed) return;
+
+      for (const account of accounts) {
+        if (disposed) break;
+        try {
+          const before = await bridge.listCachedMessages(account.id);
+          const known = new Set(before.map((message)=>message.id));
+
+          await bridge.syncFolder(account.id,"INBOX","Caixa de entrada",50);
+          const after = await bridge.listCachedMessages(account.id);
+          const fresh = before.length===0
+            ? []
+            : after.filter((message)=>message.folder==="Caixa de entrada"&&!known.has(message.id));
+
+          if (!disposed && activeAccount?.id===account.id) {
+            setMessages(after);
+          }
+          if (fresh.length>0 && settings.notificationsEnabled) {
+            void notifyNewMessages(fresh);
+          }
+          void pushCloudMessages(after).catch(() => undefined);
+        } catch {
+          // A conta pode estar offline, sem credencial ou exigir nova autenticação.
+        }
+      }
+    };
+
+    const intervalMs = settings.syncIntervalMinutes * 60_000;
+    const timer = window.setInterval(()=>void run(),intervalMs);
+    const online = () => void run();
+    window.addEventListener("online",online);
+    return ()=>{
+      disposed=true;
+      window.clearInterval(timer);
+      window.removeEventListener("online",online);
+    };
+  },[accounts,activeAccount?.id,settings.notificationsEnabled,settings.syncIntervalMinutes]);
 
   async function syncNow() {
     if (!activeAccount || syncState==="syncing") return;
