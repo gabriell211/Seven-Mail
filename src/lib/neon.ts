@@ -74,20 +74,30 @@ export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<
   const session = await getCloudSession();
   if (!session?.session) return [];
 
-  const result = await neonClient
-    .from("workspace_documents")
-    .select("id, kind, payload, updated_at, deleted_at")
-    .eq("kind", kind)
-    .is("deleted_at", null);
+  const rows: Array<CloudWorkspaceRow<T>> = [];
+  const pageSize = 500;
+  for (let offset = 0; ; offset += pageSize) {
+    const result = await neonClient
+      .from("workspace_documents")
+      .select("id, kind, payload, updated_at, deleted_at")
+      .eq("kind", kind)
+      .order("id")
+      .range(offset, offset + pageSize - 1);
 
-  if (result.error) throw new Error(errorMessage(result.error));
+    if (result.error) throw new Error(errorMessage(result.error));
+    const page = (result.data ?? []) as unknown as Array<CloudWorkspaceRow<T>>;
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
 
-  const rows = (result.data ?? []) as unknown as Array<CloudWorkspaceRow<T>>;
   return rows.map((row) => ({
     id: row.id,
     kind: row.kind,
     payload: row.payload,
-    updatedAt: row.updated_at,
+    updatedAt: row.deleted_at && Date.parse(row.deleted_at) > Date.parse(row.updated_at)
+      ? row.deleted_at
+      : row.updated_at,
+    deletedAt: row.deleted_at,
   }));
 }
 
@@ -104,7 +114,7 @@ export async function pushCloudDocument<T>(document: WorkspaceDocument<T>): Prom
         kind: document.kind,
         payload: document.payload,
         updated_at: document.updatedAt,
-        deleted_at: null,
+        deleted_at: document.deletedAt ?? null,
       },
       { onConflict: "id" },
     );
@@ -122,7 +132,7 @@ export async function pushCloudDocuments(documents: WorkspaceDocument[]): Promis
     kind: document.kind,
     payload: document.payload,
     updated_at: document.updatedAt,
-    deleted_at: null,
+    deleted_at: document.deletedAt ?? null,
   }));
 
   const result = await neonClient
@@ -131,21 +141,6 @@ export async function pushCloudDocuments(documents: WorkspaceDocument[]): Promis
 
   if (result.error) throw new Error(errorMessage(result.error));
 }
-
-export async function deleteCloudDocument(kind: WorkspaceKind, id: string): Promise<void> {
-  if (!neonClient) return;
-  const session = await getCloudSession();
-  if (!session?.session) return;
-
-  const result = await neonClient
-    .from("workspace_documents")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("kind", kind);
-
-  if (result.error) throw new Error(errorMessage(result.error));
-}
-
 
 interface CloudAccountRow {
   id: string;

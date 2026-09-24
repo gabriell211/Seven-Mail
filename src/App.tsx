@@ -8,7 +8,8 @@ import { AccountsPanel } from "./components/AccountsPanel";
 import { SignaturesPanel } from "./components/SignaturesPanel";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
 import { ensureNotificationPermission, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
-import { deleteCloudDocument, pullCloudAccounts, pullCloudDocuments, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
+import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
+import { syncWorkspaceCollection } from "./lib/workspace-sync";
 import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
 import { pendingRulesForMessage } from "./lib/rules";
 import type { AccountProfile, AppSection, AppSettings, CategoryItem, MailFolder, MailMessage, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
@@ -402,33 +403,8 @@ export default function App() {
   const composeAccount = activeAccount ?? accounts.find((account)=>account.isDefault) ?? accounts[0];
 
   async function loadWorkspaceCollection<T>(kind: WorkspaceKind): Promise<T[]> {
-    const local = await bridge.listWorkspace<T>(kind).catch(() => []);
-    const merged = new Map(local.map((document) => [document.id, document]));
-
-    try {
-      const cloud = await pullCloudDocuments<T>(kind);
-      for (const document of cloud) {
-        const current = merged.get(document.id);
-        if (!current || document.updatedAt > current.updatedAt) {
-          await bridge.upsertWorkspace(document);
-          merged.set(document.id, document);
-        } else if (current.updatedAt > document.updatedAt) {
-          void pushCloudDocument(current).catch(() => undefined);
-        }
-      }
-
-      for (const document of local) {
-        if (!cloud.some((remote) => remote.id === document.id)) {
-          void pushCloudDocument(document).catch(() => undefined);
-        }
-      }
-    } catch {
-      // Local-first: cloud is optional.
-    }
-
-    return [...merged.values()]
-      .sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))
-      .map((document)=>document.payload);
+    const documents = await syncWorkspaceCollection<T>(kind).catch(() => []);
+    return documents.map((document) => document.payload);
   }
 
   async function refreshMailOrganization() {
@@ -514,9 +490,9 @@ export default function App() {
 
   async function deleteCategory(category: CategoryItem) {
     if (!window.confirm(`Excluir a categoria "${category.name}"?`)) return;
-    await bridge.deleteWorkspace("category",category.id);
+    const tombstone = await bridge.deleteWorkspace("category",category.id);
     setCategories((current)=>current.filter((item)=>item.id!==category.id));
-    void deleteCloudDocument("category",category.id).catch(() => undefined);
+    void pushCloudDocument(tombstone).catch(() => undefined);
 
     const cached = await bridge.listCachedMessages();
     for (const message of cached) {
@@ -586,9 +562,9 @@ export default function App() {
 
   async function deleteSignature(signature: SignatureItem) {
     if (!window.confirm(`Excluir a assinatura "${signature.name}"?`)) return;
-    await bridge.deleteWorkspace("signature",signature.id);
+    const tombstone = await bridge.deleteWorkspace("signature",signature.id);
     setSignatures((current)=>current.filter((item)=>item.id!==signature.id));
-    void deleteCloudDocument("signature",signature.id).catch(() => undefined);
+    void pushCloudDocument(tombstone).catch(() => undefined);
   }
 
   async function saveCurrentSearch() {
@@ -613,9 +589,9 @@ export default function App() {
   }
 
   async function deleteSavedSearch(item: SavedSearchItem) {
-    await bridge.deleteWorkspace("saved-search",item.id);
+    const tombstone = await bridge.deleteWorkspace("saved-search",item.id);
     setSavedSearches((current)=>current.filter((value)=>value.id!==item.id));
-    void deleteCloudDocument("saved-search",item.id).catch(() => undefined);
+    void pushCloudDocument(tombstone).catch(() => undefined);
   }
 
   async function refreshDrafts() {

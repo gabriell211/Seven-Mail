@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Icon, type IconName } from "../icons";
 import { bridge } from "../lib/bridge";
-import { deleteCloudDocument, pullCloudDocuments, pushCloudDocument } from "../lib/neon";
+import { pushCloudDocument } from "../lib/neon";
+import { syncWorkspaceCollection } from "../lib/workspace-sync";
 import type {
   CalendarEvent,
   ContactItem,
@@ -26,30 +27,8 @@ function useWorkspace<T extends { id: string }>(kind: WorkspaceKind) {
 
   async function reload() {
     try {
-      const localDocs = await bridge.listWorkspace<T>(kind);
-      const merged = new Map(localDocs.map((doc) => [doc.id, doc]));
-
-      try {
-        const cloudDocs = await pullCloudDocuments<T>(kind);
-        for (const cloudDoc of cloudDocs) {
-          const localDoc = merged.get(cloudDoc.id);
-          if (!localDoc || cloudDoc.updatedAt > localDoc.updatedAt) {
-            await bridge.upsertWorkspace(cloudDoc);
-            merged.set(cloudDoc.id, cloudDoc);
-          } else if (localDoc.updatedAt > cloudDoc.updatedAt) {
-            void pushCloudDocument(localDoc).catch(() => undefined);
-          }
-        }
-        for (const localDoc of localDocs) {
-          if (!cloudDocs.some((cloudDoc) => cloudDoc.id === localDoc.id)) {
-            void pushCloudDocument(localDoc).catch(() => undefined);
-          }
-        }
-      } catch {
-        // Offline and unauthenticated states intentionally keep the local mirror authoritative.
-      }
-
-      setItems([...merged.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((doc) => doc.payload));
+      const documents = await syncWorkspaceCollection<T>(kind);
+      setItems(documents.map((document) => document.payload));
     } catch {
       setItems([]);
     } finally {
@@ -77,9 +56,9 @@ function useWorkspace<T extends { id: string }>(kind: WorkspaceKind) {
   }
 
   async function remove(id: string) {
-    await bridge.deleteWorkspace(kind, id);
+    const tombstone = await bridge.deleteWorkspace(kind, id);
     setItems((current) => current.filter((value) => value.id !== id));
-    void deleteCloudDocument(kind, id).catch(() => undefined);
+    void pushCloudDocument(tombstone).catch(() => undefined);
   }
 
   return { items, loading, save, remove, reload };

@@ -36,7 +36,7 @@ fn write_document(path: &Path, document: &WorkspaceDocument) -> Result<(), Strin
     fs::write(path, bytes).map_err(io_error)
 }
 
-pub fn list(paths: &AppPaths, kind: &str) -> Result<Vec<WorkspaceDocument>, String> {
+pub fn list_for_sync(paths: &AppPaths, kind: &str) -> Result<Vec<WorkspaceDocument>, String> {
     let dir = kind_dir(paths, kind)?;
     let mut documents = Vec::new();
 
@@ -54,6 +54,13 @@ pub fn list(paths: &AppPaths, kind: &str) -> Result<Vec<WorkspaceDocument>, Stri
     Ok(documents)
 }
 
+pub fn list(paths: &AppPaths, kind: &str) -> Result<Vec<WorkspaceDocument>, String> {
+    Ok(list_for_sync(paths, kind)?
+        .into_iter()
+        .filter(|document| document.deleted_at.is_none())
+        .collect())
+}
+
 pub fn upsert(paths: &AppPaths, document: WorkspaceDocument) -> Result<WorkspaceDocument, String> {
     safe_component(&document.id)?;
     safe_component(&document.kind)?;
@@ -63,14 +70,26 @@ pub fn upsert(paths: &AppPaths, document: WorkspaceDocument) -> Result<Workspace
     Ok(document)
 }
 
-pub fn delete(paths: &AppPaths, kind: &str, id: &str) -> Result<(), String> {
+pub fn delete(paths: &AppPaths, kind: &str, id: &str) -> Result<WorkspaceDocument, String> {
     safe_component(kind)?;
     safe_component(id)?;
     let path = kind_dir(paths, kind)?.join(format!("{id}.json"));
-    if path.exists() {
-        fs::remove_file(path).map_err(io_error)?;
-    }
-    Ok(())
+    let deleted_at = chrono::Utc::now().to_rfc3339();
+    let mut document = if path.exists() {
+        read_document(&path)?
+    } else {
+        WorkspaceDocument {
+            id: id.to_owned(),
+            kind: kind.to_owned(),
+            updated_at: deleted_at.clone(),
+            payload: serde_json::json!({}),
+            deleted_at: None,
+        }
+    };
+    document.updated_at = deleted_at.clone();
+    document.deleted_at = Some(deleted_at);
+    write_document(&path, &document)?;
+    Ok(document)
 }
 
 pub fn search(paths: &AppPaths, query: &str) -> Result<Vec<WorkspaceDocument>, String> {
@@ -96,6 +115,9 @@ pub fn search(paths: &AppPaths, query: &str) -> Result<Vec<WorkspaceDocument>, S
                 continue;
             }
             if let Ok(document) = read_document(&path) {
+                if document.deleted_at.is_some() {
+                    continue;
+                }
                 let haystack = serde_json::to_string(&document.payload)
                     .unwrap_or_default()
                     .to_lowercase();

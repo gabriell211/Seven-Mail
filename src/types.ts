@@ -88,6 +88,7 @@ export interface WorkspaceDocument<T = Record<string, unknown>> {
   kind: WorkspaceKind;
   updatedAt: string;
   payload: T;
+  deletedAt?: string | null;
 }
 
 export interface CalendarEvent {

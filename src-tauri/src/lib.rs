@@ -266,12 +266,17 @@ fn list_workspace(kind: String) -> Result<Vec<WorkspaceDocument>, String> {
 }
 
 #[tauri::command]
+fn list_workspace_for_sync(kind: String) -> Result<Vec<WorkspaceDocument>, String> {
+    workspace::list_for_sync(&AppPaths::resolve()?, &kind)
+}
+
+#[tauri::command]
 fn upsert_workspace(document: WorkspaceDocument) -> Result<WorkspaceDocument, String> {
     workspace::upsert(&AppPaths::resolve()?, document)
 }
 
 #[tauri::command]
-fn delete_workspace(kind: String, id: String) -> Result<(), String> {
+fn delete_workspace(kind: String, id: String) -> Result<WorkspaceDocument, String> {
     workspace::delete(&AppPaths::resolve()?, &kind, &id)
 }
 
@@ -379,6 +384,7 @@ pub fn run() {
             move_message_to_folder,
             clear_cache,
             list_workspace,
+            list_workspace_for_sync,
             upsert_workspace,
             delete_workspace,
             search_workspace,

@@ -41,8 +41,9 @@ export const bridge = {
     command("move_message_to_folder", { accountId, messageId, targetPath, targetLabel }),
   clearCache: (): Promise<void> => command("clear_cache"),
   listWorkspace: <T = Record<string, unknown>>(kind: WorkspaceKind): Promise<Array<WorkspaceDocument<T>>> => command("list_workspace", { kind }),
+  listWorkspaceForSync: <T = Record<string, unknown>>(kind: WorkspaceKind): Promise<Array<WorkspaceDocument<T>>> => command("list_workspace_for_sync", { kind }),
   upsertWorkspace: <T = Record<string, unknown>>(document: WorkspaceDocument<T>): Promise<WorkspaceDocument<T>> => command("upsert_workspace", { document }),
-  deleteWorkspace: (kind: WorkspaceKind, id: string): Promise<void> => command("delete_workspace", { kind, id }),
+  deleteWorkspace: (kind: WorkspaceKind, id: string): Promise<WorkspaceDocument> => command("delete_workspace", { kind, id }),
   searchWorkspace: (query: string): Promise<WorkspaceDocument[]> => command("search_workspace", { query }),
   exportWorkspace: (): Promise<WorkspaceDocument[]> => command("export_workspace"),
   importWorkspace: (documents: WorkspaceDocument[]): Promise<number> => command("import_workspace", { documents })
