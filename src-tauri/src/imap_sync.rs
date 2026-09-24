@@ -251,34 +251,98 @@ pub fn sync_folder(
             .map_err(|error| format!("Não foi possível abrir {remote_folder}: {error}"))?;
 
         if mailbox.exists == 0 {
+            let empty = std::collections::HashSet::new();
+            storage::reconcile_remote_uids(paths, &account.id, remote_folder, &empty)?;
             session.logout().await.map_err(|error| error.to_string())?;
             return Ok(0);
         }
 
-        let end = mailbox.exists;
-        let start = end.saturating_sub(limit.saturating_sub(1)).max(1);
-        let sequence = format!("{start}:{end}");
+        let remote_uids = session
+            .uid_search("ALL")
+            .await
+            .map_err(|error| format!("Falha ao consultar UIDs de {remote_folder}: {error}"))?;
+        let cached_uids = storage::cached_remote_uids(paths, &account.id, remote_folder)?;
+        let cached_set = cached_uids.iter().copied().collect::<std::collections::HashSet<_>>();
+        let highest_cached = cached_uids.last().copied();
 
-        let fetch_stream = session
-            .fetch(sequence, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
-            .await
-            .map_err(|error| format!("Falha ao buscar mensagens: {error}"))?;
-        let fetched: Vec<_> = fetch_stream
-            .try_collect()
-            .await
-            .map_err(|error| format!("Falha ao receber mensagens: {error}"))?;
+        let mut sorted_remote = remote_uids.iter().copied().collect::<Vec<_>>();
+        sorted_remote.sort_unstable();
+
+        let mut wanted = if let Some(highest) = highest_cached {
+            sorted_remote
+                .iter()
+                .copied()
+                .filter(|uid| *uid > highest && !cached_set.contains(uid))
+                .collect::<Vec<_>>()
+        } else {
+            sorted_remote
+                .iter()
+                .rev()
+                .take(limit as usize)
+                .copied()
+                .collect::<Vec<_>>()
+        };
+        wanted.sort_unstable();
+        if wanted.len() > limit as usize {
+            wanted = wanted.split_off(wanted.len() - limit as usize);
+        }
 
         let mut cached = 0usize;
-        for item in &fetched {
-            if let Some(message) = parse_message(account, item, remote_folder, folder_label) {
-                storage::cache_message(paths, &message)?;
-                if let Some(raw) = item.body() {
-                    storage::cache_raw_message(paths, &message.account_id, &message.id, raw)?;
+        if !wanted.is_empty() {
+            let sequence = wanted.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+            let fetch_stream = session
+                .uid_fetch(sequence, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
+                .await
+                .map_err(|error| format!("Falha ao buscar novas mensagens: {error}"))?;
+            let fetched: Vec<_> = fetch_stream
+                .try_collect()
+                .await
+                .map_err(|error| format!("Falha ao receber novas mensagens: {error}"))?;
+
+            for item in &fetched {
+                if let Some(message) = parse_message(account, item, remote_folder, folder_label) {
+                    storage::cache_message(paths, &message)?;
+                    if let Some(raw) = item.body() {
+                        storage::cache_raw_message(paths, &message.account_id, &message.id, raw)?;
+                    }
+                    cached += 1;
                 }
-                cached += 1;
             }
         }
 
+        let recent_cached = cached_uids
+            .iter()
+            .rev()
+            .take(limit as usize)
+            .copied()
+            .collect::<Vec<_>>();
+        if !recent_cached.is_empty() {
+            let sequence = recent_cached.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+            let flag_stream = session
+                .uid_fetch(sequence, "(UID FLAGS)")
+                .await
+                .map_err(|error| format!("Falha ao atualizar flags remotas: {error}"))?;
+            let flags: Vec<_> = flag_stream
+                .try_collect()
+                .await
+                .map_err(|error| format!("Falha ao receber flags remotas: {error}"))?;
+            for item in flags {
+                let Some(uid) = item.uid else { continue; };
+                let values: Vec<_> = item.flags().collect();
+                let is_read = values.iter().any(|flag| matches!(flag, Flag::Seen));
+                let is_flagged = values.iter().any(|flag| matches!(flag, Flag::Flagged));
+                storage::update_cached_remote_flags(
+                    paths,
+                    &account.id,
+                    remote_folder,
+                    uid,
+                    is_read,
+                    is_flagged,
+                )?;
+            }
+        }
+
+        storage::reconcile_remote_uids(paths, &account.id, remote_folder, &remote_uids)?;
         session.logout().await.map_err(|error| error.to_string())?;
         Ok(cached)
     })
