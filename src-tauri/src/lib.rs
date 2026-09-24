@@ -118,6 +118,36 @@ fn sync_mail_folder(
 }
 
 #[tauri::command]
+fn create_mail_folder(account_id: String, name: String) -> Result<(), String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    imap_sync::create_folder(&account, &name)
+}
+
+#[tauri::command]
+fn rename_mail_folder(account_id: String, path: String, name: String) -> Result<(), String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    imap_sync::rename_folder(&account, &path, &name)
+}
+
+#[tauri::command]
+fn delete_mail_folder(account_id: String, path: String) -> Result<(), String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    imap_sync::delete_folder(&account, &path)
+}
+
+#[tauri::command]
 fn flush_mail_actions(account_id: String) -> Result<usize, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -194,6 +224,22 @@ fn flush_outbox() -> Result<usize, String> {
 #[tauri::command]
 fn message_action(account_id: String, message_id: String, action: String) -> Result<MailMessage, String> {
     storage::apply_message_action(&AppPaths::resolve()?, &account_id, &message_id, &action)
+}
+
+#[tauri::command]
+fn move_message_to_folder(
+    account_id: String,
+    message_id: String,
+    target_path: String,
+    target_label: String,
+) -> Result<MailMessage, String> {
+    storage::move_message_to_folder(
+        &AppPaths::resolve()?,
+        &account_id,
+        &message_id,
+        &target_path,
+        &target_label,
+    )
 }
 
 #[tauri::command]
@@ -305,6 +351,9 @@ pub fn run() {
             sync_inbox,
             list_mail_folders,
             sync_mail_folder,
+            create_mail_folder,
+            rename_mail_folder,
+            delete_mail_folder,
             flush_mail_actions,
             list_cached_messages,
             cache_message,
@@ -314,6 +363,7 @@ pub fn run() {
             list_queue,
             flush_outbox,
             message_action,
+            move_message_to_folder,
             clear_cache,
             list_workspace,
             upsert_workspace,
