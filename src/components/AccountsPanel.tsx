@@ -45,7 +45,8 @@ export function AccountsPanel({
     try {
       await bridge.testImapConnection(account.id);
       await bridge.testSmtpConnection(account.id);
-      setStatus((current) => ({ ...current, [account.id]: `${account.incomingProtocol==="pop3"?"POP3":"IMAP"} e SMTP conectados` }));
+      if(account.caldavUrl?.trim()||account.carddavUrl?.trim()) await bridge.testDavConnection(account.id);
+      setStatus((current) => ({ ...current, [account.id]: `${account.incomingProtocol==="pop3"?"POP3":"IMAP"} e SMTP conectados${account.caldavUrl?.trim()||account.carddavUrl?.trim()?" · DAV conectado":""}` }));
     } catch (reason) {
       setStatus((current) => ({
         ...current,
@@ -124,6 +125,8 @@ export function AccountsPanel({
               <label><span>Timeout</span><select value={editing.connectionTimeoutSeconds ?? 30} onChange={(event) => setEditing({ ...editing, connectionTimeoutSeconds: Number(event.target.value) as AccountProfile["connectionTimeoutSeconds"] })}><option value={10}>10 s</option><option value={20}>20 s</option><option value={30}>30 s</option><option value={60}>60 s</option><option value={120}>120 s</option></select></label>
               <label><span>Cor</span><input type="color" value={editing.color} onChange={(event) => setEditing({ ...editing, color: event.target.value })} /></label>
               <label className="inline-check"><input type="checkbox" checked={Boolean(editing.muted)} onChange={(event) => setEditing({ ...editing, muted: event.target.checked })} /> Silenciar sincronização e notificações desta conta</label>
+              <label className="full"><span>URL CalDAV</span><input value={editing.caldavUrl ?? ""} onChange={(event) => setEditing({ ...editing, caldavUrl: event.target.value })} placeholder="https://servidor/dav/calendario/"/></label>
+              <label className="full"><span>URL CardDAV</span><input value={editing.carddavUrl ?? ""} onChange={(event) => setEditing({ ...editing, carddavUrl: event.target.value })} placeholder="https://servidor/dav/contatos/"/></label>
               <label className="full"><span>Aliases de envio</span><input value={(editing.aliases??[]).join(", ")} onChange={(event) => setEditing({ ...editing, aliases: event.target.value.split(",").map((value)=>value.trim()).filter(Boolean) })} placeholder="alias@dominio.com, outro@dominio.com" /></label>
               <label className="full"><span>Nova senha / senha de aplicativo</span><input type="password" value={secret} onChange={(event) => setSecret(event.target.value)} placeholder="Deixe vazio para manter a credencial atual" /></label>
             </div>
