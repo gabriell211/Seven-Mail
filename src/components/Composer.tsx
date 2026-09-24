@@ -62,6 +62,29 @@ function humanSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function applyTypingAssists(value:string,settings:AppSettings):string {
+  let next=value;
+  if(settings.autoCorrectEnabled){
+    const language=(settings.composeLanguage??"pt-BR").toLowerCase();
+    const corrections:Record<string,string>=language.startsWith("pt")
+      ? {nao:"não",voce:"você",tambem:"também",sera:"será",esta:"está",obrigado:"obrigado"}
+      : {teh:"the",adn:"and",recieve:"receive",adress:"address"};
+    const custom=new Set((settings.customDictionary??[]).map((word)=>word.toLocaleLowerCase("pt-BR")));
+    next=next.replace(/\b[\p{L}']+\b/gu,(word)=>{
+      const lower=word.toLocaleLowerCase("pt-BR");
+      if(custom.has(lower)||!corrections[lower]) return word;
+      const replacement=corrections[lower];
+      return /^[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ]/.test(word)
+        ? replacement.charAt(0).toLocaleUpperCase("pt-BR")+replacement.slice(1)
+        : replacement;
+    });
+  }
+  if(settings.autoCapitalizeEnabled){
+    next=next.replace(/(^|[.!?]\s+)([a-zà-ÿ])/g,(_,prefix:string,letter:string)=>prefix+letter.toLocaleUpperCase("pt-BR"));
+  }
+  return next;
+}
+
 export function Composer({
   accounts,
   signatures,
@@ -114,6 +137,15 @@ export function Composer({
   const [draggingFiles, setDraggingFiles] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const finishedRef = useRef(false);
+
+  const linkPreview=useMemo(()=>{
+    const match=draft.bodyText.match(/https?:\/\/[^\s<>"']+/i);
+    if(!match) return null;
+    try{
+      const url=new URL(match[0]);
+      return {href:url.href,host:url.hostname,path:`${url.pathname}${url.search}`};
+    }catch{return null;}
+  },[draft.bodyText]);
 
   const account = useMemo(
     () => accounts.find((item) => item.id === draft.accountId) ?? accounts[0],
@@ -240,6 +272,28 @@ export function Composer({
     const selected = await open({ multiple: true, directory: false });
     const sources = Array.isArray(selected) ? selected : selected ? [selected] : [];
     await stageFiles(sources);
+  }
+
+  async function pickInlineImage() {
+    if(draft.mode!=="rich") return;
+    const selected=await open({
+      multiple:false,
+      directory:false,
+      filters:[{name:"Imagem",extensions:["png","jpg","jpeg","gif","webp"]}],
+    });
+    if(!selected||Array.isArray(selected)) return;
+    setError("");
+    try{
+      const [staged]=await bridge.stageAttachments(draft.id,[selected],settings.maxAttachmentMb??25,Math.min((settings.maxAttachmentMb??25)*4,500));
+      if(!staged) return;
+      const contentId=`seven-${crypto.randomUUID()}`;
+      const inline={...staged,inline:true,contentId};
+      setDraft((current)=>({...current,attachments:[...current.attachments,inline]}));
+      const safeName=staged.name.replace(/[&<>"']/g,(char)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]??char));
+      format("insertHTML",`<img src="cid:${contentId}" alt="${safeName}" style="max-width:100%;height:auto"><br>`);
+    }catch(reason){
+      setError(reason instanceof Error?reason.message:String(reason));
+    }
   }
 
   function insertTable() {
@@ -440,6 +494,7 @@ export function Composer({
             <button type="button" onClick={() => format("justifyRight")}>Texto →</button>
             <span className="toolbar-separator" />
             <button type="button" onClick={() => void addLink()}>Link</button>
+            <button type="button" onClick={() => void pickInlineImage()}>Imagem</button>
             <button type="button" onClick={insertTable}>Tabela</button>
             <button type="button" onClick={insertEmoji}>Emoji</button>
             <button type="button" onClick={() => format("removeFormat")}>Limpar</button>
@@ -453,6 +508,9 @@ export function Composer({
             contentEditable
             suppressContentEditableWarning
             spellCheck
+            lang={settings.composeLanguage??"pt-BR"}
+            autoCorrect={settings.autoCorrectEnabled?"on":"off"}
+            autoCapitalize={settings.autoCapitalizeEnabled?"sentences":"off"}
             role="textbox"
             aria-multiline="true"
             data-placeholder="Escreva sua mensagem..."
@@ -462,18 +520,27 @@ export function Composer({
           <textarea
             className="editor"
             spellCheck
+            lang={settings.composeLanguage??"pt-BR"}
+            autoCorrect={settings.autoCorrectEnabled?"on":"off"}
+            autoCapitalize={settings.autoCapitalizeEnabled?"sentences":"off"}
             value={draft.bodyText}
-            onChange={(event) => setDraft((current) => ({ ...current, bodyText: event.target.value, bodyHtml: "" }))}
+            onChange={(event) => {
+              const raw=event.target.value;
+              const assisted=/[\s.!?,;:]$/.test(raw)?applyTypingAssists(raw,settings):raw;
+              setDraft((current) => ({ ...current, bodyText: assisted, bodyHtml: "" }));
+            }}
             placeholder="Escreva sua mensagem..."
           />
         )}
 
-        {draft.attachments.length > 0 && (
+        {linkPreview&&<div className="composer-link-preview"><span className="link-preview-glyph">↗</span><div><b>{linkPreview.host}</b><small>{linkPreview.path||"/"}</small><code>{linkPreview.href}</code></div></div>}
+
+                {draft.attachments.length > 0 && (
           <div className="attachment-strip">
             {draft.attachments.map((attachment, index) => (
               <div className="attachment-chip" key={`${attachment.path}-${index}`}>
                 <Icon name="paperclip" size={15} />
-                <span><b>{attachment.name}</b><small>{humanSize(attachment.size)}</small></span>
+                <span><b>{attachment.name}</b><small>{humanSize(attachment.size)}{attachment.inline?" · inline":""}</small></span>
                 <button
                   className="icon-button"
                   aria-label={`Remover ${attachment.name}`}
