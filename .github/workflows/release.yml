@@ -22,6 +22,9 @@ jobs:
           - name: Linux installers
             platform: ubuntu-22.04
             bundles: deb,appimage
+          - name: macOS installers
+            platform: macos-latest
+            bundles: app,dmg
 
     runs-on: ${{ matrix.platform }}
 
