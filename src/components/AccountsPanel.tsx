@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Icon } from "../icons";
 import { bridge } from "../lib/bridge";
+import { oauthPreset, startOAuthAuthorization } from "../lib/oauth-client";
 import { deleteCloudAccount, pushCloudAccount, pushCloudAccounts } from "../lib/neon";
 import type { AccountProfile } from "../types";
 
@@ -15,6 +16,30 @@ export function AccountsPanel({
   const [secret, setSecret] = useState("");
   const [busyId, setBusyId] = useState<string>();
   const [status, setStatus] = useState<Record<string, string>>({});
+  const [oauthStatus,setOauthStatus] = useState<Record<string,boolean>>({});
+
+  async function authorizeOAuth(account:AccountProfile) {
+    setBusyId(account.id);
+    try {
+      await startOAuthAuthorization(account);
+      setStatus((current)=>({...current,[account.id]:"Aguardando autorização no navegador..."}));
+    } catch (reason) {
+      setStatus((current)=>({...current,[account.id]:reason instanceof Error?reason.message:String(reason)}));
+    } finally {
+      setBusyId(undefined);
+    }
+  }
+
+  async function revokeOAuth(account:AccountProfile) {
+    await bridge.oauthClear(account.id);
+    setOauthStatus((current)=>({...current,[account.id]:false}));
+    setStatus((current)=>({...current,[account.id]:"Autorização OAuth removida"}));
+  }
+
+  async function refreshOAuthStatus(account:AccountProfile) {
+    const active=await bridge.oauthStatus(account.id).catch(()=>false);
+    setOauthStatus((current)=>({...current,[account.id]:active}));
+  }
 
   async function setDefault(accountId: string) {
     setBusyId(accountId);
@@ -93,6 +118,8 @@ export function AccountsPanel({
               </div>
               <div className="account-settings-actions">
                 {!account.isDefault && <button className="ghost" disabled={busyId === account.id} onClick={() => void setDefault(account.id)}>Tornar padrão</button>}
+                {account.oauthEnabled&&<button className="ghost" disabled={busyId===account.id} onMouseEnter={()=>void refreshOAuthStatus(account)} onClick={()=>void authorizeOAuth(account)}>{oauthStatus[account.id]?"Reautorizar OAuth":"Autorizar OAuth"}</button>}
+                {account.oauthEnabled&&oauthStatus[account.id]&&<button className="ghost danger-text" onClick={()=>void revokeOAuth(account)}>Revogar</button>}
                 <button className="icon-button" title="Testar conexão" disabled={busyId === account.id} onClick={() => void test(account)}><Icon name="refresh" size={15} /></button>
                 <button className="icon-button" title="Editar" onClick={() => { setEditing({ ...account }); setSecret(""); }}><Icon name="settings" size={15} /></button>
                 <button className="icon-button danger-icon" title="Remover" disabled={busyId === account.id} onClick={() => void remove(account)}><Icon name="trash" size={15} /></button>
@@ -128,6 +155,18 @@ export function AccountsPanel({
               <label className="inline-check"><input type="checkbox" checked={Boolean(editing.muted)} onChange={(event) => setEditing({ ...editing, muted: event.target.checked })} /> Silenciar sincronização e notificações desta conta</label>
               <label className="full"><span>URL CalDAV</span><input value={editing.caldavUrl ?? ""} onChange={(event) => setEditing({ ...editing, caldavUrl: event.target.value })} placeholder="https://servidor/dav/calendario/"/></label>
               <label className="full"><span>URL CardDAV</span><input value={editing.carddavUrl ?? ""} onChange={(event) => setEditing({ ...editing, carddavUrl: event.target.value })} placeholder="https://servidor/dav/contatos/"/></label>
+              <label className="full inline-check"><input type="checkbox" checked={Boolean(editing.oauthEnabled)} onChange={(event)=>{
+                const enabled=event.target.checked;
+                const preset=enabled?oauthPreset(editing.provider):{};
+                setEditing({...editing,...preset,oauthEnabled:enabled});
+              }}/> Usar OAuth 2.0 + PKCE para IMAP/SMTP</label>
+              {editing.oauthEnabled&&<>
+                <label className="full"><span>Client ID OAuth</span><input value={editing.oauthClientId ?? ""} onChange={(event)=>setEditing({...editing,oauthClientId:event.target.value})} placeholder="Client ID do aplicativo público"/></label>
+                <label className="full"><span>URL de autorização</span><input value={editing.oauthAuthorizationUrl ?? ""} onChange={(event)=>setEditing({...editing,oauthAuthorizationUrl:event.target.value})}/></label>
+                <label className="full"><span>URL de token</span><input value={editing.oauthTokenUrl ?? ""} onChange={(event)=>setEditing({...editing,oauthTokenUrl:event.target.value})}/></label>
+                <label className="full"><span>Scopes</span><input value={(editing.oauthScopes??[]).join(" ")} onChange={(event)=>setEditing({...editing,oauthScopes:event.target.value.split(/\s+/).filter(Boolean)})}/></label>
+                <label className="full"><span>Redirect URI</span><input value={editing.oauthRedirectUri ?? "seven-mail://oauth/callback"} onChange={(event)=>setEditing({...editing,oauthRedirectUri:event.target.value})}/></label>
+              </>}
               <label className="full"><span>URL LDAP</span><input value={editing.ldapUrl ?? ""} onChange={(event) => setEditing({ ...editing, ldapUrl: event.target.value })} placeholder="ldaps://servidor:636"/></label>
               <label><span>Base DN LDAP</span><input value={editing.ldapBaseDn ?? ""} onChange={(event) => setEditing({ ...editing, ldapBaseDn: event.target.value })} placeholder="dc=empresa,dc=local"/></label>
               <label><span>Filtro LDAP</span><input value={editing.ldapFilter ?? ""} onChange={(event) => setEditing({ ...editing, ldapFilter: event.target.value })} placeholder="(&(objectClass=person)(mail=*))"/></label>
