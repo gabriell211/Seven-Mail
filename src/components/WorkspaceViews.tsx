@@ -19,8 +19,10 @@ import {
   contactsToVcard,
   eventsFromIcs,
   eventsToIcs,
+  eventInvitationToIcs,
 } from "../lib/interchange";
 import type {
+  AccountProfile,
   CalendarEvent,
   CalendarListItem,
   ContactGroupItem,
@@ -178,13 +180,13 @@ function Empty({ icon, title, text }: { icon: IconName; title: string; text: str
   );
 }
 
-export function PersistentCalendarView() {
+export function PersistentCalendarView({ accounts = [] }: { accounts?: AccountProfile[] }) {
   const store = useWorkspace<CalendarEvent>("calendar");
   const calendars = useWorkspace<CalendarListItem>("calendar-list");
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [editingOccurrence,setEditingOccurrence]=useState<{sourceId:string;originalStart:string}|null>(null);
   const [cursor, setCursor] = useState(() => new Date());
-  const [view, setView] = useState<"day" | "three" | "week" | "workweek" | "month" | "agenda">("month");
+  const [view, setView] = useState<"day" | "three" | "week" | "workweek" | "month" | "agenda" | "side">("month");
 
   const localCalendar:CalendarListItem={id:"local",name:"Local",color:COLORS[0],visible:true};
   const calendarList:CalendarListItem[]=calendars.items.some((item)=>item.id==="local")
@@ -262,6 +264,7 @@ export function PersistentCalendarView() {
       color: COLORS[0],
       participants: [],
       calendarId:calendarList.find((item)=>item.visible!==false)?.id??calendarList[0]?.id??"local",
+      accountId:(calendarList.find((item)=>item.visible!==false)?.accountId)??accounts.find((account)=>account.isDefault)?.id??accounts[0]?.id,
       requiredParticipants:[],
       optionalParticipants:[],
       resources:[],
@@ -327,7 +330,18 @@ export function PersistentCalendarView() {
   async function createCalendar() {
     const name=window.prompt("Nome do calendário")?.trim();
     if(!name) return;
-    await calendars.save({id:crypto.randomUUID(),name,color:COLORS[calendarList.length%COLORS.length],visible:true});
+    const defaultAccount=accounts.find((account)=>account.isDefault)??accounts[0];
+    const accountEmail=accounts.length
+      ? window.prompt("Conta do calendário (deixe vazio para local)",defaultAccount?.email??"")?.trim()
+      : "";
+    const account=accounts.find((item)=>item.email.toLocaleLowerCase("pt-BR")===accountEmail?.toLocaleLowerCase("pt-BR"));
+    await calendars.save({
+      id:crypto.randomUUID(),
+      name,
+      color:COLORS[calendarList.length%COLORS.length],
+      visible:true,
+      accountId:account?.id,
+    });
   }
 
   async function toggleCalendar(calendar:CalendarListItem) {
@@ -400,6 +414,91 @@ export function PersistentCalendarView() {
     setEditingOccurrence(null);
   }
 
+  function eventAccount(event:CalendarEvent):AccountProfile|undefined {
+    const calendar=calendarList.find((item)=>item.id===(event.calendarId??"local"));
+    return accounts.find((item)=>item.id===(event.accountId??calendar?.accountId))
+      ?? accounts.find((item)=>item.isDefault)
+      ?? accounts[0];
+  }
+
+  async function sendMeeting(event:CalendarEvent,method:"REQUEST"|"CANCEL") {
+    const account=eventAccount(event);
+    if(!account) {
+      window.alert("Associe o calendário a uma conta de e-mail antes de enviar convites.");
+      return;
+    }
+    const recipients=[...(event.requiredParticipants?.length?event.requiredParticipants:event.participants),...(event.optionalParticipants??[])];
+    const unique=[...new Set(recipients.map((item)=>item.trim()).filter(Boolean).filter((item)=>item.toLocaleLowerCase("pt-BR")!==account.email.toLocaleLowerCase("pt-BR")))];
+    if(unique.length===0){
+      window.alert("Adicione pelo menos um participante.");
+      return;
+    }
+    const ics=eventInvitationToIcs({...event,organizer:account.email},account.email,method);
+    await bridge.queueOperation({
+      id:crypto.randomUUID(),
+      kind:"send",
+      accountId:account.id,
+      createdAt:new Date().toISOString(),
+      attempts:0,
+      payload:{
+        fromAddress:account.email,
+        to:unique.join(", "),
+        cc:"",
+        bcc:"",
+        subject:`${method==="CANCEL"?"Cancelado:":event.status==="draft"?"Convite:":"Reunião:"} ${event.title}`,
+        bodyText:`${method==="CANCEL"?"Esta reunião foi cancelada.":"Você foi convidado para uma reunião."}\n\n${event.title}\n${new Date(event.startAt).toLocaleString("pt-BR")}${event.location?`\n${event.location}`:""}`,
+        bodyHtml:"",
+        attachments:[],
+        calendarIcs:ics,
+        calendarMethod:method,
+        priority:"normal",
+        requestReadReceipt:false,
+        requestDeliveryReceipt:false,
+        sendAt:new Date().toISOString(),
+      },
+    });
+    await bridge.flushOutbox().catch(()=>undefined);
+    await store.save({...event,organizer:account.email,status:method==="CANCEL"?"cancelled":"confirmed"});
+    window.alert(method==="CANCEL"?"Cancelamento enviado.":"Convite/atualização enviado.");
+  }
+
+  async function respondMeeting(event:CalendarEvent,response:NonNullable<CalendarEvent["attendeeResponse"]>) {
+    const account=eventAccount(event);
+    if(!account||!event.organizer) return;
+    const updated={
+      ...event,
+      attendeeResponse:response,
+      freeBusyStatus:response==="declined"?"free":response==="tentative"?"tentative":"busy",
+    } as CalendarEvent;
+    await store.save(updated);
+    const ics=eventInvitationToIcs(updated,event.organizer,"REPLY",response,account.email);
+    await bridge.queueOperation({
+      id:crypto.randomUUID(),
+      kind:"send",
+      accountId:account.id,
+      createdAt:new Date().toISOString(),
+      attempts:0,
+      payload:{
+        fromAddress:account.email,
+        to:event.organizer,
+        cc:"",
+        bcc:"",
+        subject:`Re: ${event.title}`,
+        bodyText:response==="accepted"?"Aceito":response==="tentative"?"Aceito provisoriamente":"Recusado",
+        bodyHtml:"",
+        attachments:[],
+        calendarIcs:ics,
+        calendarMethod:"REPLY",
+        priority:"normal",
+        requestReadReceipt:false,
+        requestDeliveryReceipt:false,
+        sendAt:new Date().toISOString(),
+      },
+    });
+    await bridge.flushOutbox().catch(()=>undefined);
+    setEditing(updated);
+  }
+
   const EventButton = ({ event }: { event: CalendarOccurrence }) => (
     <button className="calendar-event" style={{ borderLeftColor: event.color }} onClick={() => openOccurrence(event)}>
       <b>{event.title || "Sem título"}</b>
@@ -419,9 +518,9 @@ export function PersistentCalendarView() {
         <div className="toolbar-actions">
           <button className="secondary" onClick={() => setCursor(new Date())}>Hoje</button>
           <div className="calendar-view-switch">
-            {(["day","three","week","workweek","month","agenda"] as const).map((item) => (
+            {(["day","three","week","workweek","month","agenda","side"] as const).map((item) => (
               <button className={view === item ? "active" : ""} key={item} onClick={() => setView(item)}>
-                {item==="day"?"Dia":item==="three"?"3 dias":item==="week"?"Semana":item==="workweek"?"Semana útil":item==="month"?"Mês":"Agenda"}
+                {item==="day"?"Dia":item==="three"?"3 dias":item==="week"?"Semana":item==="workweek"?"Semana útil":item==="month"?"Mês":item==="agenda"?"Agenda":"Lado a lado"}
               </button>
             ))}
           </div>
@@ -437,10 +536,17 @@ export function PersistentCalendarView() {
 
       <div className="calendar-list-bar">
         {calendarList.map((calendar)=><span className={calendar.visible===false?"calendar-pill muted":"calendar-pill"} key={calendar.id}>
-          <button onClick={()=>void toggleCalendar(calendar)}><i style={{background:calendar.color}}/>{calendar.name}</button>
+          <button onClick={()=>void toggleCalendar(calendar)}><i style={{background:calendar.color}}/>{calendar.name}{calendar.accountId&&<small>{accounts.find((item)=>item.id===calendar.accountId)?.email??""}</small>}</button>
           {calendar.id!=="local"&&<button aria-label={`Excluir calendário ${calendar.name}`} onClick={()=>void removeCalendar(calendar)}><Icon name="x" size={10}/></button>}
         </span>)}
       </div>
+
+      {view==="side"&&<div className="calendar-side-by-side">
+        {calendarList.filter((calendar)=>calendar.visible!==false).map((calendar)=>{
+          const events=expandedEvents.filter((event)=>(event.calendarId??"local")===calendar.id).slice(0,30);
+          return <section key={calendar.id}><header><i style={{background:calendar.color}}/><div><b>{calendar.name}</b><small>{calendar.accountId?accounts.find((item)=>item.id===calendar.accountId)?.email??"Conta removida":"Local"}</small></div></header><div>{events.length?events.map((event)=><EventButton key={event.occurrenceId} event={event}/>):<small className="mini-empty">Sem eventos</small>}</div></section>;
+        })}
+      </div>}
 
       {view === "month" && <div className="calendar">
         <div className="week">{["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"].map((day) => <span key={day}>{day}</span>)}</div>
@@ -504,6 +610,10 @@ export function PersistentCalendarView() {
           onSave={editingOccurrence?saveThisOccurrence:()=>store.save(editing)}
           onSaveFollowing={editingOccurrence?saveFollowingOccurrences:undefined}
           onEditSeries={editingOccurrence?()=>{const source=store.items.find((item)=>item.id===editingOccurrence.sourceId);if(source){setEditing(source);setEditingOccurrence(null);}}:undefined}
+          onSendInvite={(event)=>sendMeeting(event,"REQUEST")}
+          onCancelMeeting={(event)=>sendMeeting(event,"CANCEL")}
+          onRespondMeeting={respondMeeting}
+          currentAccount={editing?eventAccount(editing):undefined}
           onDuplicate={store.items.some((item)=>item.id===editing.id)?async()=>{await duplicateEvent(editing);setEditing(null);}:undefined}
           onDelete={store.items.some((item) => item.id === editing.id) ? async () => { await store.remove(editing.id); setEditing(null); } : undefined}
         />
@@ -524,6 +634,10 @@ function CalendarEditor({
   onDuplicate,
   onSaveFollowing,
   onEditSeries,
+  onSendInvite,
+  onCancelMeeting,
+  onRespondMeeting,
+  currentAccount,
 }: {
   value: CalendarEvent;
   calendars: CalendarListItem[];
@@ -536,6 +650,10 @@ function CalendarEditor({
   onDuplicate?: () => Promise<void>;
   onSaveFollowing?: () => Promise<void>;
   onEditSeries?: () => void;
+  onSendInvite?: (event:CalendarEvent) => Promise<void>;
+  onCancelMeeting?: (event:CalendarEvent) => Promise<void>;
+  onRespondMeeting?: (event:CalendarEvent,response:NonNullable<CalendarEvent["attendeeResponse"]>) => Promise<void>;
+  currentAccount?: AccountProfile;
 }) {
   const conflicts=useMemo(()=>eventConflicts(value,allEvents),[value.startAt,value.endAt,value.id,allEvents]);
   const suggestions=useMemo(()=>conflicts.length?suggestMeetingSlots(value,allEvents,4):[],[value.startAt,value.endAt,value.id,allEvents,conflicts.length]);
@@ -562,6 +680,15 @@ function CalendarEditor({
       <label><span>Lembrete</span><input type="datetime-local" value={value.reminderAt?.slice(0,16) ?? ""} onChange={(event) => onChange({ ...value, reminderAt: event.target.value || undefined, reminderNotifiedAt: undefined })} /></label>
       <label className="inline-check"><input type="checkbox" checked={value.allDay} onChange={(event) => onChange({ ...value, allDay: event.target.checked })} /> Dia inteiro</label>
       <label className="inline-check"><input type="checkbox" checked={Boolean(value.isPrivate)} onChange={(event)=>onChange({...value,isPrivate:event.target.checked})}/> Evento privado</label>
+      <div className="full meeting-actions">
+        {value.organizer&&currentAccount&&value.organizer.toLocaleLowerCase("pt-BR")!==currentAccount.email.toLocaleLowerCase("pt-BR")&&onRespondMeeting&&<>
+          <button className={value.attendeeResponse==="accepted"?"secondary active":"secondary"} onClick={()=>void onRespondMeeting(value,"accepted")}>Aceitar</button>
+          <button className={value.attendeeResponse==="tentative"?"secondary active":"secondary"} onClick={()=>void onRespondMeeting(value,"tentative")}>Provisório</button>
+          <button className={value.attendeeResponse==="declined"?"secondary active":"secondary"} onClick={()=>void onRespondMeeting(value,"declined")}>Recusar</button>
+        </>}
+        {onSendInvite&&((value.requiredParticipants?.length??value.participants.length)+(value.optionalParticipants?.length??0)>0)&&<button className="secondary" onClick={()=>void onSendInvite(value)}><Icon name="send" size={13}/> Enviar/atualizar convite</button>}
+        {onCancelMeeting&&value.organizer&&currentAccount&&value.organizer.toLocaleLowerCase("pt-BR")===currentAccount.email.toLocaleLowerCase("pt-BR")&&<button className="danger-link" onClick={()=>void onCancelMeeting(value)}>Cancelar reunião</button>}
+      </div>
       {occurrence&&onEditSeries&&<button className="secondary" onClick={onEditSeries}>Editar série inteira</button>}
       {occurrence&&onSaveFollowing&&<button className="secondary" onClick={()=>void onSaveFollowing()}>Salvar esta e as próximas</button>}
       {onDuplicate && <button className="secondary" onClick={()=>void onDuplicate()}><Icon name="copy" size={14}/> Duplicar evento</button>}
