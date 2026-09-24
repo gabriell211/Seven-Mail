@@ -205,7 +205,7 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onCreateTaskFromMessage,onCreateCategory,onDeleteCategory,onToggleCategory,onUseSavedSearch,onDeleteSavedSearch,onCreateFolder,onRenameFolder,onDeleteFolder,onMoveToFolder,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,markReadDelayMs,readingPane,previewLines}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateCategory:()=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;onCreateFolder?:()=>void;onRenameFolder?:(folder:MailFolder)=>void;onDeleteFolder?:(folder:MailFolder)=>void;onMoveToFolder?:(message:MailMessage,folder:MailFolder)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;markReadDelayMs:number;readingPane:AppSettings["readingPane"];previewLines:AppSettings["previewLines"]}) {
+function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onCreateTaskFromMessage,onCreateEventFromMessage,onImportEml,onExportEml,onCreateCategory,onEditCategory,onDeleteCategory,onToggleCategory,onUseSavedSearch,onDeleteSavedSearch,onCreateFolder,onRenameFolder,onDeleteFolder,onMoveToFolder,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,markReadDelayMs,readingPane,previewLines}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateEventFromMessage:(message:MailMessage)=>void;onImportEml?:()=>void;onExportEml:(message:MailMessage)=>void;onCreateCategory:()=>void;onEditCategory:(category:CategoryItem)=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;onCreateFolder?:()=>void;onRenameFolder?:(folder:MailFolder)=>void;onDeleteFolder?:(folder:MailFolder)=>void;onMoveToFolder?:(message:MailMessage,folder:MailFolder)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;markReadDelayMs:number;readingPane:AppSettings["readingPane"];previewLines:AppSettings["previewLines"]}) {
   const [selectedId,setSelectedId] = useState<string>();
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
   const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread">("newest");
@@ -226,6 +226,49 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
       setSelectedId(focusMessageId);
     }
   },[focusMessageId,messages]);
+
+  useEffect(()=>{
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
+
+      const current = selectedId ? messages.find((message)=>message.id===selectedId) : undefined;
+      const index = folderMessages.findIndex((message)=>message.id===selectedId);
+
+      if (event.key==="ArrowDown" && folderMessages.length) {
+        event.preventDefault();
+        setSelectedId(folderMessages[Math.min(folderMessages.length-1,Math.max(0,index+1))].id);
+        return;
+      }
+      if (event.key==="ArrowUp" && folderMessages.length) {
+        event.preventDefault();
+        setSelectedId(folderMessages[Math.max(0,index<=0?0:index-1)].id);
+        return;
+      }
+      if (!current || event.ctrlKey || event.metaKey || event.altKey) return;
+
+      const key = event.key.toLowerCase();
+      if (key==="r") {
+        event.preventDefault();
+        onComposeFromMessage(current,event.shiftKey?"replyAll":"reply");
+      } else if (key==="f") {
+        event.preventDefault();
+        onComposeFromMessage(current,"forward");
+      } else if (key==="e") {
+        event.preventDefault();
+        void act(current.id,"archive");
+      } else if (key==="u") {
+        event.preventDefault();
+        void act(current.id,current.isRead?"unread":"read");
+      } else if (event.key==="Delete") {
+        event.preventDefault();
+        void act(current.id,"delete");
+      }
+    };
+    window.addEventListener("keydown",onKeyDown);
+    return ()=>window.removeEventListener("keydown",onKeyDown);
+  },[selectedId,folderMessages,messages]);
+
   const visibleFolders = folders.length ? folders : FALLBACK_FOLDERS;
 
   async function act(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox") {
@@ -255,14 +298,14 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
         <div className="organizer-list">{savedSearches.map(item=><div className="organizer-row" key={item.id}><button className="folder" onClick={()=>onUseSavedSearch(item)}><Icon name="search" size={15}/><span>{item.name}</span></button><button className="organizer-delete" aria-label={`Excluir pesquisa ${item.name}`} onClick={()=>onDeleteSavedSearch(item)}><Icon name="x" size={12}/></button></div>)}</div>
       </>}
       <div className="group-title"><span>CATEGORIAS</span><button className="group-add" aria-label="Nova categoria" onClick={onCreateCategory}><Icon name="plus" size={13}/></button></div>
-      <div className="organizer-list">{categories.map(category=><div className="organizer-row" key={category.id}><button className="folder" onClick={()=>onUseSavedSearch({id:category.id,name:category.name,query:`category:"${category.name}"`})}><i className="category-dot" style={{background:category.color}}/><span>{category.name}</span></button><button className="organizer-delete" aria-label={`Excluir categoria ${category.name}`} onClick={()=>onDeleteCategory(category)}><Icon name="x" size={12}/></button></div>)}</div>
+      <div className="organizer-list">{categories.map(category=><div className="organizer-row category-organizer-row" key={category.id}><button className="folder" onClick={()=>onUseSavedSearch({id:category.id,name:category.name,query:`category:"${category.name}"`})}><i className="category-dot" style={{background:category.color}}/><span>{category.name}</span></button><div className="folder-actions"><button className="organizer-delete folder-edit" aria-label={`Editar categoria ${category.name}`} onClick={()=>onEditCategory(category)}><Icon name="settings" size={12}/></button><button className="organizer-delete" aria-label={`Excluir categoria ${category.name}`} onClick={()=>onDeleteCategory(category)}><Icon name="x" size={12}/></button></div></div>)}</div>
       <div className="local-card"><div><Icon name="cloud" size={18}/></div><span><b>Local-first</b><small>Fila offline protegida</small></span></div>
     </aside>
 
     <section className="message-pane">
       <header className="pane-header">
         <div><span className="eyebrow">{folder.name.toUpperCase()}</span><h2>{folder.name}</h2></div>
-        <div className="pane-tools"><select className="mail-sort" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Ordenar mensagens"><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="sender">Remetente</option><option value="subject">Assunto</option><option value="unread">Não lidas primeiro</option></select><div className="icon-group"><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div></div>
+        <div className="pane-tools">{onImportEml&&activeAccount&&<button className="icon-button" title="Importar EML" aria-label="Importar EML" onClick={onImportEml}><Icon name="upload" size={16}/></button>}<select className="mail-sort" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Ordenar mensagens"><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="sender">Remetente</option><option value="subject">Assunto</option><option value="unread">Não lidas primeiro</option></select><div className="icon-group"><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div></div>
       </header>
       <div className="segmented mail-filters">
         <button className={quickFilter==="all"?"active":""} onClick={()=>setQuickFilter("all")}>Todas</button>
@@ -304,7 +347,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
         {categories.length>0&&<div className="message-categories">{categories.map(category=>{const active=selected.categories.includes(category.name);return <button key={category.id} className={active?"category-chip active":"category-chip"} onClick={()=>onToggleCategory(selected,category)}><i style={{background:category.color}}/>{category.name}</button>;})}</div>}
         {activeAccount&&onMoveToFolder&&folders.length>1&&<div className="move-folder-row"><span>Mover para</span><select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onMoveToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Escolher pasta...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select></div>}
         <article className="mail-body">{selected.bodyText||selected.preview}</article>
-        <div className="reply-actions"><button className="secondary" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={15}/> Responder</button><button className="secondary" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people" size={15}/> Responder a todos</button><button className="secondary" onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward" size={15}/> Encaminhar</button><button className="secondary" onClick={()=>onCreateTaskFromMessage(selected)}><Icon name="check" size={15}/> Criar tarefa</button></div>
+        <div className="reply-actions"><button className="secondary" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={15}/> Responder</button><button className="secondary" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people" size={15}/> Responder a todos</button><button className="secondary" onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward" size={15}/> Encaminhar</button><button className="secondary" onClick={()=>onCreateTaskFromMessage(selected)}><Icon name="check" size={15}/> Criar tarefa</button><button className="secondary" onClick={()=>onCreateEventFromMessage(selected)}><Icon name="calendar" size={15}/> Criar evento</button><button className="secondary" onClick={()=>onExportEml(selected)}><Icon name="download" size={15}/> Salvar EML</button></div>
       </> : <div className="reading-empty"><BrandLogo variant="hero"/><span className="eyebrow">SEVEN MAIL</span><h2>Selecione uma mensagem</h2><p>Leia, responda e organize sem sair da mesma tela.</p></div>}
     </section>
   </div>;
