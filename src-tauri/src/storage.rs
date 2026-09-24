@@ -726,6 +726,46 @@ pub fn move_message_to_folder(
     Ok(message)
 }
 
+fn overwrite_and_remove(path: &Path) -> Result<(), String> {
+    if path.is_dir() {
+        for entry in fs::read_dir(path).map_err(io_error)? {
+            overwrite_and_remove(&entry.map_err(io_error)?.path())?;
+        }
+        fs::remove_dir(path).map_err(io_error)?;
+        return Ok(());
+    }
+
+    if path.is_file() {
+        let len = fs::metadata(path).map_err(io_error)?.len();
+        let mut file = fs::OpenOptions::new().write(true).open(path).map_err(io_error)?;
+        let zeros = vec![0u8; 64 * 1024];
+        let mut remaining = len;
+        while remaining > 0 {
+            let size = usize::try_from(remaining.min(zeros.len() as u64)).map_err(|error| error.to_string())?;
+            file.write_all(&zeros[..size]).map_err(io_error)?;
+            remaining -= size as u64;
+        }
+        file.sync_all().map_err(io_error)?;
+        drop(file);
+        fs::remove_file(path).map_err(io_error)?;
+    }
+    Ok(())
+}
+
+pub fn secure_clear_local_data(paths: &AppPaths) -> Result<(), String> {
+    for target in [
+        paths.cache.clone(),
+        paths.queue.clone(),
+        paths.root.join("state"),
+    ] {
+        if target.exists() {
+            overwrite_and_remove(&target)?;
+        }
+    }
+    paths.ensure()?;
+    Ok(())
+}
+
 pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
     if paths.message_cache.exists() {
         fs::remove_dir_all(&paths.message_cache).map_err(io_error)?;
