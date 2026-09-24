@@ -126,6 +126,7 @@ export function eventInvitationToIcs(
   organizer: string,
   method: "REQUEST" | "CANCEL" | "REPLY",
   response?: CalendarEvent["attendeeResponse"],
+  responder?: string,
 ): string {
   const target=method==="CANCEL"?{...event,status:"cancelled" as const}:event;
   const lines=[
@@ -136,8 +137,8 @@ export function eventInvitationToIcs(
     "METHOD:"+method,
     ...eventIcsLines(target,organizer),
   ];
-  if(method==="REPLY"&&response){
-    const attendee="ATTENDEE;PARTSTAT="+response.toUpperCase().replace("-","")+";RSVP=FALSE:mailto:"+organizer;
+  if(method==="REPLY"&&response&&responder){
+    const attendee="ATTENDEE;PARTSTAT="+response.toUpperCase().replace("-","")+";RSVP=FALSE:mailto:"+responder;
     const endIndex=lines.lastIndexOf("END:VEVENT");
     if(endIndex>=0) lines.splice(endIndex,0,attendee);
   }
