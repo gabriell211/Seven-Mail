@@ -203,13 +203,21 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onCreateTaskFromMessage,onCreateCategory,onDeleteCategory,onToggleCategory,onUseSavedSearch,onDeleteSavedSearch,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,markReadDelayMs,readingPane,previewLines}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"forward")=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateCategory:()=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;markReadDelayMs:number;readingPane:AppSettings["readingPane"];previewLines:AppSettings["previewLines"]}) {
+function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onCreateTaskFromMessage,onCreateCategory,onDeleteCategory,onToggleCategory,onUseSavedSearch,onDeleteSavedSearch,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,markReadDelayMs,readingPane,previewLines}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateCategory:()=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;markReadDelayMs:number;readingPane:AppSettings["readingPane"];previewLines:AppSettings["previewLines"]}) {
   const [selectedId,setSelectedId] = useState<string>();
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
+  const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread">("newest");
   const selected = messages.find(m=>m.id===selectedId);
-  const folderMessages = messages
-    .filter(message=>message.folder===folder.name && matchesQuickFilter(message,quickFilter))
-    .sort((a,b)=>Number(b.isPinned)-Number(a.isPinned)||b.receivedAt.localeCompare(a.receivedAt));
+  const folderMessages = [...messages.filter(message=>message.folder===folder.name && matchesQuickFilter(message,quickFilter))]
+    .sort((a,b)=>{
+      const pinned = Number(b.isPinned)-Number(a.isPinned);
+      if (pinned!==0) return pinned;
+      if (sort==="oldest") return a.receivedAt.localeCompare(b.receivedAt);
+      if (sort==="sender") return (a.from.name||a.from.email).localeCompare(b.from.name||b.from.email);
+      if (sort==="subject") return a.subject.localeCompare(b.subject);
+      if (sort==="unread") return Number(a.isRead)-Number(b.isRead)||b.receivedAt.localeCompare(a.receivedAt);
+      return b.receivedAt.localeCompare(a.receivedAt);
+    });
 
   useEffect(()=>{
     if (focusMessageId && messages.some((message)=>message.id===focusMessageId)) {
@@ -249,7 +257,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
     <section className="message-pane">
       <header className="pane-header">
         <div><span className="eyebrow">{folder.name.toUpperCase()}</span><h2>{folder.name}</h2></div>
-        <div className="icon-group"><button className="icon-button"><Icon name="filter"/></button><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div>
+        <div className="pane-tools"><select className="mail-sort" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Ordenar mensagens"><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="sender">Remetente</option><option value="subject">Assunto</option><option value="unread">Não lidas primeiro</option></select><div className="icon-group"><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div></div>
       </header>
       <div className="segmented mail-filters">
         <button className={quickFilter==="all"?"active":""} onClick={()=>setQuickFilter("all")}>Todas</button>
@@ -281,14 +289,16 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
   <button className="icon-button" title={selected.isFlagged?"Remover sinalização":"Sinalizar"} onClick={()=>void act(selected.id,selected.isFlagged?"unflag":"flag")}><Icon name="flag"/></button>
   <button className="icon-button" title="Arquivar" onClick={()=>void act(selected.id,"archive")}><Icon name="archive"/></button>
   <button className="icon-button" title="Excluir" onClick={()=>void act(selected.id,"delete")}><Icon name="trash"/></button>
+  <button className="icon-button" title={selected.isRead?"Marcar como não lida":"Marcar como lida"} onClick={()=>void act(selected.id,selected.isRead?"unread":"read")}><Icon name="mail"/></button>
   <button className="icon-button" title="Responder" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply"/></button>
+  <button className="icon-button" title="Responder a todos" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people"/></button>
   <button className="icon-button" title="Encaminhar" onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward"/></button>
   <button className="icon-button" title="Mais opções"><Icon name="more"/></button>
 </div></header>
         <div className="sender"><span className="avatar big">{(selected.from.name||selected.from.email)[0].toUpperCase()}</span><div><b>{selected.from.name||selected.from.email}</b><small>{selected.from.email}</small></div><time>{new Date(selected.receivedAt).toLocaleString()}</time></div>
         {categories.length>0&&<div className="message-categories">{categories.map(category=>{const active=selected.categories.includes(category.name);return <button key={category.id} className={active?"category-chip active":"category-chip"} onClick={()=>onToggleCategory(selected,category)}><i style={{background:category.color}}/>{category.name}</button>;})}</div>}
         <article className="mail-body">{selected.bodyText||selected.preview}</article>
-        <div className="reply-actions"><button className="secondary" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={15}/> Responder</button><button className="secondary" onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward" size={15}/> Encaminhar</button><button className="secondary" onClick={()=>onCreateTaskFromMessage(selected)}><Icon name="check" size={15}/> Criar tarefa</button></div>
+        <div className="reply-actions"><button className="secondary" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={15}/> Responder</button><button className="secondary" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people" size={15}/> Responder a todos</button><button className="secondary" onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward" size={15}/> Encaminhar</button><button className="secondary" onClick={()=>onCreateTaskFromMessage(selected)}><Icon name="check" size={15}/> Criar tarefa</button></div>
       </> : <div className="reading-empty"><Logo/><span className="eyebrow">SEVEN MAIL</span><h2>Selecione uma mensagem</h2><p>Leia, responda e organize sem sair da mesma tela.</p></div>}
     </section>
   </div>;
@@ -514,7 +524,7 @@ export default function App() {
     setComposeOpen(true);
   }
 
-  function composeFromMessage(message: MailMessage, mode: "reply" | "forward") {
+  function composeFromMessage(message: MailMessage, mode: "reply" | "replyAll" | "forward") {
     const originalText = message.bodyText?.trim() || message.preview.trim();
     const quoted = originalText
       ? originalText.split("\n").map((line)=>`> ${line}`).join("\n")
@@ -523,10 +533,15 @@ export default function App() {
     const draft: ComposeDraft = {
       id: crypto.randomUUID(),
       accountId: message.accountId,
-      to: mode==="reply" ? message.from.email : "",
-      cc: "",
+      to: mode==="forward" ? "" : message.from.email,
+      cc: mode==="replyAll"
+        ? message.to
+            .map((recipient)=>recipient.email)
+            .filter((email)=>email.toLocaleLowerCase("pt-BR")!==message.from.email.toLocaleLowerCase("pt-BR")&&email.toLocaleLowerCase("pt-BR")!==(accounts.find((account)=>account.id===message.accountId)?.email??"").toLocaleLowerCase("pt-BR"))
+            .join(", ")
+        : "",
       bcc: "",
-      subject: mode==="reply"
+      subject: mode!=="forward"
         ? (/^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject || "(sem assunto)"}`)
         : (/^(enc|fw|fwd):/i.test(message.subject) ? message.subject : `Enc: ${message.subject || "(sem assunto)"}`),
       bodyText: `\n\nEm ${new Date(message.receivedAt).toLocaleString()}, ${message.from.name || message.from.email} escreveu:\n${quoted}`,
