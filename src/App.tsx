@@ -523,7 +523,7 @@ export default function App() {
         {section==="tasks"&&<PersistentTasksView/>}
         {section==="notes"&&<PersistentNotesView query={search}/>}
         {section==="rules"&&<PersistentRulesView/>}
-        {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime}/>}
+        {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime} accounts={accounts} onAccountsChange={(next)=>{setAccounts(next);if(!next.some((account)=>account.id===activeId)){setActiveId(next.find((account)=>account.isDefault)?.id??next[0]?.id);}}}/>}
       </div>
     </main>
     {composeOpen&&<Composer accounts={accounts} initialAccountId={activeAccount?.id} settings={settings} onClose={()=>setComposeOpen(false)} onQueued={handleQueuedSend}/>}
