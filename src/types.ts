@@ -40,6 +40,7 @@ export interface AccountProfile {
   aliases?: string[];
   isSharedMailbox?: boolean;
   sharedOwnerAccountId?: string;
+  sharedOwnerEmail?: string;
   sharedMode?: "resource" | "account";
   sharedPermissions?: Array<"read" | "edit" | "calendar" | "manage-calendar" | "send">;
   sendMode?: "as" | "on-behalf";
