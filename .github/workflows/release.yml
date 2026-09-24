@@ -11,13 +11,16 @@ permissions:
 
 jobs:
   release:
+    name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-latest
+          - name: Windows installers
+            platform: windows-latest
             bundles: msi,nsis
-          - platform: ubuntu-22.04
+          - name: Linux installers
+            platform: ubuntu-22.04
             bundles: deb,appimage
 
     runs-on: ${{ matrix.platform }}
@@ -36,6 +39,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: npm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -48,14 +52,32 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build installers
+      - name: Generate native icons
+        run: npm run icons
+
+      - name: Validate frontend
+        run: npm run build
+
+      - name: Validate Rust
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Build and publish installers
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
           releaseName: "Seven Mail v__VERSION__"
-          releaseBody: "Instaladores oficiais do Seven Mail para Windows e Linux."
+          releaseBody: |
+            Instaladores oficiais do Seven Mail.
+
+            Windows:
+            - MSI
+            - NSIS (.exe)
+
+            Linux:
+            - DEB
+            - AppImage
           releaseDraft: false
           prerelease: false
           args: --bundles ${{ matrix.bundles }}
