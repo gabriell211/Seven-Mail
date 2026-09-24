@@ -1,5 +1,6 @@
 use crate::{
     credentials,
+    local_crypto,
     models::{AccountProfile, ProviderSettings, QueueOperation, QueuedAttachment},
 };
 use lettre::{
@@ -284,7 +285,7 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
 
     let mut mixed = MultiPart::mixed().multipart(body_part);
     for attachment in attachments {
-        let bytes = fs::read(&attachment.path)
+        let bytes = local_crypto::read(std::path::Path::new(&attachment.path))
             .map_err(|error| format!("Falha ao ler o anexo {}: {error}", attachment.name))?;
         let content_type: ContentType = attachment_mime(&attachment.name)
             .parse()
