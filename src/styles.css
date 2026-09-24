@@ -115,3 +115,23 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
   .entity-form label.full,.entity-form label.inline-check,.danger-link{grid-column:1}
   .contact-grid{grid-template-columns:1fr}
 }
+
+
+/* Neon cloud account */
+.cloud-settings{align-items:flex-start}
+.cloud-panel{width:min(430px,100%);display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--border);background:var(--surface-2);border-radius:14px}
+.cloud-panel input{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:10px;padding:10px 12px;outline:none}
+.cloud-panel input:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 15%,transparent)}
+.cloud-tabs{display:grid;grid-template-columns:1fr 1fr;background:var(--surface);border-radius:10px;padding:3px;border:1px solid var(--border)}
+.cloud-tabs button{border:0;background:transparent;color:var(--muted);padding:8px;border-radius:8px;cursor:pointer}
+.cloud-tabs button.active{background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--accent);font-weight:700}
+.cloud-status,.cloud-identity{display:flex;align-items:center;gap:10px}
+.cloud-status{width:min(430px,100%);border:1px solid var(--border);background:var(--surface-2);border-radius:14px;padding:14px}
+.cloud-status span,.cloud-identity>span:nth-child(2){display:flex;flex-direction:column}
+.cloud-status small,.cloud-identity small{color:var(--muted);margin-top:3px}
+.cloud-status.warning{color:#b37a22}
+.cloud-identity{padding-bottom:4px}
+.cloud-identity .avatar{flex:none}
+.cloud-ok{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11px;color:#2b9b72}
+.cloud-ok i{width:7px;height:7px;border-radius:50%;background:#2b9b72}
+.cloud-error{color:#d95656}
