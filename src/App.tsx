@@ -57,7 +57,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   cleanupSenders: {},
   autoReplyEnabled: false,
   autoReplySubject: "Resposta automática",
-  autoReplyBody: ""
+  autoReplyBody: "",
+  autoForwardEnabled: false,
+  autoForwardAddress: ""
 };
 
 const NAV: Array<{id:AppSection;label:string;icon:IconName}> = [
@@ -252,7 +254,7 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onForwardAsAttachment,onResendMessage,onCreateTaskFromMessage,onCreateEventFromMessage,onImportEml,onExportEml,onCreateCategory,onEditCategory,onDeleteCategory,onToggleCategory,onToggleCategoryFavorite,onUseSavedSearch,onDeleteSavedSearch,onCreateFolder,onRenameFolder,onDeleteFolder,onMoveToFolder,onCopyToFolder,onToggleFolderFavorite,onReorderFolder,onUpdateMetadata,onIgnoreConversation,onBlockSender,onTrustSender,onReleaseSender,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,settings}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onForwardAsAttachment:(message:MailMessage)=>void;onResendMessage:(message:MailMessage)=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateEventFromMessage:(message:MailMessage)=>void;onImportEml?:()=>void;onExportEml:(message:MailMessage)=>void;onCreateCategory:()=>void;onEditCategory:(category:CategoryItem)=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onToggleCategoryFavorite:(category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;onCreateFolder?:()=>void;onRenameFolder?:(folder:MailFolder)=>void;onDeleteFolder?:(folder:MailFolder)=>void;onMoveToFolder?:(message:MailMessage,folder:MailFolder)=>void;onCopyToFolder?:(message:MailMessage,folder:MailFolder)=>void;onToggleFolderFavorite?:(folder:MailFolder)=>void;onReorderFolder?:(folder:MailFolder,direction:-1|1)=>void;onUpdateMetadata:(message:MailMessage,metadata:{importance?:"low"|"normal"|"high";snoozedUntil?:string;isMuted?:boolean;isPhishing?:boolean;isImportant?:boolean})=>void;onIgnoreConversation:(message:MailMessage)=>void;onBlockSender:(email:string)=>void;onTrustSender:(email:string)=>void;onReleaseSender:(email:string)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;settings:AppSettings}) {
+function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onForwardAsAttachment,onResendMessage,onCreateTaskFromMessage,onCreateEventFromMessage,onImportEml,onExportEml,onCreateCategory,onEditCategory,onDeleteCategory,onToggleCategory,onToggleCategoryFavorite,onUseSavedSearch,onDeleteSavedSearch,onCreateFolder,onRenameFolder,onDeleteFolder,onMoveToFolder,onCopyToFolder,onToggleFolderFavorite,onReorderFolder,onUpdateMetadata,onIgnoreConversation,onSetSenderCleanup,onBlockSender,onTrustSender,onReleaseSender,focusMessageId,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,settings}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onForwardAsAttachment:(message:MailMessage)=>void;onResendMessage:(message:MailMessage)=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateEventFromMessage:(message:MailMessage)=>void;onImportEml?:()=>void;onExportEml:(message:MailMessage)=>void;onCreateCategory:()=>void;onEditCategory:(category:CategoryItem)=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onToggleCategoryFavorite:(category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;onCreateFolder?:()=>void;onRenameFolder?:(folder:MailFolder)=>void;onDeleteFolder?:(folder:MailFolder)=>void;onMoveToFolder?:(message:MailMessage,folder:MailFolder)=>void;onCopyToFolder?:(message:MailMessage,folder:MailFolder)=>void;onToggleFolderFavorite?:(folder:MailFolder)=>void;onReorderFolder?:(folder:MailFolder,direction:-1|1)=>void;onUpdateMetadata:(message:MailMessage,metadata:{importance?:"low"|"normal"|"high";snoozedUntil?:string;isMuted?:boolean;isPhishing?:boolean;isImportant?:boolean})=>void;onIgnoreConversation:(message:MailMessage)=>void;onSetSenderCleanup:(message:MailMessage)=>void;onBlockSender:(email:string)=>void;onTrustSender:(email:string)=>void;onReleaseSender:(email:string)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;settings:AppSettings}) {
   const [selectedId,setSelectedId] = useState<string>();
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
   const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread"|"size"|"status">("newest");
@@ -521,6 +523,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
           <button className={selected.isImportant?"secondary active":"secondary"} onClick={()=>onUpdateMetadata(selected,{isImportant:!selected.isImportant})}><Icon name="star" size={15}/> Importante</button>
           <button className={selected.isMuted?"secondary active":"secondary"} onClick={()=>onUpdateMetadata(selected,{isMuted:!selected.isMuted})}><Icon name="moon" size={15}/> {selected.isMuted?"Liberar conversa":"Silenciar"}</button>
           <button className="secondary danger-lite" onClick={()=>onIgnoreConversation(selected)}><Icon name="trash" size={15}/> Ignorar conversa</button>
+          <button className="secondary" onClick={()=>onSetSenderCleanup(selected)}><Icon name="archive" size={15}/> Limpeza automática</button>
           <select className="priority-select" value={selected.importance??"normal"} onChange={e=>onUpdateMetadata(selected,{importance:e.target.value as "low"|"normal"|"high"})}><option value="low">Prioridade baixa</option><option value="normal">Prioridade normal</option><option value="high">Prioridade alta</option></select>
           <button className="secondary" onClick={()=>setDetails({message:selected,tab:"attachments"})}><Icon name="paperclip" size={15}/> Anexos</button>
           <button className="secondary" onClick={()=>setDetails({message:selected,tab:"headers"})}><Icon name="mail" size={15}/> Cabeçalhos</button>
@@ -644,6 +647,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
     <div className="settings-row"><div><h3>Lista de mensagens</h3><p>Caixa prioritária, paginação e comportamento após ações.</p></div><div className="toggles"><label><input type="checkbox" checked={settings.focusInboxEnabled!==false} onChange={e=>set("focusInboxEnabled",e.target.checked)}/> Usar Prioritária e Outros</label><label><input type="checkbox" checked={settings.showSenderPhotos!==false} onChange={e=>set("showSenderPhotos",e.target.checked)}/> Mostrar fotos/iniciais dos remetentes</label><label><input type="checkbox" checked={settings.openNextAfterDelete!==false} onChange={e=>set("openNextAfterDelete",e.target.checked)}/> Abrir próxima mensagem após mover/excluir</label><label><span>Mensagens por página</span><select value={settings.mailPageSize??50} onChange={e=>set("mailPageSize",Number(e.target.value) as AppSettings["mailPageSize"])}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label><label><span>Limite por anexo</span><select value={settings.maxAttachmentMb??25} onChange={e=>set("maxAttachmentMb",Number(e.target.value) as AppSettings["maxAttachmentMb"])}><option value={10}>10 MB</option><option value={25}>25 MB</option><option value={50}>50 MB</option><option value={100}>100 MB</option></select></label></div></div>
     <div className="settings-row"><div><h3>Envio</h3><p>Defina o atraso usado para desfazer um envio e a confirmação antes de colocar a mensagem na fila.</p></div><div className="send-settings"><select value={settings.sendDelaySeconds} onChange={e=>set("sendDelaySeconds",Number(e.target.value) as AppSettings["sendDelaySeconds"])}><option value={0}>Imediato</option><option value={5}>Desfazer por 5 s</option><option value={10}>Desfazer por 10 s</option><option value={20}>Desfazer por 20 s</option><option value={30}>Desfazer por 30 s</option></select><label><input type="checkbox" checked={settings.confirmBeforeSend} onChange={e=>set("confirmBeforeSend",e.target.checked)}/> Confirmar antes de enviar</label></div></div>
     <div className="settings-row"><div><h3>Sincronização e notificações</h3><p>Atualização automática da caixa de entrada em segundo plano.</p></div><div className="send-settings"><select value={settings.syncIntervalMinutes} onChange={e=>set("syncIntervalMinutes",Number(e.target.value) as AppSettings["syncIntervalMinutes"])}><option value={1}>A cada 1 minuto</option><option value={5}>A cada 5 minutos</option><option value={10}>A cada 10 minutos</option><option value={15}>A cada 15 minutos</option><option value={30}>A cada 30 minutos</option></select><label><input type="checkbox" checked={settings.notificationsEnabled} onChange={e=>set("notificationsEnabled",e.target.checked)}/> Notificações nativas de novas mensagens</label><label><input type="checkbox" checked={Boolean(settings.quietHoursEnabled)} onChange={e=>set("quietHoursEnabled",e.target.checked)}/> Horário silencioso</label>{settings.quietHoursEnabled&&<div className="quiet-hours"><label><span>De</span><input type="time" value={settings.quietHoursStart??"22:00"} onChange={e=>set("quietHoursStart",e.target.value)}/></label><label><span>Até</span><input type="time" value={settings.quietHoursEnd??"07:00"} onChange={e=>set("quietHoursEnd",e.target.value)}/></label></div>}</div></div>
+    <div className="settings-row"><div><h3>Ausência e encaminhamento</h3><p>Automação local executada durante sincronizações enquanto o Seven Mail estiver em execução.</p></div><div className="send-settings"><label><input type="checkbox" checked={Boolean(settings.autoReplyEnabled)} onChange={e=>set("autoReplyEnabled",e.target.checked)}/> Resposta automática</label>{settings.autoReplyEnabled&&<><input value={settings.autoReplySubject??""} onChange={e=>set("autoReplySubject",e.target.value)} placeholder="Assunto"/><textarea value={settings.autoReplyBody??""} onChange={e=>set("autoReplyBody",e.target.value)} placeholder="Mensagem de ausência"/><div className="quiet-hours"><label><span>Início</span><input type="datetime-local" value={settings.autoReplyStart?.slice(0,16)??""} onChange={e=>set("autoReplyStart",e.target.value||undefined)}/></label><label><span>Fim</span><input type="datetime-local" value={settings.autoReplyEnd?.slice(0,16)??""} onChange={e=>set("autoReplyEnd",e.target.value||undefined)}/></label></div></>}<label><input type="checkbox" checked={Boolean(settings.autoForwardEnabled)} onChange={e=>set("autoForwardEnabled",e.target.checked)}/> Encaminhamento automático</label>{settings.autoForwardEnabled&&<input type="email" value={settings.autoForwardAddress??""} onChange={e=>set("autoForwardAddress",e.target.value)} placeholder="destino@dominio.com"/>}</div></div>
     <div className="settings-row"><div><h3>Dados locais</h3><p>Cache pode ser limpo sem tocar na fila de saída. Backup inclui workspace, preferências e metadados das contas; senhas ficam somente no Keyring.</p></div><div className="paths"><span><b>Dados</b>{runtime?.dataDir||"Carregando..."}</span><span><b>Cache</b>{runtime?.cacheDir||"Carregando..."}</span><span><b>Fila</b>{runtime?.queueDir||"Carregando..."}</span><div className="data-actions"><button className="secondary" onClick={()=>void exportBackup()}><Icon name="download" size={14}/> Exportar backup</button><button className="secondary" onClick={()=>void importBackup()}><Icon name="upload" size={14}/> Restaurar backup</button><button className="secondary" onClick={()=>bridge.clearCache()}>Limpar apenas cache</button></div></div></div>
     <SenderPoliciesPanel settings={settings} onChange={onChange}/>
     <ProfilesPanel accounts={accounts} profiles={profiles} activeProfileId={activeProfileId} onActivate={onActivateProfile} onSave={onSaveProfile} onDelete={onDeleteProfile}/>
@@ -810,14 +814,141 @@ export default function App() {
   async function applySenderPolicies(candidates: MailMessage[]): Promise<void> {
     const blockedSenders=new Set((settings.blockedSenders??[]).map((value)=>value.toLocaleLowerCase("pt-BR")));
     const blockedDomains=new Set((settings.blockedDomains??[]).map((value)=>value.toLocaleLowerCase("pt-BR")));
+    const ignored=new Set(settings.ignoredConversationKeys??[]);
+    const cleanup=settings.cleanupSenders??{};
+    const touched=new Set<string>();
+
     for(const message of candidates){
       if(message.folder!=="Caixa de entrada") continue;
       const email=message.from.email.toLocaleLowerCase("pt-BR");
       const domain=email.split("@")[1]??"";
-      if(!blockedSenders.has(email)&&!blockedDomains.has(domain)) continue;
-      await bridge.messageAction(message.accountId,message.id,"spam").catch(()=>undefined);
-      void bridge.flushMailActions(message.accountId).catch(()=>undefined);
+
+      if(blockedSenders.has(email)||blockedDomains.has(domain)){
+        await bridge.messageAction(message.accountId,message.id,"spam").catch(()=>undefined);
+        touched.add(message.accountId);
+        continue;
+      }
+
+      if(ignored.has(conversationKey(message.subject))){
+        await bridge.updateMessageMetadata(message.accountId,message.id,{isMuted:true}).catch(()=>undefined);
+        await bridge.messageAction(message.accountId,message.id,"delete").catch(()=>undefined);
+        touched.add(message.accountId);
+        continue;
+      }
+
+      const days=cleanup[email];
+      if(days&&days>0){
+        const received=new Date(message.receivedAt).getTime();
+        if(Number.isFinite(received)&&Date.now()-received>=days*86_400_000){
+          await bridge.messageAction(message.accountId,message.id,"delete").catch(()=>undefined);
+          touched.add(message.accountId);
+        }
+      }
     }
+
+    for(const accountId of touched) void bridge.flushMailActions(accountId).catch(()=>undefined);
+  }
+
+  function setSenderCleanup(message: MailMessage) {
+    const email=message.from.email.toLocaleLowerCase("pt-BR");
+    const current=settings.cleanupSenders?.[email];
+    const raw=window.prompt(
+      `Excluir automaticamente mensagens de ${email} após quantos dias? Digite 0 para desativar.`,
+      String(current??30),
+    );
+    if(raw===null) return;
+    const days=Math.max(0,Math.min(3650,Math.round(Number(raw))));
+    if(!Number.isFinite(days)) return;
+    setSettings((value)=>{
+      const next={...(value.cleanupSenders??{})};
+      if(days===0) delete next[email];
+      else next[email]=days;
+      return {...value,cleanupSenders:next};
+    });
+  }
+
+  function automaticWindowActive(): boolean {
+    const now=Date.now();
+    const start=settings.autoReplyStart?new Date(settings.autoReplyStart).getTime():NaN;
+    const end=settings.autoReplyEnd?new Date(settings.autoReplyEnd).getTime():NaN;
+    if(Number.isFinite(start)&&now<start) return false;
+    if(Number.isFinite(end)&&now>end) return false;
+    return true;
+  }
+
+  async function applyFreshAutomations(fresh: MailMessage[], account: AccountProfile) {
+    if(fresh.length===0) return;
+    const own=new Set([account.email,...(account.aliases??[])].map((value)=>value.toLocaleLowerCase("pt-BR")));
+    const forwardAddress=(settings.autoForwardAddress??"").trim();
+
+    for(const message of fresh){
+      const sender=message.from.email.toLocaleLowerCase("pt-BR");
+      if(own.has(sender)) continue;
+
+      const markers=new Set(message.appliedRuleIds??[]);
+      let updated=message;
+
+      if(settings.autoReplyEnabled&&settings.autoReplyBody?.trim()&&automaticWindowActive()&&!markers.has("__auto-reply__")&&!/^(no-?reply|mailer-daemon)@/i.test(sender)){
+        const id=crypto.randomUUID();
+        await bridge.queueOperation({
+          id,
+          kind:"send",
+          accountId:account.id,
+          createdAt:new Date().toISOString(),
+          attempts:0,
+          payload:{
+            fromAddress:account.email,
+            to:message.from.email,
+            cc:"",
+            bcc:"",
+            subject:/^re:/i.test(message.subject)?message.subject:`Re: ${settings.autoReplySubject?.trim()||message.subject||"Resposta automática"}`,
+            bodyText:settings.autoReplyBody.trim(),
+            bodyHtml:"",
+            attachments:[],
+            priority:"normal",
+            requestReadReceipt:false,
+            requestDeliveryReceipt:false,
+            sendAt:new Date().toISOString(),
+          },
+        });
+        markers.add("__auto-reply__");
+      }
+
+      if(settings.autoForwardEnabled&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forwardAddress)&&!markers.has("__auto-forward__")){
+        const id=crypto.randomUUID();
+        const attachment=await bridge.stageMessageAsEml(id,message.accountId,message.id,safeExportName(message.subject,"mensagem")).catch(()=>null);
+        await bridge.queueOperation({
+          id,
+          kind:"send",
+          accountId:account.id,
+          createdAt:new Date().toISOString(),
+          attempts:0,
+          payload:{
+            fromAddress:account.email,
+            to:forwardAddress,
+            cc:"",
+            bcc:"",
+            subject:/^(enc|fw|fwd):/i.test(message.subject)?message.subject:`Enc: ${message.subject||"(sem assunto)"}`,
+            bodyText:`Encaminhado automaticamente pelo Seven Mail.\n\nDe: ${message.from.email}\nAssunto: ${message.subject}`,
+            bodyHtml:"",
+            attachments:attachment?[attachment]:[],
+            priority:message.importance??"normal",
+            requestReadReceipt:false,
+            requestDeliveryReceipt:false,
+            sendAt:new Date().toISOString(),
+          },
+        });
+        markers.add("__auto-forward__");
+      }
+
+      if(markers.size!==(message.appliedRuleIds??[]).length){
+        updated={...message,appliedRuleIds:[...markers]};
+        await bridge.cacheMessage(updated);
+        void pushCloudMessage(updated).catch(()=>undefined);
+      }
+    }
+
+    void bridge.flushOutbox().catch(()=>undefined);
   }
 
   async function createCategory() {
@@ -1544,7 +1675,7 @@ export default function App() {
     const run = async () => {
       if (!navigator.onLine || disposed) return;
 
-      for (const account of accounts) {
+      for (const account of profileAccounts) {
         if (disposed) break;
         try {
           const before = await bridge.listCachedMessages(account.id);
@@ -1559,6 +1690,8 @@ export default function App() {
           const fresh = before.length===0
             ? []
             : after.filter((message)=>message.folder==="Caixa de entrada"&&!known.has(message.id));
+
+          await applyFreshAutomations(fresh,account);
 
           if (!disposed && activeAccount?.id===account.id) {
             setMessages(after);
@@ -1592,9 +1725,8 @@ export default function App() {
   useEffect(()=>{
     const onKeyDown = (event: KeyboardEvent) => {
       const modifier = event.ctrlKey || event.metaKey;
-      if (!modifier) return;
 
-      if (event.key.toLowerCase()==="k") {
+      if (modifier && event.key.toLowerCase()==="k") {
         event.preventDefault();
         const input = document.querySelector<HTMLInputElement>(".search input");
         input?.focus();
@@ -1602,7 +1734,7 @@ export default function App() {
         return;
       }
 
-      if (event.key.toLowerCase()==="n" && profileAccounts.length>0) {
+      if (modifier && event.key.toLowerCase()==="n" && profileAccounts.length>0) {
         event.preventDefault();
         startNewMessage();
         return;
@@ -1854,7 +1986,7 @@ export default function App() {
         </div>}
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={profileAccounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onForwardAsAttachment={(message)=>void forwardAsAttachment(message)} onResendMessage={(message)=>void resendMessage(message)} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onIgnoreConversation={(message)=>void ignoreConversation(message)} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={settings}/>} 
+        {section==="mail"&&<MailView accounts={profileAccounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onForwardAsAttachment={(message)=>void forwardAsAttachment(message)} onResendMessage={(message)=>void resendMessage(message)} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onIgnoreConversation={(message)=>void ignoreConversation(message)} onSetSenderCleanup={setSenderCleanup} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={settings}/>} 
         {section==="calendar"&&<PersistentCalendarView/>}
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
