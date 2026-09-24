@@ -131,6 +131,78 @@ function notificationsMutedNow(settings: AppSettings): boolean {
     : minutes>=startMinutes||minutes<endMinutes;
 }
 
+function bytesToBase64(bytes:Uint8Array):string {
+  let binary="";
+  const chunk=0x8000;
+  for(let index=0;index<bytes.length;index+=chunk){
+    binary+=String.fromCharCode(...bytes.subarray(index,Math.min(index+chunk,bytes.length)));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value:string):Uint8Array {
+  const binary=atob(value);
+  const bytes=new Uint8Array(binary.length);
+  for(let index=0;index<binary.length;index+=1) bytes[index]=binary.charCodeAt(index);
+  return bytes;
+}
+
+async function deriveBackupKey(password:string,salt:Uint8Array):Promise<CryptoKey> {
+  const material=await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
+  return crypto.subtle.deriveKey(
+    {name:"PBKDF2",salt,iterations:250_000,hash:"SHA-256"},
+    material,
+    {name:"AES-GCM",length:256},
+    false,
+    ["encrypt","decrypt"],
+  );
+}
+
+async function encryptBackupJson(plain:string,password:string):Promise<string> {
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const key=await deriveBackupKey(password,salt);
+  const encrypted=await crypto.subtle.encrypt(
+    {name:"AES-GCM",iv},
+    key,
+    new TextEncoder().encode(plain),
+  );
+  return JSON.stringify({
+    format:"seven-mail-backup-encrypted",
+    version:1,
+    algorithm:"AES-256-GCM",
+    kdf:"PBKDF2-SHA256",
+    iterations:250000,
+    salt:bytesToBase64(salt),
+    iv:bytesToBase64(iv),
+    data:bytesToBase64(new Uint8Array(encrypted)),
+  },null,2);
+}
+
+async function decryptBackupJson(raw:string,password:string):Promise<string> {
+  const envelope=JSON.parse(raw) as {format?:string;salt?:string;iv?:string;data?:string};
+  if(envelope.format!=="seven-mail-backup-encrypted"||!envelope.salt||!envelope.iv||!envelope.data){
+    throw new Error("Backup criptografado inválido.");
+  }
+  const key=await deriveBackupKey(password,base64ToBytes(envelope.salt));
+  try{
+    const decrypted=await crypto.subtle.decrypt(
+      {name:"AES-GCM",iv:base64ToBytes(envelope.iv)},
+      key,
+      base64ToBytes(envelope.data),
+    );
+    return new TextDecoder().decode(decrypted);
+  }catch{
+    throw new Error("Senha incorreta ou backup corrompido.");
+  }
+}
+
 function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:AccountProfile)=>void}) {
   const [provider,setProvider] = useState<AccountProfile["provider"]>("gmail");
   const [displayName,setDisplayName] = useState("");
