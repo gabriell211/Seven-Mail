@@ -43,6 +43,7 @@ impl AppPaths {
         };
 
         paths.ensure()?;
+        local_crypto::migrate_local_data(&paths.root)?;
         Ok(paths)
     }
 
