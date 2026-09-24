@@ -462,6 +462,8 @@ pub fn apply_message_action(
         "unread" => message.is_read = false,
         "flag" => message.is_flagged = true,
         "unflag" => message.is_flagged = false,
+        "pin" => message.is_pinned = true,
+        "unpin" => message.is_pinned = false,
         "archive" => message.folder = "Arquivados".to_string(),
         "delete" => message.folder = "Lixeira".to_string(),
         "spam" => message.folder = "Spam".to_string(),
@@ -470,6 +472,10 @@ pub fn apply_message_action(
     }
 
     write_json(&path, &message)?;
+
+    if matches!(action, "pin" | "unpin") {
+        return Ok(message);
+    }
 
     let mailbox = message.remote_folder.clone().unwrap_or_else(|| "INBOX".to_string());
     let (kind, payload) = match action {
