@@ -460,6 +460,85 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
     await bridge.writeTextFile(destination, content);
   }
 
+  async function createContactGroup() {
+    const name=window.prompt("Nome do grupo/lista")?.trim();
+    if(!name) return;
+    await groups.save({id:crypto.randomUUID(),name});
+  }
+
+  function toggleContactSelection(id:string) {
+    setSelectedIds((current)=>current.includes(id)?current.filter((value)=>value!==id):[...current,id]);
+  }
+
+  async function deleteSelectedContacts() {
+    if(selectedIds.length===0||!window.confirm(`Excluir ${selectedIds.length} contato(s)?`)) return;
+    for(const id of selectedIds) await store.remove(id);
+    setSelectedIds([]);
+  }
+
+  async function categorizeSelectedContacts() {
+    if(selectedIds.length===0) return;
+    const category=window.prompt("Categoria para adicionar")?.trim();
+    if(!category) return;
+    for(const contact of store.items.filter((item)=>selectedIds.includes(item.id))){
+      await store.save({...contact,categories:[...new Set([...(contact.categories??[]),category])]});
+    }
+  }
+
+  function duplicateSets(): string[][] {
+    const byKey=new Map<string,Set<string>>();
+    for(const contact of store.items){
+      const values=[contact.email,contact.phone,...(contact.emails??[]),...(contact.phones??[])]
+        .map((value)=>value.trim().toLowerCase()).filter(Boolean);
+      for(const key of values){
+        const ids=byKey.get(key)??new Set<string>();
+        ids.add(contact.id);
+        byKey.set(key,ids);
+      }
+    }
+    const unique=new Map<string,string[]>();
+    for(const ids of byKey.values()){
+      if(ids.size<2) continue;
+      const list=[...ids].sort();
+      unique.set(list.join("|"),list);
+    }
+    return [...unique.values()];
+  }
+
+  async function mergeDuplicateContacts() {
+    const duplicates=duplicateSets();
+    if(duplicates.length===0){
+      window.alert("Nenhum duplicado por e-mail ou telefone foi encontrado.");
+      return;
+    }
+    let merged=0;
+    const used=new Set<string>();
+    for(const ids of duplicates){
+      const items=store.items.filter((item)=>ids.includes(item.id)&&!used.has(item.id));
+      if(items.length<2) continue;
+      const [base,...rest]=items;
+      const allEmails=[...new Set(items.flatMap((item)=>item.emails?.length?item.emails:[item.email]).filter(Boolean))];
+      const allPhones=[...new Set(items.flatMap((item)=>item.phones?.length?item.phones:[item.phone]).filter(Boolean))];
+      const next:ContactItem={
+        ...base,
+        email:allEmails[0]??base.email,
+        phone:allPhones[0]??base.phone,
+        emails:allEmails,
+        phones:allPhones,
+        addresses:[...new Set(items.flatMap((item)=>item.addresses??[]))],
+        categories:[...new Set(items.flatMap((item)=>item.categories??[]))],
+        groupIds:[...new Set(items.flatMap((item)=>item.groupIds??[]))],
+        importantDates:items.flatMap((item)=>item.importantDates??[]),
+        notes:items.map((item)=>item.notes).filter(Boolean).join("\n\n"),
+        favorite:items.some((item)=>item.favorite),
+      };
+      await store.save(next);
+      for(const item of rest){await store.remove(item.id);used.add(item.id);merged+=1;}
+      used.add(base.id);
+    }
+    window.alert(`${merged} contato(s) mesclado(s).`);
+  }
+
   return (
     <Workspace title="Contatos" eyebrow="PESSOAS" action="Novo contato" onAction={() => setEditing(fresh())}>
       <div className="workspace-toolbar">
