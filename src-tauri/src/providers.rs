@@ -68,12 +68,15 @@ pub fn settings_for(account: &AccountProfile) -> ProviderSettings {
 }
 
 fn smtp_transport(account: &AccountProfile) -> Result<SmtpTransport, String> {
+    if !account.can("send") {
+        return Err("A conta compartilhada não possui permissão de envio.".to_string());
+    }
     let settings = settings_for(account);
     let username = account.username.clone().unwrap_or_else(|| account.email.clone());
     let secret = if account.oauth_enabled {
         oauth::access_token(account)?
     } else {
-        credentials::load(&account.id)?
+        credentials::load(account.credential_account_id())?
     };
     let credentials = Credentials::new(username, secret);
 
