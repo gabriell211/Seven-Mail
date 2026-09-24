@@ -375,6 +375,18 @@ async fn apply_remote_action(
                 .await
                 .map_err(|error| format!("Falha ao confirmar sinalização: {error}"))?;
         }
+        "copy" => {
+            let mailbox = operation
+                .payload
+                .get("targetMailbox")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| "Destino IMAP não informado.".to_string())?;
+            session
+                .uid_copy(remote_id, mailbox)
+                .await
+                .map_err(|error| format!("Falha ao copiar mensagem: {error}"))?;
+        }
         "move" => {
             let explicit_mailbox = operation
                 .payload
