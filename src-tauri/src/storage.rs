@@ -677,7 +677,7 @@ pub fn apply_message_action(
 
     write_json(&path, &message)?;
 
-    if matches!(action, "pin" | "unpin") {
+    if matches!(action, "pin" | "unpin") || message.remote_folder.as_deref() == Some("POP3") {
         return Ok(message);
     }
 
