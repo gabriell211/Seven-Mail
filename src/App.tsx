@@ -201,7 +201,7 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,onOpenDraft,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];onOpenDraft:(draft:ComposeDraft)=>void;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean}) {
+function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,onOpenDraft,onComposeFromMessage,onFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing}:{accounts:AccountProfile[];messages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"forward")=>void;onFolderChange:(folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean}) {
   const [selectedId,setSelectedId] = useState<string>();
   const selected = messages.find(m=>m.id===selectedId);
   const folderMessages = messages.filter(message=>message.folder===folder.name);
@@ -257,13 +257,13 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,on
   <button className="icon-button" title={selected.isFlagged?"Remover sinalização":"Sinalizar"} onClick={()=>void act(selected.id,selected.isFlagged?"unflag":"flag")}><Icon name="flag"/></button>
   <button className="icon-button" title="Arquivar" onClick={()=>void act(selected.id,"archive")}><Icon name="archive"/></button>
   <button className="icon-button" title="Excluir" onClick={()=>void act(selected.id,"delete")}><Icon name="trash"/></button>
-  <button className="icon-button" title="Responder"><Icon name="reply"/></button>
-  <button className="icon-button" title="Encaminhar"><Icon name="forward"/></button>
+  <button className="icon-button" title="Responder" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply"/></button>
+  <button className="icon-button" title="Encaminhar" onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward"/></button>
   <button className="icon-button" title="Mais opções"><Icon name="more"/></button>
 </div></header>
         <div className="sender"><span className="avatar big">{(selected.from.name||selected.from.email)[0].toUpperCase()}</span><div><b>{selected.from.name||selected.from.email}</b><small>{selected.from.email}</small></div><time>{new Date(selected.receivedAt).toLocaleString()}</time></div>
         <article className="mail-body">{selected.bodyText||selected.preview}</article>
-        <div className="reply-actions"><button className="secondary"><Icon name="reply" size={15}/> Responder</button><button className="secondary"><Icon name="forward" size={15}/> Encaminhar</button></div>
+        <div className="reply-actions"><button className="secondary" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={15}/> Responder</button><button className="secondary" onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward" size={15}/> Encaminhar</button></div>
       </> : <div className="reading-empty"><Logo/><span className="eyebrow">SEVEN MAIL</span><h2>Selecione uma mensagem</h2><p>Leia, responda e organize sem sair da mesma tela.</p></div>}
     </section>
   </div>;
@@ -367,6 +367,31 @@ export default function App() {
   }
 
   function openDraft(draft: ComposeDraft) {
+    setDraftToOpen(draft);
+    setComposeOpen(true);
+  }
+
+  function composeFromMessage(message: MailMessage, mode: "reply" | "forward") {
+    const originalText = message.bodyText?.trim() || message.preview.trim();
+    const quoted = originalText
+      ? originalText.split("\n").map((line)=>`> ${line}`).join("\n")
+      : ">";
+
+    const draft: ComposeDraft = {
+      id: crypto.randomUUID(),
+      accountId: message.accountId,
+      to: mode==="reply" ? message.from.email : "",
+      cc: "",
+      bcc: "",
+      subject: mode==="reply"
+        ? (/^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject || "(sem assunto)"}`)
+        : (/^(enc|fw|fwd):/i.test(message.subject) ? message.subject : `Enc: ${message.subject || "(sem assunto)"}`),
+      bodyText: `\n\nEm ${new Date(message.receivedAt).toLocaleString()}, ${message.from.name || message.from.email} escreveu:\n${quoted}`,
+      bodyHtml: "",
+      mode: "plain",
+      attachments: [],
+    };
+
     setDraftToOpen(draft);
     setComposeOpen(true);
   }
@@ -661,7 +686,7 @@ export default function App() {
         <div className="top-actions"><span className={"sync "+syncState}><i/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} onOpenDraft={openDraft} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"}/>} 
+        {section==="mail"&&<MailView accounts={accounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"}/>} 
         {section==="calendar"&&<PersistentCalendarView/>}
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView/>}
