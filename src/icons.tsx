@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-export type IconName = "mail"|"calendar"|"people"|"check"|"note"|"rule"|"settings"|"search"|"plus"|"inbox"|"send"|"draft"|"archive"|"trash"|"spam"|"star"|"flag"|"paperclip"|"refresh"|"chevron"|"more"|"reply"|"forward"|"filter"|"cloud"|"shield"|"moon"|"sun"|"x"|"userplus"|"clock"|"lock"|"pin";
+export type IconName = "mail"|"calendar"|"people"|"check"|"note"|"rule"|"settings"|"search"|"plus"|"inbox"|"send"|"draft"|"archive"|"trash"|"spam"|"star"|"flag"|"paperclip"|"refresh"|"chevron"|"more"|"reply"|"forward"|"filter"|"cloud"|"shield"|"moon"|"sun"|"x"|"userplus"|"clock"|"lock"|"pin"|"upload"|"download";
 
 const paths: Record<IconName, string[]> = {
   mail:["M4 6h16v12H4z","m4 7 8 6 8-6"], calendar:["M5 5h14v14H5z","M8 3v4M16 3v4M5 9h14"],
@@ -21,7 +21,9 @@ const paths: Record<IconName, string[]> = {
   moon:["M20 15a8 8 0 0 1-11-11 9 9 0 1 0 11 11Z"], sun:["M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10Z","M12 2v2M12 20v2M2 12h2M20 12h2"],
   x:["M6 6l12 12M18 6 6 18"], userplus:["M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z","M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"],
   clock:["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z","M12 6v6l4 2"], lock:["M6 10h12v11H6z","M8 10V7a4 4 0 0 1 8 0v3"],
-  pin:["M12 17v5","M5 4h14","m8 4 1 7 3 2 3-2 1-7","M9 15h6"]
+  pin:["M12 17v5","M5 4h14","m8 4 1 7 3 2 3-2 1-7","M9 15h6"],
+  upload:["M12 16V4","m7 9 5-5 5 5","M5 20h14"],
+  download:["M12 4v12","m7-5 5 5 5-5","M5 20h14"]
 };
 
 export function Icon({name,size=20,...props}: SVGProps<SVGSVGElement> & {name:IconName;size?:number}) {
