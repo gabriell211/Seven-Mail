@@ -541,20 +541,27 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
 
   return (
     <Workspace title="Contatos" eyebrow="PESSOAS" action="Novo contato" onAction={() => setEditing(fresh())}>
-      <div className="workspace-toolbar">
+      <div className="workspace-toolbar people-toolbar">
         <button className="secondary" onClick={() => void importContacts()}><Icon name="upload" size={14}/> Importar</button>
         <button className="secondary" disabled={store.items.length===0} onClick={() => void exportContacts("csv")}><Icon name="download" size={14}/> CSV</button>
         <button className="secondary" disabled={store.items.length===0} onClick={() => void exportContacts("vcf")}><Icon name="download" size={14}/> vCard</button>
+        <button className="secondary" onClick={()=>void createContactGroup()}><Icon name="people" size={14}/> Novo grupo</button>
+        <select value={groupFilter} onChange={(event)=>setGroupFilter(event.target.value)}><option value="">Todos os grupos</option>{groups.items.map((group)=><option key={group.id} value={group.id}>{group.name}</option>)}</select>
+        <button className="secondary" disabled={store.items.length<2} onClick={()=>void mergeDuplicateContacts()}><Icon name="people" size={14}/> Mesclar duplicados</button>
+        {selectedIds.length>0&&<button className="secondary" onClick={()=>void categorizeSelectedContacts()}>Categorizar {selectedIds.length}</button>}
+        {selectedIds.length>0&&<button className="secondary danger-lite" onClick={()=>void deleteSelectedContacts()}><Icon name="trash" size={14}/> Excluir {selectedIds.length}</button>}
       </div>
+      {groups.items.length>0&&<div className="contact-groups">{groups.items.map((group)=><span key={group.id}><button onClick={()=>setGroupFilter(group.id)}>{group.name}</button><button aria-label={`Excluir ${group.name}`} onClick={()=>void groups.remove(group.id)}><Icon name="x" size={10}/></button></span>)}</div>}
       {store.loading ? <Empty icon="people" title="Carregando contatos" text="Lendo o cache local..." /> : filtered.length === 0 ? (
         <Empty icon="people" title="Nenhum contato ainda" text="Crie contatos locais; a sincronização em nuvem mantém a mesma identidade em outros dispositivos." />
       ) : (
         <div className="contact-grid">
           {filtered.map((contact) => (
-            <article className="contact-card" key={contact.id}>
+            <article className={selectedIds.includes(contact.id)?"contact-card selected":"contact-card"} key={contact.id}>
+              <label className="contact-select"><input type="checkbox" checked={selectedIds.includes(contact.id)} onChange={()=>toggleContactSelection(contact.id)}/></label>
               <button className="contact-main" onClick={() => setEditing(contact)}>
                 <span className="avatar big">{contact.displayName[0]?.toUpperCase() || "?"}</span>
-                <span><b>{contact.displayName}</b><small>{contact.jobTitle}{contact.company ? ` · ${contact.company}` : ""}</small><em>{contact.email || contact.phone}</em></span>
+                <span><b>{contact.displayName}</b><small>{contact.nickname ? contact.nickname+" · " : ""}{contact.jobTitle}{contact.company ? ` · ${contact.company}` : ""}</small><em>{contact.emails?.[0] || contact.email || contact.phones?.[0] || contact.phone}</em>{(contact.categories??[]).length>0&&<small>{(contact.categories??[]).join(" · ")}</small>}</span>
               </button>
               <div className="contact-actions">
                 <button className={contact.favorite ? "icon-button active" : "icon-button"} aria-label="Favoritar" onClick={() => void store.save({ ...contact, favorite: !contact.favorite })}><Icon name="star" size={15} /></button>
