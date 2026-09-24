@@ -164,6 +164,22 @@ function shortcutMatches(event:KeyboardEvent,binding:string|undefined):boolean {
     && event.shiftKey===parts.includes("shift");
 }
 
+async function forEachConcurrent<T>(
+  items:T[],
+  limit:number,
+  worker:(item:T)=>Promise<void>,
+):Promise<void>{
+  const queue=[...items];
+  const count=Math.max(1,Math.min(limit||1,queue.length||1));
+  await Promise.all(Array.from({length:count},async()=>{
+    while(queue.length){
+      const item=queue.shift();
+      if(item===undefined) return;
+      await worker(item);
+    }
+  }));
+}
+
 function notificationsMutedNow(settings: AppSettings): boolean {
   if(!settings.quietHoursEnabled) return false;
   const start=settings.quietHoursStart??"22:00";
@@ -2101,6 +2117,19 @@ export default function App() {
   },[lockConfigured,appLocked,settings.appLockMinutes]);
 
   useEffect(()=>{
+    const days=settings.localRetentionDays??90;
+    if(days===0) return;
+    const timer=window.setTimeout(()=>{
+      void bridge.pruneMessageCache(days).then(async(removed)=>{
+        if(removed>0){
+          setMessages(await bridge.listCachedMessages(unified?undefined:activeAccount?.id));
+        }
+      }).catch(()=>undefined);
+    },700);
+    return ()=>window.clearTimeout(timer);
+  },[settings.localRetentionDays,activeAccount?.id,unified]);
+
+  useEffect(()=>{
     localStorage.setItem("seven-mail:settings",JSON.stringify(settings));
     const root=document.documentElement;
     const theme = settings.theme==="system" ? (matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light") : settings.theme;
@@ -2236,13 +2265,14 @@ export default function App() {
     const run = async () => {
       if (!navigator.onLine || disposed) return;
 
-      for (const account of profileAccounts) {
-        if (disposed) break;
+      const targets=profileAccounts.filter((account)=>!account.muted);
+      await forEachConcurrent(targets,settings.maxConcurrentSyncs??2,async(account)=>{
+        if(disposed) return;
         try {
           const before = await bridge.listCachedMessages(account.id);
           const known = new Set(before.map((message)=>message.id));
 
-          await bridge.syncFolder(account.id,"INBOX","Caixa de entrada",50);
+          await bridge.syncFolder(account.id,"INBOX","Caixa de entrada",settings.memorySaverEnabled?25:50);
           const synced = await bridge.listCachedMessages(account.id);
           await applySenderPolicies(synced);
           const policyApplied = await bridge.listCachedMessages(account.id);
@@ -2264,7 +2294,7 @@ export default function App() {
         } catch {
           // A conta pode estar offline, sem credencial ou exigir nova autenticação.
         }
-      }
+      });
 
       if (!disposed && unified) {
         const unifiedMessages = await bridge.listCachedMessages().catch(() => [] as MailMessage[]);
@@ -2281,7 +2311,7 @@ export default function App() {
       window.clearInterval(timer);
       window.removeEventListener("online",online);
     };
-  },[profileAccounts,activeAccount?.id,unified,settings.notificationsEnabled,settings.syncIntervalMinutes]);
+  },[profileAccounts,activeAccount?.id,unified,settings.notificationsEnabled,settings.syncIntervalMinutes,settings.batterySaverEnabled,settings.memorySaverEnabled,settings.maxConcurrentSyncs]);
 
   useEffect(()=>{
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2439,12 +2469,12 @@ export default function App() {
     setSyncState("syncing");
     try {
       const targets = (unified ? profileAccounts : (activeAccount ? [activeAccount] : [])).filter((account)=>!account.muted);
-      for (const account of targets) {
+      await forEachConcurrent(targets,settings.maxConcurrentSyncs??2,async(account)=>{
         await bridge.flushMailActions(account.id).catch(() => 0);
         const path = unified ? "INBOX" : selectedFolder.path;
         const label = unified ? "Caixa de entrada" : selectedFolder.name;
-        await bridge.syncFolder(account.id, path, label, 50);
-      }
+        await bridge.syncFolder(account.id,path,label,settings.memorySaverEnabled?25:50);
+      });
       const synced = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id);
       await applySenderPolicies(synced);
       const policyApplied = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id);
