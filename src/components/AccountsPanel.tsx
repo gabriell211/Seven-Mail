@@ -46,6 +46,7 @@ export function AccountsPanel({
       await bridge.testImapConnection(account.id);
       await bridge.testSmtpConnection(account.id);
       if(account.caldavUrl?.trim()||account.carddavUrl?.trim()) await bridge.testDavConnection(account.id);
+      if(account.ldapUrl?.trim()) await bridge.testLdapConnection(account.id);
       setStatus((current) => ({ ...current, [account.id]: `${account.incomingProtocol==="pop3"?"POP3":"IMAP"} e SMTP conectados${account.caldavUrl?.trim()||account.carddavUrl?.trim()?" · DAV conectado":""}` }));
     } catch (reason) {
       setStatus((current) => ({
@@ -127,6 +128,9 @@ export function AccountsPanel({
               <label className="inline-check"><input type="checkbox" checked={Boolean(editing.muted)} onChange={(event) => setEditing({ ...editing, muted: event.target.checked })} /> Silenciar sincronização e notificações desta conta</label>
               <label className="full"><span>URL CalDAV</span><input value={editing.caldavUrl ?? ""} onChange={(event) => setEditing({ ...editing, caldavUrl: event.target.value })} placeholder="https://servidor/dav/calendario/"/></label>
               <label className="full"><span>URL CardDAV</span><input value={editing.carddavUrl ?? ""} onChange={(event) => setEditing({ ...editing, carddavUrl: event.target.value })} placeholder="https://servidor/dav/contatos/"/></label>
+              <label className="full"><span>URL LDAP</span><input value={editing.ldapUrl ?? ""} onChange={(event) => setEditing({ ...editing, ldapUrl: event.target.value })} placeholder="ldaps://servidor:636"/></label>
+              <label><span>Base DN LDAP</span><input value={editing.ldapBaseDn ?? ""} onChange={(event) => setEditing({ ...editing, ldapBaseDn: event.target.value })} placeholder="dc=empresa,dc=local"/></label>
+              <label><span>Filtro LDAP</span><input value={editing.ldapFilter ?? ""} onChange={(event) => setEditing({ ...editing, ldapFilter: event.target.value })} placeholder="(&(objectClass=person)(mail=*))"/></label>
               <label className="full"><span>Aliases de envio</span><input value={(editing.aliases??[]).join(", ")} onChange={(event) => setEditing({ ...editing, aliases: event.target.value.split(",").map((value)=>value.trim()).filter(Boolean) })} placeholder="alias@dominio.com, outro@dominio.com" /></label>
               <label className="full"><span>Nova senha / senha de aplicativo</span><input type="password" value={secret} onChange={(event) => setSecret(event.target.value)} placeholder="Deixe vazio para manter a credencial atual" /></label>
             </div>
