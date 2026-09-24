@@ -638,6 +638,9 @@ export default function App() {
     const quoted = originalText
       ? originalText.split("\n").map((line)=>`> ${line}`).join("\n")
       : ">";
+    const signature = signatures.find((item)=>item.accountId===message.accountId&&item.isDefault)
+      ?? signatures.find((item)=>item.accountId===message.accountId);
+    const signatureText = signature?.bodyText.trim() ?? "";
 
     const draft: ComposeDraft = {
       id: crypto.randomUUID(),
@@ -653,7 +656,7 @@ export default function App() {
       subject: mode!=="forward"
         ? (/^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject || "(sem assunto)"}`)
         : (/^(enc|fw|fwd):/i.test(message.subject) ? message.subject : `Enc: ${message.subject || "(sem assunto)"}`),
-      bodyText: `\n\nEm ${new Date(message.receivedAt).toLocaleString()}, ${message.from.name || message.from.email} escreveu:\n${quoted}`,
+      bodyText: `${signatureText ? `\n\n${signatureText}` : ""}\n\nEm ${new Date(message.receivedAt).toLocaleString()}, ${message.from.name || message.from.email} escreveu:\n${quoted}`,
       bodyHtml: "",
       mode: "plain",
       attachments: [],
