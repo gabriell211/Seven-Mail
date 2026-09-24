@@ -1074,11 +1074,11 @@ export default function App() {
     setSection("calendar");
   }
 
-  async function createTaskFromMessage(message: MailMessage) {
+  async function createTaskFromMessage(message: MailMessage, navigate = true) {
     const existing = await bridge.listWorkspace<TaskItem>("task").catch(() => []);
     const duplicate = existing.find((document)=>document.payload.relatedMessageId===message.id);
     if (duplicate) {
-      setSection("tasks");
+      if(navigate) setSection("tasks");
       return;
     }
 
@@ -1099,7 +1099,7 @@ export default function App() {
 
     await bridge.upsertWorkspace(document);
     void pushCloudDocument(document).catch(() => undefined);
-    setSection("tasks");
+    if(navigate) setSection("tasks");
   }
 
   function closeComposer() {
@@ -1570,6 +1570,9 @@ export default function App() {
     const accountId = activeAccount?.id ?? message?.accountId;
     if (!accountId) return;
     const updated = await bridge.messageAction(accountId, messageId, action);
+    if(action==="flag"){
+      void createTaskFromMessage(updated,false).catch(()=>undefined);
+    }
     setMessages(await bridge.listCachedMessages(unified ? undefined : accountId));
     void pushCloudMessage(updated).catch(() => undefined);
     void bridge.flushMailActions(accountId).catch(() => undefined);
