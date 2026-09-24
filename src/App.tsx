@@ -71,6 +71,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoCapitalizeEnabled: true,
   composeLanguage: "pt-BR",
   customDictionary: [],
+  connectionTimeoutSeconds: 30,
+  localRetentionDays: 90,
+  maxConcurrentSyncs: 2,
+  batterySaverEnabled: false,
+  memorySaverEnabled: false,
   blockRemoteContent: true,
   remoteContentAllowedSenders: [],
   warnSuspiciousLinks: true,
@@ -2210,6 +2215,7 @@ export default function App() {
       if (!navigator.onLine) return;
       void bridge.flushOutbox().catch(() => undefined);
       for (const account of profileAccounts) {
+        if (account.muted) continue;
         void bridge.flushMailActions(account.id).catch(() => undefined);
       }
     };
@@ -2266,7 +2272,7 @@ export default function App() {
       }
     };
 
-    const intervalMs = settings.syncIntervalMinutes * 60_000;
+    const intervalMs = settings.syncIntervalMinutes * 60_000 * (settings.batterySaverEnabled ? 2 : 1);
     const timer = window.setInterval(()=>void run(),intervalMs);
     const online = () => void run();
     window.addEventListener("online",online);
@@ -2432,7 +2438,7 @@ export default function App() {
     if (profileAccounts.length===0 || syncState==="syncing") return;
     setSyncState("syncing");
     try {
-      const targets = unified ? profileAccounts : (activeAccount ? [activeAccount] : []);
+      const targets = (unified ? profileAccounts : (activeAccount ? [activeAccount] : [])).filter((account)=>!account.muted);
       for (const account of targets) {
         await bridge.flushMailActions(account.id).catch(() => 0);
         const path = unified ? "INBOX" : selectedFolder.path;
@@ -2547,7 +2553,7 @@ export default function App() {
         </div>}
       </header>
       <div className="content">
-        {section==="mail"&&<MailView accounts={profileAccounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onForwardAsAttachment={(message)=>void forwardAsAttachment(message)} onResendMessage={(message)=>void resendMessage(message)} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onIgnoreConversation={(message)=>void ignoreConversation(message)} onSetSenderCleanup={setSenderCleanup} onAllowRemoteContent={(sender)=>setSettings((current)=>({...current,remoteContentAllowedSenders:[...new Set([...(current.remoteContentAllowedSenders??[]),sender.toLocaleLowerCase("pt-BR")])]}))} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={settings}/>} 
+        {section==="mail"&&<MailView accounts={profileAccounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onForwardAsAttachment={(message)=>void forwardAsAttachment(message)} onResendMessage={(message)=>void resendMessage(message)} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onIgnoreConversation={(message)=>void ignoreConversation(message)} onSetSenderCleanup={setSenderCleanup} onAllowRemoteContent={(sender)=>setSettings((current)=>({...current,remoteContentAllowedSenders:[...new Set([...(current.remoteContentAllowedSenders??[]),sender.toLocaleLowerCase("pt-BR")])]}))} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={{...settings,mailPageSize:settings.memorySaverEnabled?25:(settings.mailPageSize??50)}}/>} 
         {section==="calendar"&&<PersistentCalendarView accounts={profileAccounts} settings={settings}/>} 
         {section==="people"&&<PersistentPeopleView query={search}/>}
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
