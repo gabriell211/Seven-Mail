@@ -205,11 +205,18 @@ function bytesToBase64(bytes:Uint8Array):string {
   return btoa(binary);
 }
 
-function base64ToBytes(value:string):Uint8Array {
+function base64ToBytes(value:string):Uint8Array<ArrayBuffer> {
   const binary=atob(value);
-  const bytes=new Uint8Array(binary.length);
+  const buffer=new ArrayBuffer(binary.length);
+  const bytes=new Uint8Array(buffer);
   for(let index=0;index<binary.length;index+=1) bytes[index]=binary.charCodeAt(index);
   return bytes;
+}
+
+function ownedBytes(bytes:Uint8Array):Uint8Array<ArrayBuffer>{
+  const buffer=new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return new Uint8Array(buffer);
 }
 
 async function deriveBackupKey(password:string,salt:Uint8Array):Promise<CryptoKey> {
@@ -221,7 +228,7 @@ async function deriveBackupKey(password:string,salt:Uint8Array):Promise<CryptoKe
     ["deriveKey"],
   );
   return crypto.subtle.deriveKey(
-    {name:"PBKDF2",salt,iterations:250_000,hash:"SHA-256"},
+    {name:"PBKDF2",salt:ownedBytes(salt),iterations:250_000,hash:"SHA-256"},
     material,
     {name:"AES-GCM",length:256},
     false,
@@ -234,7 +241,7 @@ async function encryptBackupJson(plain:string,password:string):Promise<string> {
   const iv=crypto.getRandomValues(new Uint8Array(12));
   const key=await deriveBackupKey(password,salt);
   const encrypted=await crypto.subtle.encrypt(
-    {name:"AES-GCM",iv},
+    {name:"AES-GCM",iv:ownedBytes(iv)},
     key,
     new TextEncoder().encode(plain),
   );
@@ -258,9 +265,9 @@ async function decryptBackupJson(raw:string,password:string):Promise<string> {
   const key=await deriveBackupKey(password,base64ToBytes(envelope.salt));
   try{
     const decrypted=await crypto.subtle.decrypt(
-      {name:"AES-GCM",iv:base64ToBytes(envelope.iv)},
+      {name:"AES-GCM",iv:ownedBytes(base64ToBytes(envelope.iv))},
       key,
-      base64ToBytes(envelope.data),
+      ownedBytes(base64ToBytes(envelope.data)),
     );
     return new TextDecoder().decode(decrypted);
   }catch{
