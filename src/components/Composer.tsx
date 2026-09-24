@@ -10,7 +10,7 @@ export interface QueuedSendInfo {
   canUndo: boolean;
 }
 
-interface ComposeDraft {
+export interface ComposeDraft {
   id: string;
   accountId: string;
   to: string;
@@ -55,16 +55,18 @@ export function Composer({
   accounts,
   initialAccountId,
   settings,
+  initialDraft,
   onClose,
   onQueued,
 }: {
   accounts: AccountProfile[];
   initialAccountId?: string;
   settings: AppSettings;
+  initialDraft?: ComposeDraft;
   onClose: () => void;
   onQueued: (info: QueuedSendInfo) => void;
 }) {
-  const [draft, setDraft] = useState<ComposeDraft>(() => ({
+  const [draft, setDraft] = useState<ComposeDraft>(() => initialDraft ? { ...initialDraft } : ({
     id: crypto.randomUUID(),
     accountId: initialAccountId ?? accounts.find((account) => account.isDefault)?.id ?? accounts[0]?.id ?? "",
     to: "",
