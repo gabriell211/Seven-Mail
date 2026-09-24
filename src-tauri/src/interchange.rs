@@ -1,6 +1,7 @@
-use crate::{models::{AccountProfile, MailAddress, MailAttachmentInfo, MailMessage}, storage::{self, AppPaths}};
+use crate::{models::{AccountProfile, MailAddress, MailAttachmentInfo, MailAttachmentPreview, MailMessage}, storage::{self, AppPaths}};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use mail_parser::{MessageParser, MimeHeaders};
-use std::{fs, path::Path};
+use std::{fs, io::{Cursor, Read}, path::Path};
 
 const MAX_TEXT_FILE_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_EML_FILE_BYTES: u64 = 64 * 1024 * 1024;
@@ -172,6 +173,164 @@ pub fn list_message_attachments(
         });
     }
     Ok(attachments)
+}
+
+fn strip_xml_text(value: &str) -> String {
+    let mut output = String::with_capacity(value.len().min(120_000));
+    let mut in_tag = false;
+    for ch in value.chars() {
+        match ch {
+            '<' => {
+                in_tag = true;
+                if !output.ends_with(' ') { output.push(' '); }
+            }
+            '>' => in_tag = false,
+            _ if !in_tag => output.push(ch),
+            _ => {}
+        }
+        if output.len() >= 120_000 { break; }
+    }
+    output
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn zip_summary(bytes: &[u8], extension: &str) -> Result<String, String> {
+    let cursor = Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(cursor)
+        .map_err(|error| format!("Arquivo compactado inválido: {error}"))?;
+
+    let mut entries = Vec::new();
+    for index in 0..archive.len().min(250) {
+        let entry = archive.by_index(index)
+            .map_err(|error| format!("Falha ao ler item compactado: {error}"))?;
+        if !entry.is_dir() {
+            entries.push(format!("{} · {} bytes", entry.name(), entry.size()));
+        }
+    }
+
+    let mut details = String::new();
+    match extension {
+        "docx" => {
+            if let Ok(mut document) = archive.by_name("word/document.xml") {
+                let mut xml = String::new();
+                let _ = document.read_to_string(&mut xml);
+                let text = strip_xml_text(&xml);
+                if !text.is_empty() {
+                    details.push_str("Texto extraído do documento:\n\n");
+                    details.push_str(&text);
+                    details.push_str("\n\n");
+                }
+            }
+        }
+        "xlsx" => {
+            if let Ok(mut workbook) = archive.by_name("xl/workbook.xml") {
+                let mut xml = String::new();
+                let _ = workbook.read_to_string(&mut xml);
+                let text = strip_xml_text(&xml);
+                if !text.is_empty() {
+                    details.push_str("Estrutura da planilha:\n\n");
+                    details.push_str(&text);
+                    details.push_str("\n\n");
+                }
+            }
+        }
+        "pptx" => {
+            let slides = entries.iter().filter(|value| value.contains("ppt/slides/slide")).count();
+            details.push_str(&format!("Apresentação com aproximadamente {slides} slide(s).\n\n"));
+        }
+        _ => {}
+    }
+
+    details.push_str("Conteúdo do pacote:\n");
+    details.push_str(&entries.join("\n"));
+    Ok(details)
+}
+
+pub fn preview_message_attachment(
+    paths: &AppPaths,
+    account_id: &str,
+    message_id: &str,
+    index: usize,
+) -> Result<MailAttachmentPreview, String> {
+    let raw = storage::read_raw_message(paths, account_id, message_id)?;
+    let parsed = MessageParser::default()
+        .parse(&raw)
+        .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
+    let part = parsed
+        .attachment(index as u32)
+        .ok_or_else(|| "Anexo não encontrado.".to_string())?;
+
+    let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
+    let mime = attachment_mime(&name);
+    let bytes = part.contents();
+    let size = bytes.len() as u64;
+    if size > 20 * 1024 * 1024 {
+        return Ok(MailAttachmentPreview {
+            name,
+            mime,
+            size,
+            data_url: None,
+            text: Some("Pré-visualização limitada a anexos de até 20 MB. Use Salvar para abrir este arquivo no aplicativo adequado.".to_string()),
+            kind: "large".to_string(),
+        });
+    }
+
+    let extension = name.rsplit_once('.').map(|(_, value)| value.to_ascii_lowercase()).unwrap_or_default();
+    if mime.starts_with("image/") {
+        return Ok(MailAttachmentPreview {
+            name,
+            mime: mime.clone(),
+            size,
+            data_url: Some(format!("data:{mime};base64,{}", BASE64.encode(bytes))),
+            text: None,
+            kind: "image".to_string(),
+        });
+    }
+    if mime == "application/pdf" {
+        return Ok(MailAttachmentPreview {
+            name,
+            mime: mime.clone(),
+            size,
+            data_url: Some(format!("data:{mime};base64,{}", BASE64.encode(bytes))),
+            text: None,
+            kind: "pdf".to_string(),
+        });
+    }
+    if mime.starts_with("text/") || matches!(extension.as_str(), "json" | "xml") {
+        return Ok(MailAttachmentPreview {
+            name,
+            mime,
+            size,
+            data_url: None,
+            text: Some(String::from_utf8_lossy(bytes).chars().take(120_000).collect()),
+            kind: "text".to_string(),
+        });
+    }
+    if matches!(extension.as_str(), "zip" | "docx" | "xlsx" | "pptx") {
+        return Ok(MailAttachmentPreview {
+            name,
+            mime,
+            size,
+            data_url: None,
+            text: Some(zip_summary(bytes, &extension)?),
+            kind: if extension == "zip" { "archive".to_string() } else { "office".to_string() },
+        });
+    }
+
+    Ok(MailAttachmentPreview {
+        name,
+        mime,
+        size,
+        data_url: None,
+        text: Some("Este tipo de arquivo não possui pré-visualização segura interna. Salve-o para abrir no aplicativo associado.".to_string()),
+        kind: "binary".to_string(),
+    })
 }
 
 pub fn save_message_attachment(
