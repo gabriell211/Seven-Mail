@@ -16,7 +16,7 @@ export function MessageDetailsModal({
   onClose,
 }: {
   message: MailMessage;
-  initialTab?: "attachments" | "headers" | "source";
+  initialTab?: "attachments" | "security" | "headers" | "source";
   onClose: () => void;
 }) {
   const [tab, setTab] = useState(initialTab);
@@ -49,6 +49,20 @@ export function MessageDetailsModal({
     const separator = source.search(/\r?\n\r?\n/);
     return separator >= 0 ? source.slice(0, separator) : source;
   }, [source]);
+
+  const authentication=useMemo(()=>{
+    const normalized=headers.replace(/\r?\n[ \t]+/g," ");
+    const find=(name:string)=>{
+      const match=normalized.match(new RegExp(`\\b${name}=([a-zA-Z_-]+)`,"i"));
+      return match?.[1]?.toLowerCase()??"indisponível";
+    };
+    return {
+      spf:find("spf"),
+      dkim:find("dkim"),
+      dmarc:find("dmarc"),
+      results:normalized.match(/^Authentication-Results:.*$/gim)??[],
+    };
+  },[headers]);
 
   async function saveOne(item: MailAttachmentInfo) {
     const destination = await saveDialog({ defaultPath: item.name });
@@ -83,6 +97,7 @@ export function MessageDetailsModal({
       </header>
       <div className="details-tabs">
         <button className={tab==="attachments"?"active":""} onClick={()=>setTab("attachments")}>Anexos {attachments.length ? `(${attachments.length})` : ""}</button>
+        <button className={tab==="security"?"active":""} onClick={()=>setTab("security")}>Segurança</button>
         <button className={tab==="headers"?"active":""} onClick={()=>setTab("headers")}>Cabeçalhos</button>
         <button className={tab==="source"?"active":""} onClick={()=>setTab("source")}>Código-fonte</button>
       </div>
@@ -102,6 +117,10 @@ export function MessageDetailsModal({
             </div>}
           </div> : <div className="mini-empty">Nenhum anexo disponível na fonte local. Mensagens antigas podem precisar ser sincronizadas novamente.</div>
         )}
+        {!busy && tab==="security" && <div className="auth-results">
+          {(["spf","dkim","dmarc"] as const).map((key)=>{const value=authentication[key];const good=value==="pass";const bad=["fail","softfail","permerror"].includes(value);return <article className={good?"pass":bad?"fail":"neutral"} key={key}><b>{key.toUpperCase()}</b><span>{value}</span><small>{good?"Validação aprovada pelo servidor.":bad?"O servidor reportou falha nesta validação.":"Resultado não disponível ou inconclusivo."}</small></article>;})}
+          {authentication.results.length>0&&<details><summary>Authentication-Results original</summary><pre className="message-source">{authentication.results.join("\n")}</pre></details>}
+        </div>}
         {!busy && tab==="headers" && <pre className="message-source">{headers || "Cabeçalhos originais indisponíveis. Sincronize a mensagem novamente."}</pre>}
         {!busy && tab==="source" && <pre className="message-source">{source || "Fonte original indisponível. Sincronize a mensagem novamente."}</pre>}
       </div>
