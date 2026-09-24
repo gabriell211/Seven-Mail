@@ -3,6 +3,8 @@ name: Desktop Release
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - "v*"
 
@@ -68,15 +70,25 @@ jobs:
           tagName: v__VERSION__
           releaseName: "Seven Mail v__VERSION__"
           releaseBody: |
-            Instaladores oficiais do Seven Mail.
+            Seven Mail 0.4.0 amplia a experiência local-first e a interoperabilidade do cliente desktop.
 
-            Windows:
-            - MSI
-            - NSIS (.exe)
+            Destaques:
+            - Nova tela de inicialização premium ligada ao bootstrap real
+            - Identidade visual e ícones nativos atualizados
+            - Importação de mensagens EML e exportação de mensagens para EML
+            - Importação e exportação de calendários ICS
+            - Importação e exportação de contatos CSV e vCard
+            - Backup e restauração de workspace, preferências e metadados de contas
+            - Calendário com visualizações Dia, Semana, Mês e Agenda
+            - Lembretes nativos de eventos
+            - Tarefas com Hoje, Atrasadas, Próximas e data de início
+            - Criação de evento diretamente a partir de um e-mail
+            - Atalhos de teclado para navegação e ações de mensagens
+            - Edição de categorias
 
-            Linux:
-            - DEB
-            - AppImage
+            Instaladores:
+            - Windows: MSI e NSIS (.exe)
+            - Linux: DEB e AppImage
           releaseDraft: false
           prerelease: false
           args: --bundles ${{ matrix.bundles }}
