@@ -263,7 +263,14 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
         let content_type: ContentType = attachment_mime(&attachment.name)
             .parse()
             .map_err(|error| format!("MIME inválido para {}: {error}", attachment.name))?;
-        mixed = mixed.singlepart(Attachment::new(attachment.name).body(bytes, content_type));
+        let part = if attachment.inline {
+            Attachment::new_inline(
+                attachment.content_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            ).body(bytes, content_type)
+        } else {
+            Attachment::new(attachment.name).body(bytes, content_type)
+        };
+        mixed = mixed.singlepart(part);
     }
 
     let message = builder.multipart(mixed).map_err(|error| error.to_string())?;
