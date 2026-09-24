@@ -43,6 +43,18 @@ pub struct AccountProfile {
     #[serde(default)]
     pub ldap_filter: Option<String>,
     #[serde(default)]
+    pub oauth_enabled: bool,
+    #[serde(default)]
+    pub oauth_client_id: Option<String>,
+    #[serde(default)]
+    pub oauth_authorization_url: Option<String>,
+    #[serde(default)]
+    pub oauth_token_url: Option<String>,
+    #[serde(default)]
+    pub oauth_scopes: Vec<String>,
+    #[serde(default)]
+    pub oauth_redirect_uri: Option<String>,
+    #[serde(default)]
     pub smtp_host: Option<String>,
     #[serde(default)]
     pub smtp_port: Option<u16>,
