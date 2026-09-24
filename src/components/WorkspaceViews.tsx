@@ -343,7 +343,7 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
   );
 }
 
-export function PersistentTasksView() {
+export function PersistentTasksView({ onOpenRelatedMessage }: { onOpenRelatedMessage?: (messageId: string) => void }) {
   const store = useWorkspace<TaskItem>("task");
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState<TaskItem | null>(null);
@@ -375,6 +375,7 @@ export function PersistentTasksView() {
               <button className="task-check" aria-label="Concluir" onClick={() => void store.save({ ...task, completedAt: new Date().toISOString() })}><Icon name="check" size={13} /></button>
               <button className="task-copy" onClick={() => setEditing(task)}><b>{task.title}</b><small>{task.dueAt ? `Vence ${new Date(task.dueAt).toLocaleString("pt-BR")}` : task.listName}</small></button>
               <span className={`priority ${task.priority}`}>{task.priority === "high" ? "Alta" : task.priority === "low" ? "Baixa" : "Normal"}</span>
+              {task.relatedMessageId && onOpenRelatedMessage && <button className="icon-button" title="Abrir e-mail relacionado" onClick={() => onOpenRelatedMessage(task.relatedMessageId!)}><Icon name="mail" size={14} /></button>}
               <button className="icon-button" onClick={() => void store.remove(task.id)}><Icon name="trash" size={14} /></button>
             </div>
           ))}
@@ -386,6 +387,7 @@ export function PersistentTasksView() {
             <div className="task-card completed" key={task.id}>
               <button className="task-check done" aria-label="Reabrir" onClick={() => void store.save({ ...task, completedAt: undefined })}><Icon name="check" size={13} /></button>
               <button className="task-copy" onClick={() => setEditing(task)}><b>{task.title}</b><small>{task.completedAt ? new Date(task.completedAt).toLocaleDateString("pt-BR") : ""}</small></button>
+              {task.relatedMessageId && onOpenRelatedMessage && <button className="icon-button" title="Abrir e-mail relacionado" onClick={() => onOpenRelatedMessage(task.relatedMessageId!)}><Icon name="mail" size={14} /></button>}
             </div>
           ))}
         </section>
