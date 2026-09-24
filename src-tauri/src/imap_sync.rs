@@ -15,8 +15,10 @@ type SecureClient = Client<TlsStream<TcpStream>>;
 async fn connect(account: &AccountProfile) -> Result<SecureClient, String> {
     let settings = providers::settings_for(account);
     let address = format!("{}:{}", settings.imap_host, settings.imap_port);
-    let tcp = TcpStream::connect(&address)
+    let timeout = std::time::Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300));
+    let tcp = async_std::future::timeout(timeout, TcpStream::connect(&address))
         .await
+        .map_err(|_| format!("Tempo limite de conexão IMAP excedido ({:?}).", timeout))?
         .map_err(|error| format!("Falha ao conectar ao IMAP {address}: {error}"))?;
 
     let connector = TlsConnector::new().use_sni(true);
