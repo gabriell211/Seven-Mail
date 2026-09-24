@@ -42,6 +42,36 @@ pub fn delete(account_id: &str) -> Result<(), String> {
     }
 }
 
+fn scoped_id(scope: &str, account_id: &str) -> Result<String, String> {
+    validate_account_id(account_id)?;
+    if scope.is_empty() || scope.len() > 48 || scope.contains('/') || scope.contains(char::from(92)) {
+        return Err("Escopo de credencial inválido.".to_string());
+    }
+    Ok(format!("__{scope}__{account_id}"))
+}
+
+pub fn store_scoped(scope: &str, account_id: &str, secret: &str) -> Result<(), String> {
+    let id = scoped_id(scope, account_id)?;
+    store(&id, secret)
+}
+
+pub fn load_scoped(scope: &str, account_id: &str) -> Result<Option<String>, String> {
+    let id = scoped_id(scope, account_id)?;
+    match entry(&id)?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+pub fn delete_scoped(scope: &str, account_id: &str) -> Result<(), String> {
+    let id = scoped_id(scope, account_id)?;
+    match entry(&id)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 
 pub fn has_app_lock() -> Result<bool, String> {
     match entry(APP_LOCK_ID)?.get_password() {
