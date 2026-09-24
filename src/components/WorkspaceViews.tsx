@@ -491,9 +491,41 @@ export function PersistentTasksView({ onOpenRelatedMessage }: { onOpenRelatedMes
   const store = useWorkspace<TaskItem>("task");
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState<TaskItem | null>(null);
+  const [filter, setFilter] = useState<"all" | "today" | "overdue" | "upcoming">("all");
 
-  const open = store.items.filter((task) => !task.completedAt);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const tomorrowStart = todayStart + 24 * 60 * 60 * 1000;
+
+  const open = store.items
+    .filter((task) => !task.completedAt)
+    .sort((a, b) => {
+      const left = a.dueAt ? new Date(a.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+      const right = b.dueAt ? new Date(b.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+      return left - right;
+    });
   const completed = store.items.filter((task) => task.completedAt);
+
+  const todayTasks = open.filter((task) => {
+    const due = task.dueAt ? new Date(task.dueAt).getTime() : NaN;
+    return Number.isFinite(due) && due >= todayStart && due < tomorrowStart;
+  });
+  const overdueTasks = open.filter((task) => {
+    const due = task.dueAt ? new Date(task.dueAt).getTime() : NaN;
+    return Number.isFinite(due) && due < todayStart;
+  });
+  const upcomingTasks = open.filter((task) => {
+    const due = task.dueAt ? new Date(task.dueAt).getTime() : NaN;
+    return Number.isFinite(due) && due >= tomorrowStart;
+  });
+
+  const visible = filter === "today"
+    ? todayTasks
+    : filter === "overdue"
+      ? overdueTasks
+      : filter === "upcoming"
+        ? upcomingTasks
+        : open;
 
   async function quickAdd() {
     const title = draft.trim();
@@ -504,26 +536,47 @@ export function PersistentTasksView({ onOpenRelatedMessage }: { onOpenRelatedMes
       notes: "",
       priority: "normal",
       listName: "Meu dia",
+      dueAt: nowLocalInput(60),
     };
     await store.save(task);
     setDraft("");
   }
 
+  const fresh = (): TaskItem => ({
+    id: crypto.randomUUID(),
+    title: "",
+    notes: "",
+    priority: "normal",
+    listName: "Meu dia",
+  });
+
   return (
-    <Workspace title="Tarefas" eyebrow="MINHA AGENDA" action="Nova tarefa" onAction={() => setEditing({ id: crypto.randomUUID(), title: "", notes: "", priority: "normal", listName: "Meu dia" })}>
+    <Workspace title="Tarefas" eyebrow="MINHA AGENDA" action="Nova tarefa" onAction={() => setEditing(fresh())}>
+      <div className="task-filter-bar">
+        <button className={filter==="all"?"active":""} onClick={()=>setFilter("all")}>Todas <b>{open.length}</b></button>
+        <button className={filter==="today"?"active":""} onClick={()=>setFilter("today")}>Hoje <b>{todayTasks.length}</b></button>
+        <button className={filter==="overdue"?"active":""} onClick={()=>setFilter("overdue")}>Atrasadas <b>{overdueTasks.length}</b></button>
+        <button className={filter==="upcoming"?"active":""} onClick={()=>setFilter("upcoming")}>Próximas <b>{upcomingTasks.length}</b></button>
+      </div>
       <div className="task-board">
         <section className="task-column">
-          <header><span>ABERTAS</span><b>{open.length}</b></header>
-          {open.map((task) => (
-            <div className="task-card" key={task.id}>
+          <header><span>{filter==="today"?"HOJE":filter==="overdue"?"ATRASADAS":filter==="upcoming"?"PRÓXIMAS":"ABERTAS"}</span><b>{visible.length}</b></header>
+          {visible.length===0&&<p className="mini-empty">Nenhuma tarefa nesta visualização.</p>}
+          {visible.map((task) => {
+            const due = task.dueAt ? new Date(task.dueAt) : null;
+            const isOverdue = due ? due.getTime() < Date.now() : false;
+            return <div className={isOverdue ? "task-card overdue" : "task-card"} key={task.id}>
               <button className="task-check" aria-label="Concluir" onClick={() => void store.save({ ...task, completedAt: new Date().toISOString() })}><Icon name="check" size={13} /></button>
-              <button className="task-copy" onClick={() => setEditing(task)}><b>{task.title}</b><small>{task.dueAt ? `Vence ${new Date(task.dueAt).toLocaleString("pt-BR")}` : task.listName}</small></button>
+              <button className="task-copy" onClick={() => setEditing(task)}>
+                <b>{task.title}</b>
+                <small>{task.dueAt ? `${isOverdue ? "Atrasada · " : "Vence "}${new Date(task.dueAt).toLocaleString("pt-BR")}` : task.listName}</small>
+              </button>
               <span className={`priority ${task.priority}`}>{task.priority === "high" ? "Alta" : task.priority === "low" ? "Baixa" : "Normal"}</span>
               {task.relatedMessageId && onOpenRelatedMessage && <button className="icon-button" title="Abrir e-mail relacionado" onClick={() => onOpenRelatedMessage(task.relatedMessageId!)}><Icon name="mail" size={14} /></button>}
               <button className="icon-button" onClick={() => void store.remove(task.id)}><Icon name="trash" size={14} /></button>
-            </div>
-          ))}
-          <div className="quick-add"><Icon name="plus" size={15} /><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Adicionar tarefa" onKeyDown={(event) => { if (event.key === "Enter") void quickAdd(); }} /></div>
+            </div>;
+          })}
+          <div className="quick-add"><Icon name="plus" size={15} /><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Adicionar tarefa para hoje" onKeyDown={(event) => { if (event.key === "Enter") void quickAdd(); }} /></div>
         </section>
         <section className="task-column muted">
           <header><span>CONCLUÍDAS</span><b>{completed.length}</b></header>
@@ -541,6 +594,7 @@ export function PersistentTasksView({ onOpenRelatedMessage }: { onOpenRelatedMes
           <label className="full"><span>Título</span><input autoFocus value={editing.title} onChange={(event) => setEditing({ ...editing, title: event.target.value })} /></label>
           <label><span>Lista</span><input value={editing.listName} onChange={(event) => setEditing({ ...editing, listName: event.target.value })} /></label>
           <label><span>Prioridade</span><select value={editing.priority} onChange={(event) => setEditing({ ...editing, priority: event.target.value as TaskItem["priority"] })}><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option></select></label>
+          <label><span>Início</span><input type="datetime-local" value={editing.startsAt?.slice(0, 16) ?? ""} onChange={(event) => setEditing({ ...editing, startsAt: event.target.value || undefined })} /></label>
           <label><span>Vencimento</span><input type="datetime-local" value={editing.dueAt?.slice(0, 16) ?? ""} onChange={(event) => setEditing({ ...editing, dueAt: event.target.value || undefined })} /></label>
           <label><span>Lembrete</span><input type="datetime-local" value={editing.reminderAt?.slice(0, 16) ?? ""} onChange={(event) => setEditing({ ...editing, reminderAt: event.target.value || undefined, reminderNotifiedAt: undefined })} /></label>
           <label className="full"><span>Notas</span><textarea value={editing.notes} onChange={(event) => setEditing({ ...editing, notes: event.target.value })} /></label>
