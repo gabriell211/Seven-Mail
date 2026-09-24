@@ -447,7 +447,7 @@ pub fn claim_next_mail_action(paths: &AppPaths, account_id: &str) -> Result<Opti
     safe_component(account_id)?;
     claim_next_matching(paths, |operation| {
         operation.account_id == account_id
-            && matches!(operation.kind.as_str(), "read" | "flag" | "move")
+            && matches!(operation.kind.as_str(), "read" | "flag" | "move" | "copy")
     })
 }
 
