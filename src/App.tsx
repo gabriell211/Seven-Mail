@@ -328,6 +328,7 @@ export default function App() {
     if (!activeAccount || syncState==="syncing") return;
     setSyncState("syncing");
     try {
+      await bridge.flushMailActions(activeAccount.id).catch(() => 0);
       await bridge.syncInbox(activeAccount.id, 50);
       const refreshed = await bridge.listCachedMessages(activeAccount.id);
       setMessages(refreshed);
@@ -342,6 +343,7 @@ export default function App() {
     if (!activeAccount) return;
     await bridge.messageAction(activeAccount.id, messageId, action);
     setMessages(await bridge.listCachedMessages(activeAccount.id));
+    void bridge.flushMailActions(activeAccount.id).catch(() => undefined);
   }
 
   const filtered = useMemo(()=>{
