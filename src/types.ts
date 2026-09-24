@@ -17,6 +17,20 @@ export interface AccountProfile {
   provider: "gmail" | "microsoft" | "yahoo" | "icloud" | "imap";
   color: string;
   isDefault: boolean;
+  username?: string;
+  imapHost?: string;
+  imapPort?: number;
+  smtpHost?: string;
+  smtpPort?: number;
+  securityMode?: "tls" | "starttls";
+}
+
+export interface ProviderSettings {
+  imapHost: string;
+  imapPort: number;
+  smtpHost: string;
+  smtpPort: number;
+  securityMode: "tls" | "starttls";
 }
 
 export interface MailAddress { name?: string; email: string; }

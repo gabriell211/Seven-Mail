@@ -232,3 +232,14 @@ pub fn fail(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     let destination = paths.failed.join(format!("{}.json", operation_id));
     fs::rename(source, destination).map_err(io_error)
 }
+
+
+pub fn retry_later(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
+    safe_component(operation_id)?;
+    let source = paths.processing.join(format!("{}.json", operation_id));
+    if !source.exists() {
+        return Ok(());
+    }
+    let destination = paths.pending.join(format!("{}.json", operation_id));
+    fs::rename(source, destination).map_err(io_error)
+}

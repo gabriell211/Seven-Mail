@@ -1,8 +1,9 @@
 mod credentials;
 mod models;
+mod providers;
 mod storage;
 
-use models::{AccountProfile, MailMessage, QueueOperation, RuntimeInfo};
+use models::{AccountProfile, MailMessage, ProviderSettings, QueueOperation, RuntimeInfo};
 use storage::AppPaths;
 
 #[tauri::command]
@@ -26,6 +27,21 @@ fn store_secret(account_id: String, secret: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn discover_provider(email: String) -> ProviderSettings {
+    providers::discover(&email)
+}
+
+#[tauri::command]
+fn test_smtp_connection(account_id: String) -> Result<bool, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    providers::test_smtp(&account)
+}
+
+#[tauri::command]
 fn list_cached_messages(account_id: Option<String>) -> Result<Vec<MailMessage>, String> {
     storage::list_cached_messages(&AppPaths::resolve()?, account_id.as_deref())
 }
@@ -46,18 +62,42 @@ fn list_queue() -> Result<Vec<QueueOperation>, String> {
 }
 
 #[tauri::command]
-fn claim_next_operation() -> Result<Option<QueueOperation>, String> {
-    storage::claim_next(&AppPaths::resolve()?)
-}
+fn flush_outbox() -> Result<usize, String> {
+    let paths = AppPaths::resolve()?;
+    let accounts = storage::list_accounts(&paths)?;
+    let mut sent = 0usize;
 
-#[tauri::command]
-fn complete_operation(operation_id: String) -> Result<(), String> {
-    storage::complete(&AppPaths::resolve()?, &operation_id)
-}
+    loop {
+        let Some(operation) = storage::claim_next(&paths)? else {
+            break;
+        };
 
-#[tauri::command]
-fn fail_operation(operation_id: String) -> Result<(), String> {
-    storage::fail(&AppPaths::resolve()?, &operation_id)
+        if operation.kind != "send" {
+            storage::fail(&paths, &operation.id)?;
+            continue;
+        }
+
+        let Some(account) = accounts.iter().find(|item| item.id == operation.account_id) else {
+            storage::fail(&paths, &operation.id)?;
+            continue;
+        };
+
+        match providers::send_queued(account, &operation) {
+            Ok(()) => {
+                storage::complete(&paths, &operation.id)?;
+                sent += 1;
+            }
+            Err(error) => {
+                storage::retry_later(&paths, &operation.id)?;
+                if sent == 0 {
+                    return Err(error);
+                }
+                break;
+            }
+        }
+    }
+
+    Ok(sent)
 }
 
 #[tauri::command]
@@ -72,13 +112,13 @@ pub fn run() {
             list_accounts,
             save_account,
             store_secret,
+            discover_provider,
+            test_smtp_connection,
             list_cached_messages,
             cache_message,
             queue_operation,
             list_queue,
-            claim_next_operation,
-            complete_operation,
-            fail_operation,
+            flush_outbox,
             clear_cache
         ])
         .run(tauri::generate_context!())

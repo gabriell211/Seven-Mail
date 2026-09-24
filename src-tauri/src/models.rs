@@ -20,6 +20,28 @@ pub struct AccountProfile {
     pub provider: String,
     pub color: String,
     pub is_default: bool,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub imap_host: Option<String>,
+    #[serde(default)]
+    pub imap_port: Option<u16>,
+    #[serde(default)]
+    pub smtp_host: Option<String>,
+    #[serde(default)]
+    pub smtp_port: Option<u16>,
+    #[serde(default)]
+    pub security_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSettings {
+    pub imap_host: String,
+    pub imap_port: u16,
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub security_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
