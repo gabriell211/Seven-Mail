@@ -103,7 +103,7 @@ fn parse_message(
         .map(|value| value.into_owned())
         .unwrap_or_default();
     let attachment_names = (0..parsed.attachment_count())
-        .filter_map(|index| parsed.attachment(index))
+        .filter_map(|index| parsed.attachment(index as u32))
         .map(|part| part.attachment_name().unwrap_or("anexo").to_string())
         .collect::<Vec<_>>();
 
