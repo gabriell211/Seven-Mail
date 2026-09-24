@@ -257,7 +257,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
   const displayWeekDays=view==="workweek"?workWeekDays:view==="three"?threeDays:weekDays;
 
   const eventsByDay = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>();
+    const map = new Map<string, CalendarOccurrence[]>();
     for (const event of expandedEvents) {
       const key = new Date(event.startAt).toDateString();
       const list = [...(map.get(key) ?? []), event]
@@ -733,7 +733,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
       {view === "day" && <div className="calendar-day-list">
         {(eventsByDay.get(cursor.toDateString()) ?? []).length
           ? (eventsByDay.get(cursor.toDateString()) ?? []).map((event) => (
-              <article className="agenda-row" key={event.id}>
+              <article className="agenda-row" key={event.occurrenceId}>
                 <time>{event.allDay ? "Dia inteiro" : formatCalendarTime(event.startAt,event.timezone)}</time>
                 <EventButton event={event}/>
               </article>
@@ -743,7 +743,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
 
       {view === "agenda" && <div className="calendar-agenda">
         {agenda.length ? agenda.map((event) => (
-          <article className="agenda-row" key={event.id}>
+          <article className="agenda-row" key={event.occurrenceId}>
             <time>{formatCalendarDate(event.startAt,{day:"2-digit",month:"short",year:"numeric"})}</time>
             <EventButton event={event}/>
           </article>
