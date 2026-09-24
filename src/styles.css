@@ -259,3 +259,21 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .folder-edit:hover{color:var(--accent);background:var(--accent-soft)}
 .move-folder-row{display:flex;align-items:center;gap:9px;padding:0 25px 16px;color:var(--muted);font-size:9px}
 .move-folder-row select{height:30px;max-width:240px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--text);padding:0 8px;font-size:9px}
+.signature-settings{align-items:flex-start}
+.signature-panel{width:min(720px,100%);display:flex;flex-direction:column;gap:10px}
+.signature-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.signature-panel-head>span{font-size:10px;color:var(--muted)}
+.signature-list{display:flex;flex-direction:column;gap:8px}
+.signature-card{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--solid);border-radius:12px;padding:9px 10px}
+.signature-main{flex:1;min-width:0;border:0;background:transparent;color:var(--text);text-align:left;display:grid;grid-template-columns:minmax(150px,.45fr) minmax(0,1fr);gap:12px;align-items:center}
+.signature-main>span{display:flex;min-width:0;flex-direction:column}
+.signature-main b,.signature-main small,.signature-main p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.signature-main b{font-size:10px}
+.signature-main small{font-size:8px;color:var(--muted);margin-top:2px}
+.signature-main p{margin:0;font-size:9px;color:var(--muted)}
+.signature-empty{padding:18px 0}
+.signature-modal{width:min(700px,calc(100vw - 32px))}
+.signature-editor{min-height:190px!important;font-family:inherit;line-height:1.6}
+.signature-picker{height:31px;max-width:180px;border:1px solid var(--line);border-radius:8px;background:var(--solid);color:var(--text);padding:0 8px;font-size:9px;outline:none}
+.signature-picker:focus{border-color:var(--accent)}
+@media(max-width:760px){.signature-main{grid-template-columns:1fr}.signature-main p{display:none}}
