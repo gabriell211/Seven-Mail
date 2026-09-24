@@ -37,6 +37,12 @@ pub struct AccountProfile {
     #[serde(default)]
     pub carddav_url: Option<String>,
     #[serde(default)]
+    pub ldap_url: Option<String>,
+    #[serde(default)]
+    pub ldap_base_dn: Option<String>,
+    #[serde(default)]
+    pub ldap_filter: Option<String>,
+    #[serde(default)]
     pub smtp_host: Option<String>,
     #[serde(default)]
     pub smtp_port: Option<u16>,
@@ -63,6 +69,18 @@ fn default_incoming_protocol() -> String {
 pub struct DavSyncResult {
     pub calendar_objects: Vec<String>,
     pub contact_objects: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryContact {
+    pub id: String,
+    pub display_name: String,
+    pub email: String,
+    pub phone: String,
+    pub company: String,
+    pub job_title: String,
+    pub dn: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
