@@ -6,7 +6,7 @@ mod providers;
 mod storage;
 mod workspace;
 
-use models::{AccountProfile, MailAttachmentInfo, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
+use models::{AccountProfile, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
 use storage::AppPaths;
 use std::sync::Mutex;
 use tauri::Manager;
@@ -319,6 +319,20 @@ fn list_message_attachments(account_id: String, message_id: String) -> Result<Ve
 }
 
 #[tauri::command]
+fn preview_message_attachment(
+    account_id: String,
+    message_id: String,
+    index: usize,
+) -> Result<MailAttachmentPreview, String> {
+    interchange::preview_message_attachment(
+        &AppPaths::resolve()?,
+        &account_id,
+        &message_id,
+        index,
+    )
+}
+
+#[tauri::command]
 fn stage_message_attachments(
     operation_id: String,
     account_id: String,
@@ -529,6 +543,7 @@ pub fn run() {
             import_eml,
             read_message_source,
             list_message_attachments,
+            preview_message_attachment,
             stage_message_attachments,
             save_message_attachment,
             save_all_message_attachments,
