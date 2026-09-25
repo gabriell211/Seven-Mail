@@ -174,9 +174,9 @@ export function eventsFromIcs(raw: string): CalendarEvent[] {
         .filter(([key])=>key==="ATTENDEE"||key.startsWith("ATTENDEE;"))
         .flatMap(([key,values])=>values.map((value)=>({key,value})));
       const attendeeEmail=(value:string)=>value.replace(/^.*mailto:/i,"").trim();
-      const required=attendeeEntries.filter(({key})=>!/ROLE=OPT-PARTICIPANT|CUTYPE=RESOURCE/i.test(key)).map(({value})=>attendeeEmail(value)).filter(Boolean);
-      const optional=attendeeEntries.filter(({key})=>/ROLE=OPT-PARTICIPANT/i.test(key)).map(({value})=>attendeeEmail(value)).filter(Boolean);
-      const resources=attendeeEntries.filter(({key})=>/CUTYPE=RESOURCE/i.test(key)).map(({value})=>attendeeEmail(value)).filter(Boolean);
+      const required=[...new Set(attendeeEntries.filter(({key})=>!/ROLE=OPT-PARTICIPANT|CUTYPE=RESOURCE/i.test(key)).map(({value})=>attendeeEmail(value)).filter(Boolean))];
+      const optional=[...new Set(attendeeEntries.filter(({key})=>/ROLE=OPT-PARTICIPANT/i.test(key)).map(({value})=>attendeeEmail(value)).filter(Boolean))];
+      const resources=[...new Set(attendeeEntries.filter(({key})=>/CUTYPE=RESOURCE/i.test(key)).map(({value})=>attendeeEmail(value)).filter(Boolean))];
       const participantResponses=Object.fromEntries(attendeeEntries
         .map(({key,value})=>{
           const email=attendeeEmail(value).toLocaleLowerCase("pt-BR");
