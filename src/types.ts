@@ -142,6 +142,7 @@ export interface AppSettings {
   sendDelaySeconds: 0 | 5 | 10 | 20 | 30;
   notificationsEnabled: boolean;
   syncIntervalMinutes: 1 | 5 | 10 | 15 | 30;
+  autoUpdateEnabled?: boolean;
   focusInboxEnabled?: boolean;
   mailPageSize?: 25 | 50 | 100;
   maxAttachmentMb?: 10 | 25 | 50 | 100;
