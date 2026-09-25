@@ -7,6 +7,7 @@ mod local_crypto;
 mod models;
 mod oauth;
 mod pop3_sync;
+mod provider_native;
 mod providers;
 mod smime;
 mod storage;
@@ -169,6 +170,46 @@ fn oauth_clear(account_id: String) -> Result<(), String> {
 #[tauri::command]
 fn discover_provider(email: String) -> ProviderSettings {
     providers::discover(&email)
+}
+
+#[tauri::command]
+fn provider_capabilities(account_id: String) -> Result<provider_native::ProviderCapabilities, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    Ok(provider_native::capabilities(&account))
+}
+
+#[tauri::command]
+fn provider_corporate_catalog(account_id: String) -> Result<serde_json::Value, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    provider_native::corporate_catalog(&account)
+}
+
+#[tauri::command]
+fn provider_sensitivity_rights(account_id: String, label_id: String, owner_email: Option<String>) -> Result<serde_json::Value, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    provider_native::sensitivity_rights(&account, &label_id, owner_email.as_deref())
+}
+
+#[tauri::command]
+fn provider_recall_message(account_id: String, message_id: String) -> Result<String, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    provider_native::recall_message(&paths, &account, &message_id)
 }
 
 #[tauri::command]
@@ -913,6 +954,10 @@ pub fn run() {
             oauth_status,
             oauth_clear,
             discover_provider,
+            provider_capabilities,
+            provider_corporate_catalog,
+            provider_sensitivity_rights,
+            provider_recall_message,
             import_smime_identity,
             smime_identity_status,
             remove_smime_identity,
