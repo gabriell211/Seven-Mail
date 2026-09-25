@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Icon, type IconName } from "../icons";
 import { bridge } from "../lib/bridge";
 import { pushCloudDocument } from "../lib/neon";
 import { syncWorkspaceCollection } from "../lib/workspace-sync";
+import { extensionHasPermission, renderExtensionUrl } from "../lib/extensions";
 import {
   eventConflicts,
   exceptionOccurrence,
@@ -28,6 +30,7 @@ import type {
   CalendarListItem,
   ContactGroupItem,
   ContactItem,
+  ExtensionManifestItem,
   NoteItem,
   RuleItem,
   TaskItem,
@@ -184,6 +187,7 @@ function Empty({ icon, title, text }: { icon: IconName; title: string; text: str
 export function PersistentCalendarView({ accounts = [], settings }: { accounts?: AccountProfile[]; settings: AppSettings }) {
   const store = useWorkspace<CalendarEvent>("calendar");
   const calendars = useWorkspace<CalendarListItem>("calendar-list");
+  const extensions = useWorkspace<ExtensionManifestItem>("extension");
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [editingOccurrence,setEditingOccurrence]=useState<{sourceId:string;originalStart:string}|null>(null);
   const [cursor, setCursor] = useState(() => new Date());
@@ -765,6 +769,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
           onCancelMeeting={(event)=>sendMeeting(event,"CANCEL")}
           onRespondMeeting={respondMeeting}
           currentAccount={editing?eventAccount(editing):undefined}
+          extensions={extensions.items}
           onDuplicate={store.items.some((item)=>item.id===editing.id)?async()=>{await duplicateEvent(editing);setEditing(null);}:undefined}
           onCopy={()=>setEventClipboard({event:editing,mode:"copy"})}
           onCut={store.items.some((item)=>item.id===editing.id)?()=>{setEventClipboard({event:editing,mode:"cut"});setEditing(null);}:undefined}
@@ -793,6 +798,7 @@ function CalendarEditor({
   onCancelMeeting,
   onRespondMeeting,
   currentAccount,
+  extensions,
 }: {
   value: CalendarEvent;
   calendars: CalendarListItem[];
@@ -811,9 +817,20 @@ function CalendarEditor({
   onCancelMeeting?: (event:CalendarEvent) => Promise<void>;
   onRespondMeeting?: (event:CalendarEvent,response:NonNullable<CalendarEvent["attendeeResponse"]>) => Promise<void>;
   currentAccount?: AccountProfile;
+  extensions: ExtensionManifestItem[];
 }) {
   const conflicts=useMemo(()=>eventConflicts(value,allEvents),[value.startAt,value.endAt,value.id,allEvents]);
   const suggestions=useMemo(()=>conflicts.length?suggestMeetingSlots(value,allEvents,4):[],[value.startAt,value.endAt,value.id,allEvents,conflicts.length]);
+  const meetingExtensions=extensions.filter((extension)=>extension.meeting&&extensionHasPermission(extension,"meeting.create"));
+
+  async function createOnlineMeeting(extension:ExtensionManifestItem) {
+    if(!extension.meeting||!extensionHasPermission(extension,"meeting.create")) return;
+    const url=renderExtensionUrl(extension.meeting.urlTemplate,{event:value,email:currentAccount?.email,account:currentAccount?.id,uuid:crypto.randomUUID()});
+    onChange({...value,onlineMeetingUrl:url});
+    if(extensionHasPermission(extension,"external.open")){
+      await openUrl(url).catch(()=>undefined);
+    }
+  }
 
   return (
     <EditorModal title={value.title || "Novo evento"} eyebrow={occurrence?"OCORRÊNCIA":"EVENTO"} onClose={onClose} onSave={onSave} saveLabel={occurrence?"Salvar esta ocorrência":"Salvar"} disabled={!value.title.trim() || !value.startAt || !value.endAt}>
@@ -823,7 +840,7 @@ function CalendarEditor({
       <label><span>Calendário</span><select value={value.calendarId??"local"} onChange={(event)=>onChange({...value,calendarId:event.target.value,color:calendars.find((item)=>item.id===event.target.value)?.color??value.color})}>{calendars.map((calendar)=><option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</select></label>
       <label><span>Status</span><select value={value.status??"confirmed"} onChange={(event)=>onChange({...value,status:event.target.value as CalendarEvent["status"]})}><option value="confirmed">Confirmado</option><option value="draft">Rascunho</option><option value="cancelled">Cancelado</option></select></label>
       <label className="full"><span>Local</span><input value={value.location} onChange={(event) => onChange({ ...value, location: event.target.value })} placeholder="Local ou sala" /></label>
-      <label className="full"><span>Reunião online</span><input value={value.onlineMeetingUrl??""} onChange={(event)=>onChange({...value,onlineMeetingUrl:event.target.value||undefined})} placeholder="https://..." /></label>
+      <label className="full"><span>Reunião online</span><input value={value.onlineMeetingUrl??""} onChange={(event)=>onChange({...value,onlineMeetingUrl:event.target.value||undefined})} placeholder="https://..." />{meetingExtensions.length>0&&<span className="meeting-extension-actions">{meetingExtensions.map((extension)=><button type="button" key={extension.id} onClick={()=>void createOnlineMeeting(extension)}>{extension.meeting?.label||extension.name}</button>)}</span>}</label>
       <label className="full"><span>Participantes obrigatórios</span><input value={(value.requiredParticipants?.length?value.requiredParticipants:value.participants).join(", ")} onChange={(event) => {const list=event.target.value.split(",").map((item)=>item.trim()).filter(Boolean);onChange({ ...value, requiredParticipants:list,participants:list });}} placeholder="email@exemplo.com" /></label>
       <label className="full"><span>Participantes opcionais</span><input value={(value.optionalParticipants??[]).join(", ")} onChange={(event)=>onChange({...value,optionalParticipants:event.target.value.split(",").map((item)=>item.trim()).filter(Boolean)})}/></label>
       <label className="full"><span>Salas e recursos</span><input value={(value.resources??[]).join(", ")} onChange={(event)=>onChange({...value,resources:event.target.value.split(",").map((item)=>item.trim()).filter(Boolean)})} placeholder="Sala 1, Projetor"/></label>
