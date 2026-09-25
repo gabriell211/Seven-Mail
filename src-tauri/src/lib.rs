@@ -219,6 +219,16 @@ fn provider_sensitivity_rights(account_id: String, label_id: String, owner_email
 }
 
 #[tauri::command]
+fn provider_message_policy(account_id: String, message_id: String) -> Result<provider_native::MessagePolicy, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    provider_native::message_policy(&paths, &account, &message_id)
+}
+
+#[tauri::command]
 fn provider_recall_message(account_id: String, message_id: String) -> Result<String, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -976,6 +986,7 @@ pub fn run() {
             provider_capabilities,
             provider_corporate_catalog,
             provider_sensitivity_rights,
+            provider_message_policy,
             provider_recall_message,
             import_smime_identity,
             smime_identity_status,
