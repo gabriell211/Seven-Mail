@@ -618,6 +618,11 @@ fn write_text_file(path: String, content: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn export_pst(account_id: Option<String>, path: String) -> Result<usize, String> {
+    interchange::export_pst(&AppPaths::resolve()?, account_id.as_deref(), &path)
+}
+
+#[tauri::command]
 fn import_eml(account_id: String, path: String) -> Result<MailMessage, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -940,6 +945,7 @@ pub fn run() {
             read_text_file,
             read_file_data_url,
             write_text_file,
+            export_pst,
             import_eml,
             import_msg,
             read_oft_template,
