@@ -13,6 +13,9 @@ export const bridge = {
   runtimeInfo: async (): Promise<RuntimeInfo> => hasTauri()
     ? command<RuntimeInfo>("runtime_info")
     : { platform:"browser", dataDir:"%APPDATA%\\Seven Mail", cacheDir:"%APPDATA%\\Seven Mail\\cache", queueDir:"%APPDATA%\\Seven Mail\\queue", version:"web-preview" },
+  checkForUpdate: (): Promise<{available:boolean;currentVersion:string;version:string;releaseUrl:string;assetName?:string;assetUrl?:string;assetSize?:number;digest?:string;notes?:string}> => command("check_for_update"),
+  downloadUpdate: (info: {available:boolean;currentVersion:string;version:string;releaseUrl:string;assetName?:string;assetUrl?:string;assetSize?:number;digest?:string;notes?:string}): Promise<string> => command("download_update", { info }),
+  installUpdate: (path: string): Promise<string> => command("install_update", { path }),
   openDefaultMailSettings: (): Promise<string> => command("open_default_mail_settings"),
   setCloseToTray: (enabled: boolean): Promise<void> => command("set_close_to_tray", { enabled }),
   listAccounts: (): Promise<AccountProfile[]> => command("list_accounts"),
