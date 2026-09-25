@@ -424,3 +424,54 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
 
     Ok(())
 }
+
+
+pub fn send_email_reaction(
+    account: &AccountProfile,
+    recipient: &str,
+    subject: &str,
+    in_reply_to: &str,
+    emoji: &str,
+) -> Result<(), String> {
+    const ALLOWED: &[&str] = &["👍", "❤️", "😂", "🎉", "😮", "😢", "🙏"];
+    if !ALLOWED.contains(&emoji) {
+        return Err("Reação não suportada pelo Seven Mail.".to_string());
+    }
+    let in_reply_to = in_reply_to.trim();
+    if !in_reply_to.starts_with('<') || !in_reply_to.ends_with('>') {
+        return Err("Message-ID original inválido para reação.".to_string());
+    }
+
+    let from_address = account.email.parse()
+        .map_err(|error| format!("Remetente inválido: {error}"))?;
+    let to_mailbox: Mailbox = recipient.parse()
+        .map_err(|error| format!("Destinatário da reação inválido: {error}"))?;
+    let reaction_type: ContentType = "text/vnd.google.email-reaction+json; charset=utf-8"
+        .parse()
+        .map_err(|error| format!("MIME de reação inválido: {error}"))?;
+    let raw_header = |name: &'static str, value: String| {
+        HeaderValue::new(HeaderName::new_from_ascii_str(name), value)
+    };
+
+    let plain = format!("{emoji} Reação enviada pelo Seven Mail");
+    let html = format!("<p>{emoji} Reação enviada pelo Seven Mail</p>");
+    let reaction = serde_json::json!({"version":1,"emoji":emoji}).to_string();
+    let body = MultiPart::alternative()
+        .singlepart(SinglePart::plain(plain))
+        .singlepart(SinglePart::builder().header(reaction_type).body(reaction))
+        .singlepart(SinglePart::html(html));
+
+    let message = Message::builder()
+        .from(Mailbox::new(Some(account.display_name.clone()), from_address))
+        .to(to_mailbox)
+        .subject(if subject.to_ascii_lowercase().starts_with("re:") { subject.to_string() } else { format!("Re: {subject}") })
+        .raw_header(raw_header("In-Reply-To", in_reply_to.to_string()))
+        .raw_header(raw_header("References", in_reply_to.to_string()))
+        .multipart(body)
+        .map_err(|error| format!("Falha ao montar reação: {error}"))?;
+
+    smtp_transport(account)?
+        .send(&message)
+        .map_err(|error| format!("Falha ao enviar reação: {error}"))?;
+    Ok(())
+}
