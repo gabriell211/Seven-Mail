@@ -69,6 +69,7 @@ export const bridge = {
     command("preview_message_attachment", { accountId, messageId, index }),
   stageMessageAttachments: (operationId: string, accountId: string, messageId: string): Promise<QueuedAttachment[]> =>
     command("stage_message_attachments", { operationId, accountId, messageId }),
+  cacheMessageAttachment: (accountId: string, messageId: string, index: number): Promise<string> => command("cache_message_attachment", { accountId, messageId, index }),
   saveMessageAttachment: (accountId: string, messageId: string, index: number, destination: string): Promise<void> => command("save_message_attachment", { accountId, messageId, index, destination }),
   saveAllMessageAttachments: (accountId: string, messageId: string, directory: string): Promise<number> => command("save_all_message_attachments", { accountId, messageId, directory }),
   updateMessageMetadata: (accountId: string, messageId: string, metadata: { importance?: "low"|"normal"|"high"; snoozedUntil?: string; isMuted?: boolean; isPhishing?: boolean; isImportant?: boolean }): Promise<MailMessage> => command("update_message_metadata", { accountId, messageId, importance: metadata.importance, snoozedUntil: metadata.snoozedUntil, isMuted: metadata.isMuted, isPhishing: metadata.isPhishing, isImportant: metadata.isImportant }),
