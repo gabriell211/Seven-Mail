@@ -164,6 +164,31 @@ fn oauth_exchange_code(
 }
 
 #[tauri::command]
+fn provider_oauth_exchange_code(
+    account_id: String,
+    code: String,
+    verifier: String,
+    redirect_uri: Option<String>,
+) -> Result<oauth::OAuthTokenState, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    oauth::provider_exchange_code(&account, &code, &verifier, redirect_uri.as_deref())
+}
+
+#[tauri::command]
+fn provider_oauth_status(account_id: String) -> Result<bool, String> {
+    oauth::provider_status(&account_id)
+}
+
+#[tauri::command]
+fn provider_oauth_clear(account_id: String) -> Result<(), String> {
+    oauth::provider_clear(&account_id)
+}
+
+#[tauri::command]
 fn oauth_refresh(account_id: String) -> Result<oauth::OAuthTokenState, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -991,6 +1016,7 @@ pub fn run() {
             install_update,
             initial_open_requests,
             set_close_to_tray,
+            open_default_mail_settings,
             list_accounts,
             save_account,
             set_default_account,
@@ -1001,6 +1027,9 @@ pub fn run() {
             verify_app_lock,
             clear_app_lock,
             oauth_exchange_code,
+            provider_oauth_exchange_code,
+            provider_oauth_status,
+            provider_oauth_clear,
             oauth_refresh,
             oauth_status,
             oauth_clear,
