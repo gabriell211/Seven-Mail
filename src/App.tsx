@@ -1898,12 +1898,28 @@ export default function App() {
       window.alert("Nenhum evento válido foi encontrado no arquivo ICS.");
       return;
     }
+    const existingDocuments=await bridge.listWorkspace<CalendarEvent>("calendar").catch(()=>[]);
+    const existingById=new Map(existingDocuments.map((document)=>[document.id,document.payload]));
     for(const event of events){
+      const existing=existingById.get(event.id);
+      const merged:CalendarEvent=existing
+        ? {
+            ...existing,
+            ...event,
+            participantResponses:{
+              ...(existing.participantResponses??{}),
+              ...(event.participantResponses??{}),
+            },
+            lastSentParticipants:event.lastSentParticipants?.length
+              ? event.lastSentParticipants
+              : existing.lastSentParticipants,
+          }
+        : event;
       const document:WorkspaceDocument<CalendarEvent>={
-        id:event.id,
+        id:merged.id,
         kind:"calendar",
         updatedAt:new Date().toISOString(),
-        payload:event,
+        payload:merged,
       };
       await bridge.upsertWorkspace(document);
       void pushCloudDocument(document).catch(()=>undefined);
