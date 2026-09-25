@@ -26,6 +26,48 @@ fn runtime_info() -> Result<RuntimeInfo, String> {
 }
 
 #[tauri::command]
+fn open_default_mail_settings() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg("ms-settings:defaultapps")
+            .spawn()
+            .map_err(|error| format!("Não foi possível abrir Aplicativos padrão: {error}"))?;
+        return Ok("Escolha Seven Mail como aplicativo padrão para e-mail e MAILTO.".to_string());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let desktop = "com.sevenmail.desktop.desktop";
+        let mailto = std::process::Command::new("xdg-settings")
+            .args(["set", "default-url-scheme-handler", "mailto", desktop])
+            .status();
+        let mime = std::process::Command::new("xdg-mime")
+            .args(["default", desktop, "message/rfc822"])
+            .status();
+
+        if mailto.as_ref().map(|status| status.success()).unwrap_or(false)
+            || mime.as_ref().map(|status| status.success()).unwrap_or(false)
+        {
+            return Ok("Seven Mail foi registrado como cliente de e-mail padrão quando suportado pelo ambiente desktop.".to_string());
+        }
+        return Err("O ambiente Linux não permitiu alterar o cliente padrão automaticamente. Use as configurações de Aplicativos padrão do sistema.".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.Desktop-Settings.extension")
+            .spawn()
+            .map_err(|error| format!("Não foi possível abrir os Ajustes do Sistema: {error}"))?;
+        return Ok("Abra os ajustes de aplicativos padrão e selecione Seven Mail para e-mail.".to_string());
+    }
+
+    #[allow(unreachable_code)]
+    Err("Configuração de cliente padrão não disponível nesta plataforma.".to_string())
+}
+
+#[tauri::command]
 fn initial_open_requests() -> Vec<String> {
     std::env::args().skip(1).collect()
 }
