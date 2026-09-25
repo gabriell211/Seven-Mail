@@ -1869,22 +1869,95 @@ export default function App() {
         color:account.color,
         accountId:account.id,
         visible:true,
+        shared:Boolean(account.isSharedMailbox),
+        ownerEmail:account.sharedOwnerEmail??account.email,
+        permissions:account.isSharedMailbox
+          ? [
+              ...(account.sharedPermissions?.includes("calendar")?["read" as const]:[]),
+              ...(account.sharedPermissions?.includes("manage-calendar")?["edit" as const,"share" as const,"delegate" as const]:[]),
+            ]
+          : ["read","edit","share","delegate"],
+        delegates:account.isSharedMailbox&&account.sharedOwnerEmail?[account.sharedOwnerEmail]:[],
       };
       await bridge.upsertWorkspace({id:calendar.id,kind:"calendar-list",updatedAt:now,payload:calendar});
 
+      const existingDocuments=await bridge.listWorkspace<CalendarEvent>("calendar").catch(()=>[]);
+      const existingById=new Map(existingDocuments.map((document)=>[document.id,document.payload]));
       for(const raw of result.calendarObjects){
         for(const event of eventsFromIcs(raw)){
-          const payload:CalendarEvent={...event,calendarId,accountId:account.id,color:event.color||account.color};
+          const previous=existingById.get(event.id);
+          let payload:CalendarEvent={
+            ...(previous??{} as CalendarEvent),
+            ...event,
+            participantResponses:{
+              ...(previous?.participantResponses??{}),
+              ...(event.participantResponses??{}),
+            },
+            lastSentParticipants:event.lastSentParticipants?.length
+              ? event.lastSentParticipants
+              : previous?.lastSentParticipants,
+            calendarId,
+            accountId:account.id,
+            color:event.color||account.color,
+          };
+
+          const own=account.email.toLocaleLowerCase("pt-BR");
+          const organizer=payload.organizer?.toLocaleLowerCase("pt-BR");
+          const hasConflict=(await bridge.listWorkspace<CalendarEvent>("calendar").catch(()=>[]))
+            .map((document)=>document.payload)
+            .some((other)=>{
+              if(other.id===payload.id||other.status==="cancelled"||other.freeBusyStatus==="free") return false;
+              const aStart=new Date(payload.startAt).getTime();
+              const aEnd=new Date(payload.endAt).getTime();
+              const bStart=new Date(other.startAt).getTime();
+              const bEnd=new Date(other.endAt).getTime();
+              return aStart < bEnd && aEnd > bStart;
+            });
+          const currentResponse=payload.participantResponses?.[own]??payload.attendeeResponse;
+          if(settings.autoDeclineConflicts&&organizer&&organizer!==own&&hasConflict&&currentResponse!=="declined"){
+            payload={
+              ...payload,
+              attendeeResponse:"declined",
+              freeBusyStatus:"free",
+              participantResponses:{...(payload.participantResponses??{}),[own]:"declined"},
+            };
+            const reply=eventInvitationToIcs(payload,payload.organizer!,"REPLY","declined",account.email);
+            await bridge.queueOperation({
+              id:crypto.randomUUID(),
+              kind:"send",
+              accountId:account.id,
+              createdAt:new Date().toISOString(),
+              attempts:0,
+              payload:{
+                fromAddress:account.email,
+                to:payload.organizer,
+                cc:"",
+                bcc:"",
+                subject:`Re: ${payload.title}`,
+                bodyText:"Recusado automaticamente devido a conflito de agenda.",
+                bodyHtml:"",
+                attachments:[],
+                calendarIcs:reply,
+                calendarMethod:"REPLY",
+                priority:"normal",
+                requestReadReceipt:false,
+                requestDeliveryReceipt:false,
+                sendAt:new Date().toISOString(),
+              },
+            });
+          }
+
           const document:WorkspaceDocument<CalendarEvent>={id:payload.id,kind:"calendar",updatedAt:now,payload};
           await bridge.upsertWorkspace(document);
           void pushCloudDocument(document).catch(()=>undefined);
         }
       }
+      void bridge.flushOutbox().catch(()=>undefined);
     }
 
     for(const raw of result.contactObjects){
       for(const contact of contactsFromVcard(raw)){
-        const payload:ContactItem={...contact};
+        const payload:ContactItem={...contact,accountId:account.id,shared:Boolean(account.isSharedMailbox)};
         const document:WorkspaceDocument<ContactItem>={id:payload.id,kind:"contact",updatedAt:now,payload};
         await bridge.upsertWorkspace(document);
         void pushCloudDocument(document).catch(()=>undefined);
