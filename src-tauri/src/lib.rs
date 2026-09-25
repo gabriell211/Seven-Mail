@@ -134,30 +134,6 @@ fn has_app_lock() -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn tmailor_test_token_status() -> Result<bool, String> {
-    Ok(credentials::load_scoped("tmailor-test", "default")?.is_some())
-}
-
-#[tauri::command]
-fn tmailor_test_token_store(token: String) -> Result<(), String> {
-    let token = token.trim();
-    if token.len() < 8 || token.len() > 2048 {
-        return Err("Access Token do Tmailor inválido.".to_string());
-    }
-    credentials::store_scoped("tmailor-test", "default", token)
-}
-
-#[tauri::command]
-fn tmailor_test_token_load() -> Result<Option<String>, String> {
-    credentials::load_scoped("tmailor-test", "default")
-}
-
-#[tauri::command]
-fn tmailor_test_token_clear() -> Result<(), String> {
-    credentials::delete_scoped("tmailor-test", "default")
-}
-
-#[tauri::command]
 fn set_app_lock(pin: String) -> Result<(), String> {
     credentials::set_app_lock(&pin)
 }
@@ -1046,10 +1022,6 @@ pub fn run() {
             set_default_account,
             delete_account,
             store_secret,
-            tmailor_test_token_status,
-            tmailor_test_token_store,
-            tmailor_test_token_load,
-            tmailor_test_token_clear,
             has_app_lock,
             set_app_lock,
             verify_app_lock,
