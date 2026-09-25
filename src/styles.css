@@ -744,3 +744,22 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .message.swipeable{touch-action:pan-y;overscroll-behavior-x:contain}
 .message.swipeable:active{cursor:grabbing}
 .rich-editor a[data-seven-mention]{display:inline-block;padding:1px 5px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-weight:750;text-decoration:none}
+
+
+/* Declarative extension manager */
+.extension-settings{align-items:flex-start}
+.extension-panel{width:min(760px,100%);display:flex;flex-direction:column;gap:10px}
+.extension-toolbar{display:flex;gap:7px;flex-wrap:wrap}
+.extension-list{display:flex;flex-direction:column;gap:9px}
+.extension-card{border:1px solid var(--line);border-radius:14px;background:var(--solid);padding:12px;display:flex;flex-direction:column;gap:9px}
+.extension-card>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.extension-card>header>div{display:flex;flex-direction:column;min-width:0}
+.extension-card b{font-size:10px}.extension-card small{font-size:8px;color:var(--muted)}
+.extension-card p{margin:0;font-size:9px;color:var(--muted);line-height:1.55}
+.switch-line{display:flex;align-items:center;gap:6px;font-size:9px;color:var(--muted)}
+.extension-permissions{display:flex;gap:7px;flex-wrap:wrap}
+.extension-permissions label{display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid var(--line);border-radius:999px;background:var(--soft);font-size:8px;color:var(--muted)}
+.extension-card>footer{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.meeting-extension-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.meeting-extension-actions button{border:1px solid var(--line);background:var(--soft);color:var(--accent);border-radius:8px;min-height:28px;padding:0 9px;font-size:8px;font-weight:750}
+.attachment-browser-row.cached{box-shadow:inset 3px 0 0 var(--accent)}
