@@ -29,6 +29,17 @@ export const bridge = {
   oauthStatus: (accountId: string): Promise<boolean> => command("oauth_status", { accountId }),
   oauthClear: (accountId: string): Promise<void> => command("oauth_clear", { accountId }),
   discoverProvider: (email: string): Promise<ProviderSettings> => command("discover_provider", { email }),
+  importSmimeIdentity: (accountId: string, path: string, password: string): Promise<{configured:boolean;subject?:string}> =>
+    command("import_smime_identity", { accountId, path, password }),
+  smimeIdentityStatus: (accountId: string): Promise<{configured:boolean;subject?:string}> =>
+    command("smime_identity_status", { accountId }),
+  removeSmimeIdentity: (accountId: string): Promise<void> => command("remove_smime_identity", { accountId }),
+  importSmimeRecipientCertificate: (email: string, path: string): Promise<void> =>
+    command("import_smime_recipient_certificate", { email, path }),
+  hasSmimeRecipientCertificate: (email: string): Promise<boolean> =>
+    command("has_smime_recipient_certificate", { email }),
+  inspectSmimeMessage: (accountId: string, messageId: string): Promise<{signed:boolean;signatureValid?:boolean;encrypted:boolean;decrypted:boolean;decryptedPreview?:string;error?:string}> =>
+    command("inspect_smime_message", { accountId, messageId }),
   syncLdap: (accountId: string): Promise<Array<{id:string;displayName:string;email:string;phone:string;company:string;jobTitle:string;dn:string}>> => command("sync_ldap", { accountId }),
   testLdapConnection: (accountId: string): Promise<boolean> => command("test_ldap_connection", { accountId }),
   syncDav: (accountId: string): Promise<{calendarObjects:string[];contactObjects:string[]}> => command("sync_dav", { accountId }),
