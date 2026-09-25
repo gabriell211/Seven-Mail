@@ -174,6 +174,8 @@ pub struct MailMessage {
     pub is_phishing: bool,
     #[serde(default)]
     pub is_important: bool,
+    #[serde(default)]
+    pub source_format: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
