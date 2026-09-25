@@ -620,8 +620,8 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Contatos offline
 - [x] Tarefas offline
 - [x] Indicador de estado da sincronização
-- [ ] Resolução de conflitos
-- [ ] Sincronização incremental
+- [x] Resolução de conflitos
+- [x] Sincronização incremental
 - [x] Configuração do período armazenado localmente
 
 ---
@@ -801,13 +801,13 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Carregamento incremental
 - [ ] Virtualização da lista de mensagens
 - [x] Cache inteligente
-- [ ] Sincronização incremental
+- [x] Sincronização incremental
 - [x] Paginação
 - [ ] Indexação local
 - [x] Busca rápida
 - [x] Processamento de mensagens em background
 - [x] Limite de concorrência
-- [ ] Retry com backoff
+- [x] Retry com backoff
 - [x] Economia de memória
 - [x] Economia de bateria
 - [x] Suporte a caixas com grande volume de mensagens
@@ -825,8 +825,8 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Indicador de erros
 - [x] Retentativas automáticas
 - [x] Reconexão
-- [ ] Detecção de alterações remotas
-- [ ] Resolução de conflitos
+- [x] Detecção de alterações remotas
+- [x] Resolução de conflitos
 
 ---
 
@@ -999,8 +999,8 @@ A aplicação deverá utilizar:
 - [x] Cache local
 - [x] Caixa de saída
 - [x] Pesquisa offline
-- [ ] Sincronização incremental
-- [ ] Resolução de conflitos
+- [x] Sincronização incremental
+- [x] Resolução de conflitos
 
 ## 0.5.0 — Calendário
 
