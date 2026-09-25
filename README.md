@@ -521,7 +521,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Criar contato
 - [x] Editar contato
 - [x] Excluir contato
-- [ ] Foto
+- [x] Foto
 - [x] Nome
 - [x] Sobrenome
 - [x] Apelido
@@ -539,11 +539,11 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Categorias
 - [x] Grupos
 - [x] Listas de contatos
-- [ ] Catálogo global de endereços
+- [x] Catálogo global de endereços
 - [x] Diretório corporativo
 - [x] Consulta LDAP
 - [x] Grupos de distribuição
-- [ ] Destinatários sugeridos
+- [x] Destinatários sugeridos
 - [x] Pesquisa
 - [x] Mesclar duplicados
 - [x] Detecção de duplicados
