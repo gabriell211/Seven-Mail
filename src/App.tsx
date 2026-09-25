@@ -502,6 +502,54 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
   },[focusMessageId,messages]);
 
   useEffect(()=>{
+    if(!bootReady||profileAccounts.length===0) return;
+    let disposed=false;
+    const sleep=(ms:number)=>new Promise<void>((resolve)=>window.setTimeout(resolve,ms));
+
+    for(const account of profileAccounts){
+      if(account.incomingProtocol==="pop3") continue;
+      void (async()=>{
+        while(!disposed){
+          try{
+            const changed=await bridge.waitForMailPush(account.id,25);
+            if(disposed) return;
+            if(changed){
+              const before=await bridge.listCachedMessages(account.id).catch(()=>[] as MailMessage[]);
+              const known=new Set(before.map((message)=>message.id));
+              await bridge.syncInbox(account.id,settings.memorySaverEnabled?25:(settings.mailPageSize??50));
+              const after=await bridge.listCachedMessages(account.id);
+              const fresh=after.filter((message)=>message.folder==="Caixa de entrada"&&!known.has(message.id));
+              await applySenderPolicies(fresh);
+              await executeRules(fresh);
+              await applyFreshAutomations(fresh,account);
+              if(activeAccount?.id===account.id) setMessages(after);
+              if(unified) setMessages(await bridge.listCachedMessages());
+              if(fresh.length>0&&settings.notificationsEnabled&&!notificationsMutedNow(settings)){
+                void notifyNewMessages(fresh.filter((message)=>!message.isMuted));
+              }
+              void pushCloudMessages(after).catch(()=>undefined);
+            }else{
+              await sleep(60_000);
+            }
+          }catch{
+            await sleep(60_000);
+          }
+        }
+      })();
+    }
+
+    return ()=>{disposed=true;};
+  },[
+    bootReady,
+    profileAccounts,
+    activeAccount?.id,
+    unified,
+    settings.notificationsEnabled,
+    settings.memorySaverEnabled,
+    settings.mailPageSize,
+  ]);
+
+  useEffect(()=>{
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
