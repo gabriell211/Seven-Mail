@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::time::Duration;
 
 const TOKEN_SCOPE: &str = "oauth";
+const PROVIDER_TOKEN_SCOPE: &str = "oauth-provider";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,13 +43,13 @@ fn redirect_uri<'a>(account: &'a AccountProfile, supplied: Option<&'a str>) -> &
         .unwrap_or("seven-mail://oauth/callback")
 }
 
-fn store(account_id: &str, state: &OAuthTokenState) -> Result<(), String> {
+fn store(token_scope: &str, account_id: &str, state: &OAuthTokenState) -> Result<(), String> {
     let serialized = serde_json::to_string(state).map_err(|error| error.to_string())?;
-    credentials::store_scoped(TOKEN_SCOPE, account_id, &serialized)
+    credentials::store_scoped(token_scope, account_id, &serialized)
 }
 
-fn load(account_id: &str) -> Result<Option<OAuthTokenState>, String> {
-    let Some(raw) = credentials::load_scoped(TOKEN_SCOPE, account_id)? else {
+fn load(token_scope: &str, account_id: &str) -> Result<Option<OAuthTokenState>, String> {
+    let Some(raw) = credentials::load_scoped(token_scope, account_id)? else {
         return Ok(None);
     };
     serde_json::from_str(&raw)
@@ -58,6 +59,7 @@ fn load(account_id: &str) -> Result<Option<OAuthTokenState>, String> {
 
 fn parse_token_response(
     account: &AccountProfile,
+    token_scope: &str,
     response: Value,
     previous_refresh: Option<String>,
 ) -> Result<OAuthTokenState, String> {
@@ -86,7 +88,7 @@ fn parse_token_response(
         expires_at,
         scope: response.get("scope").and_then(Value::as_str).map(ToOwned::to_owned),
     };
-    store(account.credential_account_id(), &state)?;
+    store(token_scope, account.credential_account_id(), &state)?;
     Ok(state)
 }
 
@@ -97,8 +99,9 @@ fn http_client(account: &AccountProfile) -> Result<reqwest::blocking::Client, St
         .map_err(|error| format!("Falha ao preparar OAuth: {error}"))
 }
 
-pub fn exchange_code(
+fn exchange_code_for_scope(
     account: &AccountProfile,
+    token_scope: &str,
     code: &str,
     verifier: &str,
     supplied_redirect_uri: Option<&str>,
@@ -123,12 +126,12 @@ pub fn exchange_code(
         .json::<Value>()
         .map_err(|error| format!("Resposta OAuth inválida: {error}"))?;
 
-    parse_token_response(account, response, None)
+    parse_token_response(account, token_scope, response, None)
 }
 
-pub fn refresh(account: &AccountProfile) -> Result<OAuthTokenState, String> {
-    let current = load(account.credential_account_id())?
-        .ok_or_else(|| "A conta ainda não foi autorizada por OAuth.".to_string())?;
+fn refresh_for_scope(account: &AccountProfile, token_scope: &str) -> Result<OAuthTokenState, String> {
+    let current = load(token_scope, account.credential_account_id())?
+        .ok_or_else(|| "A conta ainda não foi autorizada para este recurso OAuth.".to_string())?;
     let refresh_token = current
         .refresh_token
         .clone()
@@ -148,12 +151,12 @@ pub fn refresh(account: &AccountProfile) -> Result<OAuthTokenState, String> {
         .json::<Value>()
         .map_err(|error| format!("Resposta OAuth inválida: {error}"))?;
 
-    parse_token_response(account, response, Some(refresh_token))
+    parse_token_response(account, token_scope, response, Some(refresh_token))
 }
 
-pub fn access_token(account: &AccountProfile) -> Result<String, String> {
-    let state = load(account.credential_account_id())?
-        .ok_or_else(|| "A conta ainda não foi autorizada por OAuth.".to_string())?;
+fn access_token_for_scope(account: &AccountProfile, token_scope: &str) -> Result<String, String> {
+    let state = load(token_scope, account.credential_account_id())?
+        .ok_or_else(|| "A conta ainda não foi autorizada para este recurso OAuth.".to_string())?;
 
     let expires_soon = state
         .expires_at
@@ -161,15 +164,67 @@ pub fn access_token(account: &AccountProfile) -> Result<String, String> {
         .unwrap_or(false);
 
     if expires_soon && state.refresh_token.is_some() {
-        return Ok(refresh(account)?.access_token);
+        return Ok(refresh_for_scope(account, token_scope)?.access_token);
     }
     Ok(state.access_token)
 }
 
+pub fn exchange_code(
+    account: &AccountProfile,
+    code: &str,
+    verifier: &str,
+    supplied_redirect_uri: Option<&str>,
+) -> Result<OAuthTokenState, String> {
+    exchange_code_for_scope(account, TOKEN_SCOPE, code, verifier, supplied_redirect_uri)
+}
+
+pub fn refresh(account: &AccountProfile) -> Result<OAuthTokenState, String> {
+    refresh_for_scope(account, TOKEN_SCOPE)
+}
+
+pub fn access_token(account: &AccountProfile) -> Result<String, String> {
+    access_token_for_scope(account, TOKEN_SCOPE)
+}
+
 pub fn status(account_id: &str) -> Result<bool, String> {
-    Ok(load(account_id)?.is_some())
+    Ok(load(TOKEN_SCOPE, account_id)?.is_some())
 }
 
 pub fn clear(account_id: &str) -> Result<(), String> {
     credentials::delete_scoped(TOKEN_SCOPE, account_id)
+}
+
+pub fn provider_exchange_code(
+    account: &AccountProfile,
+    code: &str,
+    verifier: &str,
+    supplied_redirect_uri: Option<&str>,
+) -> Result<OAuthTokenState, String> {
+    exchange_code_for_scope(account, PROVIDER_TOKEN_SCOPE, code, verifier, supplied_redirect_uri)
+}
+
+pub fn provider_refresh(account: &AccountProfile) -> Result<OAuthTokenState, String> {
+    refresh_for_scope(account, PROVIDER_TOKEN_SCOPE)
+}
+
+pub fn provider_access_token(account: &AccountProfile) -> Result<String, String> {
+    access_token_for_scope(account, PROVIDER_TOKEN_SCOPE)
+}
+
+pub fn provider_status(account_id: &str) -> Result<bool, String> {
+    Ok(load(PROVIDER_TOKEN_SCOPE, account_id)?.is_some())
+}
+
+pub fn provider_scopes(account_id: &str) -> Result<Vec<String>, String> {
+    let scopes = load(PROVIDER_TOKEN_SCOPE, account_id)?
+        .and_then(|state| state.scope)
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(ToOwned::to_owned)
+        .collect();
+    Ok(scopes)
+}
+
+pub fn provider_clear(account_id: &str) -> Result<(), String> {
+    credentials::delete_scoped(PROVIDER_TOKEN_SCOPE, account_id)
 }
