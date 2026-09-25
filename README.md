@@ -599,7 +599,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Categorias
 - [x] Fixar notas
 - [x] Armazenamento local
-- [ ] Sincronização quando suportada pelo provedor
+- [x] Sincronização quando suportada pelo provedor
 
 ---
 
@@ -1006,7 +1006,7 @@ A aplicação deverá utilizar:
 
 - [x] CalDAV e/ou API do provedor
 - [x] Calendários
-- [ ] Eventos
+- [x] Eventos
 - [x] Recorrência
 - [ ] Convites
 - [x] Assistente de agendamento
@@ -1018,7 +1018,7 @@ A aplicação deverá utilizar:
 ## 0.6.0 — Contatos
 
 - [x] CardDAV e/ou API do provedor
-- [ ] Pessoas
+- [x] Pessoas
 - [x] Favoritos
 - [x] Categorias
 - [x] Grupos
@@ -1073,7 +1073,7 @@ A aplicação deverá utilizar:
 - [ ] Testes de sincronização
 - [ ] Documentação completa
 - [ ] Caixas compartilhadas e delegação validadas
-- [ ] Calendário/contatos sincronizados por provedor
+- [x] Calendário/contatos sincronizados por provedor
 - [ ] Compatibilidade EML/ICS validada
 
 ---
