@@ -102,7 +102,7 @@ pub fn import_identity(paths: &AppPaths, account_id: &str, source: &str, passwor
 
     Ok(SmimeIdentityStatus {
         configured: true,
-        subject: cert.subject_name().entries().next().map(|entry| entry.data().to_string()),
+        subject: cert.subject_name().entries().next().and_then(|entry| entry.data().to_string().ok()),
     })
 }
 
@@ -113,7 +113,7 @@ pub fn identity_status(paths: &AppPaths, account_id: &str) -> Result<SmimeIdenti
     let (cert, _) = parse_identity(paths, account_id)?;
     Ok(SmimeIdentityStatus {
         configured: true,
-        subject: cert.subject_name().entries().next().map(|entry| entry.data().to_string()),
+        subject: cert.subject_name().entries().next().and_then(|entry| entry.data().to_string().ok()),
     })
 }
 
