@@ -543,6 +543,15 @@ fn stage_message_attachments(
 }
 
 #[tauri::command]
+fn cache_message_attachment(
+    account_id: String,
+    message_id: String,
+    index: usize,
+) -> Result<String, String> {
+    interchange::cache_message_attachment(&AppPaths::resolve()?, &account_id, &message_id, index)
+}
+
+#[tauri::command]
 fn save_message_attachment(
     account_id: String,
     message_id: String,
@@ -665,6 +674,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_drag::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .app_name("Seven Mail")
@@ -771,6 +781,7 @@ pub fn run() {
             list_message_attachments,
             preview_message_attachment,
             stage_message_attachments,
+            cache_message_attachment,
             save_message_attachment,
             save_all_message_attachments,
             update_message_metadata,
