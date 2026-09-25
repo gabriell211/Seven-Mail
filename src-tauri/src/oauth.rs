@@ -203,10 +203,6 @@ pub fn provider_exchange_code(
     exchange_code_for_scope(account, PROVIDER_TOKEN_SCOPE, code, verifier, supplied_redirect_uri)
 }
 
-pub fn provider_refresh(account: &AccountProfile) -> Result<OAuthTokenState, String> {
-    refresh_for_scope(account, PROVIDER_TOKEN_SCOPE)
-}
-
 pub fn provider_access_token(account: &AccountProfile) -> Result<String, String> {
     access_token_for_scope(account, PROVIDER_TOKEN_SCOPE)
 }
