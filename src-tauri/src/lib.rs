@@ -505,6 +505,35 @@ fn import_eml(account_id: String, path: String) -> Result<MailMessage, String> {
 }
 
 #[tauri::command]
+fn import_msg(account_id: String, path: String) -> Result<MailMessage, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    interchange::import_msg(&paths, &account, &path)
+}
+
+#[tauri::command]
+fn read_oft_template(path: String) -> Result<serde_json::Value, String> {
+    interchange::read_oft_template(&path)
+}
+
+#[tauri::command]
+fn save_original_message(
+    account_id: String,
+    message_id: String,
+    destination: String,
+) -> Result<(), String> {
+    interchange::save_original_message(
+        &AppPaths::resolve()?,
+        &account_id,
+        &message_id,
+        &destination,
+    )
+}
+
+#[tauri::command]
 fn read_message_source(account_id: String, message_id: String) -> Result<String, String> {
     interchange::read_message_source(&AppPaths::resolve()?, &account_id, &message_id)
 }
@@ -777,6 +806,9 @@ pub fn run() {
             read_file_data_url,
             write_text_file,
             import_eml,
+            import_msg,
+            read_oft_template,
+            save_original_message,
             read_message_source,
             list_message_attachments,
             preview_message_attachment,
