@@ -627,7 +627,6 @@ fn import_pst_folder(
     let mut imported = 0usize;
     if let Some(contents) = folder.contents_table() {
         for row in contents.rows_matrix() {
-            let row = row.map_err(|error| format!("Falha ao ler linha PST: {error}"))?;
             let node = NodeId::from(u32::from(row.id()));
             let entry_id = folder
                 .store()
@@ -693,7 +692,6 @@ fn import_pst_folder(
 
     if let Some(hierarchy) = folder.hierarchy_table() {
         for row in hierarchy.rows_matrix() {
-            let row = row.map_err(|error| format!("Falha ao ler pasta PST: {error}"))?;
             let node = NodeId::from(u32::from(row.id()));
             let entry_id = folder
                 .store()
@@ -727,7 +725,6 @@ pub fn import_pst(paths: &AppPaths, account: &AccountProfile, source: &str) -> R
 
     let mut imported = 0usize;
     for row in hierarchy.rows_matrix() {
-        let row = row.map_err(|error| format!("Falha ao ler pasta PST: {error}"))?;
         let node = NodeId::from(u32::from(row.id()));
         let entry_id = store
             .properties()
