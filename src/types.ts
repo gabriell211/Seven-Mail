@@ -94,7 +94,7 @@ export interface MailMessage {
 
 export interface QueueOperation {
   id: string;
-  kind: "send" | "move" | "copy" | "delete" | "flag" | "read" | "draft";
+  kind: "send" | "redirect" | "move" | "copy" | "delete" | "flag" | "read" | "draft";
   accountId: string;
   createdAt: string;
   attempts: number;
