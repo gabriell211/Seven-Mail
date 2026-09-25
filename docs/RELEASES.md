@@ -32,7 +32,9 @@ O número deve permanecer alinhado em:
 
 ## Atualizações
 
-A instalação automática in-app exige artefatos assinados e uma chave privada protegida no CI. A chave privada nunca deve ser adicionada ao repositório. Até a infraestrutura de assinatura estar configurada, releases devem ser publicadas normalmente no GitHub e instaladas usando os pacotes oficiais.
+O Seven Mail possui atualizador integrado. Quando habilitado, o aplicativo consulta a release mais recente, seleciona o instalador compatível com a plataforma, baixa para a área local de updates e valida o SHA-256 publicado pela release antes de abrir/executar o pacote.
+
+A instalação continua respeitando o mecanismo nativo de cada sistema operacional. Assinatura de código, quando configurada, complementa a verificação de integridade; chaves privadas nunca devem ser adicionadas ao repositório.
 
 ## Workflow
 
