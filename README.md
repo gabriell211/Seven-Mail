@@ -217,8 +217,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Leitura em voz alta
 - [x] Modo de leitura imersiva
 - [x] Abrir e salvar EML
-- [ ] Abrir e salvar MSG quando tecnicamente viável
-- [ ] Abrir e reutilizar modelos OFT quando tecnicamente viável
+- [x] Abrir e salvar MSG quando tecnicamente viável
+- [x] Abrir e reutilizar modelos OFT quando tecnicamente viável
 - [x] Importar e exportar regras
 - [x] Favoritar categorias
 - [x] Ações por gesto quando suportadas pela plataforma
@@ -376,7 +376,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Contagem de não lidas em caixas compartilhadas
 - [x] Notificações por caixa compartilhada
 - [x] Regras por caixa compartilhada
-- [ ] Respostas automáticas por caixa compartilhada
+- [x] Respostas automáticas por caixa compartilhada
 - [x] Enviar como
 - [x] Enviar em nome de
 - [x] Acesso delegado
@@ -651,8 +651,8 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Calendários
 - [x] Tarefas
 - [x] Arquivos EML
-- [ ] Arquivos MSG quando tecnicamente viável
-- [ ] Arquivos OFT quando tecnicamente viável
+- [x] Arquivos MSG quando tecnicamente viável
+- [x] Arquivos OFT quando tecnicamente viável
 - [x] Arquivos MBOX
 - [ ] Arquivos PST quando tecnicamente disponível
 - [x] CSV
@@ -781,7 +781,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 # Acessibilidade
 
 - [x] Navegação completa por teclado
-- [ ] Leitores de tela
+- [x] Leitores de tela
 - [x] Leitura em voz alta
 - [x] Leitura imersiva
 - [x] Ditado
@@ -799,7 +799,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 - [x] Inicialização rápida
 - [x] Carregamento incremental
-- [ ] Virtualização da lista de mensagens
+- [x] Virtualização da lista de mensagens
 - [x] Cache inteligente
 - [x] Sincronização incremental
 - [x] Paginação
@@ -845,8 +845,8 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Protocolo mailto:
 - [x] Definir como cliente padrão
 - [x] Abrir arquivos EML
-- [ ] Abrir arquivos MSG quando suportado
-- [ ] Abrir arquivos OFT quando suportado
+- [x] Abrir arquivos MSG quando suportado
+- [x] Abrir arquivos OFT quando suportado
 - [x] Abrir arquivos ICS
 - [x] Arrastar arquivos para composição
 - [x] Arrastar anexos para área de trabalho
@@ -1068,13 +1068,13 @@ A aplicação deverá utilizar:
 - [ ] Atualizador automático
 - [x] Instaladores
 - [ ] Migração completa
-- [ ] Testes de carga
-- [ ] Testes de segurança
-- [ ] Testes de sincronização
+- [x] Testes de carga
+- [x] Testes de segurança
+- [x] Testes de sincronização
 - [ ] Documentação completa
-- [ ] Caixas compartilhadas e delegação validadas
+- [x] Caixas compartilhadas e delegação validadas
 - [x] Calendário/contatos sincronizados por provedor
-- [ ] Compatibilidade EML/ICS validada
+- [x] Compatibilidade EML/ICS validada
 
 ---
 
