@@ -196,7 +196,7 @@ export interface AppSettings {
 }
 
 
-export type WorkspaceKind = "calendar" | "calendar-list" | "contact" | "contact-group" | "task" | "note" | "rule" | "category" | "saved-search" | "signature" | "settings" | "draft" | "template" | "content-block" | "folder-pref" | "profile";
+export type WorkspaceKind = "calendar" | "calendar-list" | "contact" | "contact-group" | "task" | "note" | "rule" | "category" | "saved-search" | "signature" | "settings" | "draft" | "template" | "content-block" | "folder-pref" | "profile" | "extension";
 
 export interface WorkspaceDocument<T = Record<string, unknown>> {
   id: string;
@@ -365,6 +365,36 @@ export interface MailAttachmentPreview {
   dataUrl?: string;
   text?: string;
   kind: "image" | "pdf" | "text" | "archive" | "office" | "binary" | "large";
+}
+
+export interface ExtensionPermissionItem {
+  id: "external.open" | "meeting.create" | "storage.open";
+  granted: boolean;
+}
+
+export interface ExtensionActionItem {
+  id: string;
+  label: string;
+  urlTemplate: string;
+  permission: ExtensionPermissionItem["id"];
+}
+
+export interface ExtensionManifestItem {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  enabled: boolean;
+  permissions: ExtensionPermissionItem[];
+  actions?: ExtensionActionItem[];
+  meeting?: {
+    label?: string;
+    urlTemplate: string;
+  };
+  storage?: {
+    label?: string;
+    url: string;
+  };
 }
 
 export interface MailTemplateItem {
