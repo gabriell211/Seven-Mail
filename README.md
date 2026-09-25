@@ -803,7 +803,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Cache inteligente
 - [x] Sincronização incremental
 - [x] Paginação
-- [ ] Indexação local
+- [x] Indexação local
 - [x] Busca rápida
 - [x] Processamento de mensagens em background
 - [x] Limite de concorrência
