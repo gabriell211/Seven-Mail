@@ -427,7 +427,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 - [x] Múltiplos calendários
 - [x] Calendários por conta
-- [ ] Calendários compartilhados
+- [x] Calendários compartilhados
 - [x] Calendários locais
 - [x] Mostrar/ocultar calendários
 - [x] Cores personalizadas
@@ -483,20 +483,20 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Aceitar provisoriamente
 - [x] Recusar
 - [x] Manter reunião recusada no calendário
-- [ ] Manter convite na caixa de entrada após responder
+- [x] Manter convite na caixa de entrada após responder
 - [x] Acompanhar reunião sem bloquear o horário quando suportado
 - [x] Sugerir novo horário quando suportado
-- [ ] Acompanhar respostas
+- [x] Acompanhar respostas
 - [x] Atualizar participantes
-- [ ] Enviar atualização somente para participantes adicionados/removidos
+- [x] Enviar atualização somente para participantes adicionados/removidos
 - [x] Cancelar reunião
 - [x] Adicionar reunião online por integração
-- [ ] Recusar automaticamente convites em conflito
+- [x] Recusar automaticamente convites em conflito
 - [x] Iniciar reuniões mais tarde ou terminar mais cedo
 - [x] Calendários de grupo
-- [ ] Compartilhar calendário
-- [ ] Permissões de calendário
-- [ ] Delegação de calendário
+- [x] Compartilhar calendário
+- [x] Permissões de calendário
+- [x] Delegação de calendário
 
 ## Compatibilidade
 
@@ -558,8 +558,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 ## Compartilhamento
 
-- [ ] Contatos compartilhados quando suportados pelo provedor
-- [ ] Listas compartilhadas
+- [x] Contatos compartilhados quando suportados pelo provedor
+- [x] Listas compartilhadas
 - [x] Diretórios corporativos somente leitura
 
 ---
@@ -746,7 +746,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 ## Idioma e região
 
-- [ ] Múltiplos idiomas
+- [x] Múltiplos idiomas
 - [x] Formato de data
 - [x] Formato de hora
 - [x] Primeiro dia da semana
@@ -1011,7 +1011,7 @@ A aplicação deverá utilizar:
 - [x] Convites
 - [x] Assistente de agendamento
 - [x] Livre/ocupado
-- [ ] Compartilhamento e delegação
+- [x] Compartilhamento e delegação
 - [x] ICS
 - [x] Lembretes
 
