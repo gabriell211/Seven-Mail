@@ -78,6 +78,16 @@ pub struct AccountProfile {
     pub muted: bool,
     #[serde(default = "default_timeout_seconds")]
     pub connection_timeout_seconds: u64,
+    #[serde(default)]
+    pub auto_reply_enabled: bool,
+    #[serde(default)]
+    pub auto_reply_subject: Option<String>,
+    #[serde(default)]
+    pub auto_reply_body: Option<String>,
+    #[serde(default)]
+    pub auto_reply_start: Option<String>,
+    #[serde(default)]
+    pub auto_reply_end: Option<String>,
 }
 
 impl AccountProfile {
