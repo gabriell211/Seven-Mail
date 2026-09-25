@@ -28,6 +28,7 @@ import { syncWorkspaceCollection } from "./lib/workspace-sync";
 import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
 import { pendingRulesForMessage } from "./lib/rules";
 import { takePendingOAuth } from "./lib/oauth-client";
+import { setApplicationLocale } from "./lib/i18n";
 import { contactsFromVcard, eventInvitationToIcs, eventsFromIcs, messageToEml, safeExportName } from "./lib/interchange";
 import type { AccountProfile, AppSection, AppSettings, CalendarEvent, CalendarListItem, CategoryItem, ContactItem, MailFolder, MailMessage, MailTemplateItem, ProfileItem, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
 
@@ -2471,6 +2472,7 @@ export default function App() {
     root.dataset.motion=settings.reduceMotion?"reduce":"full";
     root.dataset.fontSize=settings.fontSize??"medium";
     root.lang=settings.locale??"pt-BR";
+    setApplicationLocale(settings.locale??"pt-BR");
     const fontScale=settings.fontSize==="small"?0.94:settings.fontSize==="large"?1.08:1;
     root.style.setProperty("--ui-scale",String((settings.uiScale??1)*fontScale));
   },[settings]);
