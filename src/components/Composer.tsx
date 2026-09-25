@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Icon } from "../icons";
 import { bridge } from "../lib/bridge";
-import type { AccountProfile, AppSettings, ContentBlockItem, MailTemplateItem, QueuedAttachment, SignatureItem, WorkspaceDocument } from "../types";
+import type { AccountProfile, AppSettings, ContactItem, ContentBlockItem, MailTemplateItem, QueuedAttachment, SignatureItem, WorkspaceDocument } from "../types";
 
 interface SpeechRecognitionLike {
   lang: string;
@@ -196,6 +196,8 @@ export function Composer({
   const [error, setError] = useState("");
   const [templates, setTemplates] = useState<MailTemplateItem[]>([]);
   const [contentBlocks, setContentBlocks] = useState<ContentBlockItem[]>([]);
+  const [recipientDirectory,setRecipientDirectory]=useState<Array<{name:string;email:string;source:"contact"|"ldap"}>>([]);
+  const [recipientSuggestionsOpen,setRecipientSuggestionsOpen]=useState(false);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [dictating,setDictating]=useState(false);
   const [uploadProgress,setUploadProgress]=useState<{done:number;total:number;name:string}|null>(null);
@@ -228,6 +230,34 @@ export function Composer({
     return [account.email, ...(account.aliases ?? [])].filter((value,index,array)=>value && array.indexOf(value)===index);
   }, [account]);
 
+  const recipientToken=useMemo(()=>{
+    const pieces=draft.to.split(/[;,]/);
+    return (pieces[pieces.length-1]??"").trim().toLocaleLowerCase("pt-BR");
+  },[draft.to]);
+
+  const recipientSuggestions=useMemo(()=>{
+    if(!recipientToken) return recipientDirectory.slice(0,8);
+    return recipientDirectory.filter((item)=>
+      item.email.toLocaleLowerCase("pt-BR").includes(recipientToken)||
+      item.name.toLocaleLowerCase("pt-BR").includes(recipientToken)
+    ).slice(0,8);
+  },[recipientDirectory,recipientToken]);
+
+  function chooseRecipient(email:string){
+    const pieces=draft.to.split(/([;,])/);
+    let lastValueIndex=-1;
+    for(let index=pieces.length-1;index>=0;index-=1){
+      if(pieces[index]!==","&&pieces[index]!==";"){lastValueIndex=index;break;}
+    }
+    if(lastValueIndex<0){
+      setDraft((current)=>({...current,to:email}));
+    }else{
+      pieces[lastValueIndex]=` ${email}`;
+      setDraft((current)=>({...current,to:pieces.join("").replace(/^\s+/,"")}));
+    }
+    setRecipientSuggestionsOpen(false);
+  }
+
   useEffect(() => {
     void Promise.all([
       bridge.listWorkspace<MailTemplateItem>("template").catch(() => []),
@@ -237,6 +267,35 @@ export function Composer({
       setContentBlocks(blockDocs.map((document)=>document.payload));
     });
   }, []);
+
+  useEffect(()=>{
+    let disposed=false;
+    const loadDirectory=async()=>{
+      const localDocs=await bridge.listWorkspace<ContactItem>("contact").catch(()=>[]);
+      const local=localDocs.flatMap((document)=>{
+        const contact=document.payload;
+        const emails=(contact.emails?.length?contact.emails:[contact.email]).filter(Boolean);
+        return emails.map((email)=>({name:contact.displayName||email,email,source:"contact" as const}));
+      });
+
+      let ldap:Array<{name:string;email:string;source:"ldap"}>=[];
+      if(account?.ldapUrl?.trim()){
+        const directory=await bridge.syncLdap(account.id).catch(()=>[]);
+        ldap=directory.filter((item)=>item.email).map((item)=>({name:item.displayName||item.email,email:item.email,source:"ldap" as const}));
+      }
+
+      if(disposed) return;
+      const seen=new Set<string>();
+      setRecipientDirectory([...local,...ldap].filter((item)=>{
+        const key=item.email.toLocaleLowerCase("pt-BR");
+        if(seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }));
+    };
+    void loadDirectory();
+    return ()=>{disposed=true;};
+  },[account?.id,account?.ldapUrl]);
 
   useEffect(() => {
     if (draft.mode !== "rich" || !editorRef.current) return;
@@ -676,9 +735,16 @@ export function Composer({
               </select>
             </div>
           </label>
-          <label>
+          <label className="recipient-field">
             <span>Para</span>
-            <input autoFocus value={draft.to} onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))} placeholder="destinatario@dominio.com" />
+            <input autoFocus value={draft.to} onFocus={()=>setRecipientSuggestionsOpen(true)} onChange={(event) => {setDraft((current) => ({ ...current, to: event.target.value }));setRecipientSuggestionsOpen(true);}} placeholder="destinatario@dominio.com" autoComplete="off" />
+            {recipientSuggestionsOpen&&recipientSuggestions.length>0&&<div className="recipient-suggestions" role="listbox">
+              {recipientSuggestions.map((item)=><button type="button" key={item.email} onMouseDown={(event)=>event.preventDefault()} onClick={()=>chooseRecipient(item.email)}>
+                <span className="avatar">{item.name[0]?.toUpperCase()||"@"}</span>
+                <span><b>{item.name}</b><small>{item.email}</small></span>
+                <em>{item.source==="ldap"?"Diretório":"Contato"}</em>
+              </button>)}
+            </div>}
             <span className="recipient-toggles">
               <button type="button" onClick={() => setShowCc((value) => !value)}>CC</button>
               <button type="button" onClick={() => setShowBcc((value) => !value)}>CCO</button>
