@@ -35,6 +35,7 @@ export const bridge = {
   providerCapabilities: (accountId: string): Promise<{nativeApi:boolean;recall:boolean;reactions:boolean;reactionPolicy:boolean;sensitivityLabels:boolean;retentionLabels:boolean;usageRights:boolean;push:boolean}> => command("provider_capabilities", { accountId }),
   providerCorporateCatalog: (accountId: string): Promise<{capabilities:Record<string,boolean>;sensitivityLabels:Array<Record<string,unknown>>;retentionLabels:Array<Record<string,unknown>>;sensitivityError?:string;retentionError?:string}> => command("provider_corporate_catalog", { accountId }),
   providerSensitivityRights: (accountId: string, labelId: string, ownerEmail?: string): Promise<Record<string,unknown>> => command("provider_sensitivity_rights", { accountId, labelId, ownerEmail: ownerEmail ?? null }),
+  providerMessagePolicy: (accountId: string, messageId: string): Promise<{sensitivityLabelId?:string;canForward:boolean;canCopy:boolean;reactionsAllowed:boolean;rights:string[]}> => command("provider_message_policy", { accountId, messageId }),
   providerRecallMessage: (accountId: string, messageId: string): Promise<string> => command("provider_recall_message", { accountId, messageId }),
   importSmimeIdentity: (accountId: string, path: string, password: string): Promise<{configured:boolean;subject?:string}> =>
     command("import_smime_identity", { accountId, path, password }),
