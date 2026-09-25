@@ -738,3 +738,9 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .recipient-suggestions b,.recipient-suggestions small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .recipient-suggestions b{font-size:9px}.recipient-suggestions small{font-size:8px;color:var(--muted)}
 .recipient-suggestions em{font-size:7px;font-style:normal;color:var(--muted2);text-transform:uppercase;letter-spacing:.05em}
+
+
+/* Native-feeling message gestures */
+.message.swipeable{touch-action:pan-y;overscroll-behavior-x:contain}
+.message.swipeable:active{cursor:grabbing}
+.rich-editor a[data-seven-mention]{display:inline-block;padding:1px 5px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-weight:750;text-decoration:none}
