@@ -58,6 +58,26 @@
         "mimeType": "text/calendar",
         "role": "Viewer",
         "rank": "Default"
+      },
+      {
+        "ext": [
+          "msg"
+        ],
+        "name": "Seven Mail MSG",
+        "description": "Mensagem MSG",
+        "mimeType": "application/vnd.ms-outlook",
+        "role": "Viewer",
+        "rank": "Default"
+      },
+      {
+        "ext": [
+          "oft"
+        ],
+        "name": "Seven Mail template",
+        "description": "Modelo de e-mail OFT",
+        "mimeType": "application/vnd.ms-outlook",
+        "role": "Viewer",
+        "rank": "Alternate"
       }
     ]
   },
