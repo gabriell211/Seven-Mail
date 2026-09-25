@@ -763,3 +763,9 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .meeting-extension-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .meeting-extension-actions button{border:1px solid var(--line);background:var(--soft);color:var(--accent);border-radius:8px;min-height:28px;padding:0 9px;font-size:8px;font-weight:750}
 .attachment-browser-row.cached{box-shadow:inset 3px 0 0 var(--accent)}
+
+
+/* Screen-reader and keyboard accessibility */
+.skip-link{position:fixed;left:12px;top:10px;z-index:20000;transform:translateY(-150%);padding:9px 12px;border-radius:9px;background:var(--accent);color:#fff;font-size:10px;font-weight:800;box-shadow:0 8px 30px rgba(0,0,0,.22)}
+.skip-link:focus{transform:translateY(0)}
+:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 78%,white);outline-offset:2px}
