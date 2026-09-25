@@ -2,7 +2,13 @@ use crate::{local_crypto, models::{AccountProfile, MailAddress, MailAttachmentIn
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use mail_parser::{MessageParser, MimeHeaders};
 use msg_parser::Outlook;
-use std::{fs, io::{Cursor, Read}, path::Path};
+use std::{fs, io::{Cursor, Read}, path::Path, rc::Rc};
+
+use outlook_pst::{
+    ltp::prop_context::PropertyValue,
+    messaging::{folder::Folder as PstFolder, store::Store},
+    ndb::node_id::NodeId,
+};
 
 const MAX_TEXT_FILE_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_EML_FILE_BYTES: u64 = 64 * 1024 * 1024;
@@ -579,6 +585,161 @@ pub fn save_all_message_attachments(
     Ok(saved)
 }
 
+
+fn pst_property_text(value: Option<&PropertyValue>) -> Option<String> {
+    match value {
+        Some(PropertyValue::String8(value)) => Some(value.to_string()),
+        Some(PropertyValue::Unicode(value)) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+fn pst_received_iso(value: Option<&PropertyValue>) -> String {
+    let filetime = match value {
+        Some(PropertyValue::Time(value)) => *value,
+        _ => 0,
+    };
+    if filetime <= 0 {
+        return chrono::Utc::now().to_rfc3339();
+    }
+    let unix = filetime / 10_000_000 - 11_644_473_600;
+    chrono::DateTime::<chrono::Utc>::from_timestamp(unix, 0)
+        .map(|value| value.to_rfc3339())
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339())
+}
+
+fn import_pst_folder(
+    paths: &AppPaths,
+    account: &AccountProfile,
+    folder: Rc<dyn PstFolder>,
+    parent_label: Option<&str>,
+) -> Result<usize, String> {
+    let label = folder
+        .properties()
+        .display_name()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|_| "PST".to_string());
+    let full_label = parent_label
+        .filter(|value| !value.trim().is_empty())
+        .map(|parent| format!("{parent}/{label}"))
+        .unwrap_or_else(|| label.clone());
+
+    let mut imported = 0usize;
+    if let Some(contents) = folder.contents_table() {
+        for row in contents.rows_matrix() {
+            let row = row.map_err(|error| format!("Falha ao ler linha PST: {error}"))?;
+            let node = NodeId::from(u32::from(row.id()));
+            let entry_id = folder
+                .store()
+                .properties()
+                .make_entry_id(node)
+                .map_err(|error| format!("Falha ao resolver mensagem PST: {error}"))?;
+            let message = folder
+                .store()
+                .open_message(&entry_id, None)
+                .map_err(|error| format!("Falha ao abrir mensagem PST: {error}"))?;
+            let properties = message.properties();
+
+            let subject = pst_property_text(properties.get(0x0037))
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| "(sem assunto)".to_string());
+            let body_text = pst_property_text(properties.get(0x1000));
+            let body_html = pst_property_text(properties.get(0x1013));
+            let preview = body_text
+                .as_deref()
+                .or(body_html.as_deref())
+                .unwrap_or("")
+                .chars()
+                .take(180)
+                .collect::<String>();
+            let sender_name = pst_property_text(properties.get(0x0C1A));
+            let sender_email = pst_property_text(properties.get(0x5D01))
+                .or_else(|| pst_property_text(properties.get(0x0C1F)))
+                .unwrap_or_else(|| "desconhecido@localhost".to_string());
+            let received_at = pst_received_iso(properties.get(0x0E06));
+
+            let local = MailMessage {
+                id: format!("{}-pst-{}", account.id, uuid::Uuid::new_v4()),
+                account_id: account.id.clone(),
+                remote_id: None,
+                remote_folder: None,
+                folder: full_label.clone(),
+                subject,
+                preview,
+                from: MailAddress { name: sender_name, email: sender_email },
+                to: Vec::new(),
+                received_at,
+                is_read: false,
+                is_flagged: false,
+                is_pinned: false,
+                has_attachments: message.attachment_table().is_some(),
+                body_html,
+                body_text,
+                categories: vec!["Importado".to_string(), "PST".to_string()],
+                applied_rule_ids: Vec::new(),
+                size_bytes: None,
+                attachment_names: Vec::new(),
+                importance: None,
+                snoozed_until: None,
+                is_muted: false,
+                is_phishing: false,
+                is_important: false,
+                source_format: Some("pst".to_string()),
+            };
+            storage::cache_message(paths, &local)?;
+            imported += 1;
+        }
+    }
+
+    if let Some(hierarchy) = folder.hierarchy_table() {
+        for row in hierarchy.rows_matrix() {
+            let row = row.map_err(|error| format!("Falha ao ler pasta PST: {error}"))?;
+            let node = NodeId::from(u32::from(row.id()));
+            let entry_id = folder
+                .store()
+                .properties()
+                .make_entry_id(node)
+                .map_err(|error| format!("Falha ao resolver pasta PST: {error}"))?;
+            let child = folder
+                .store()
+                .open_folder(&entry_id)
+                .map_err(|error| format!("Falha ao abrir pasta PST: {error}"))?;
+            imported += import_pst_folder(paths, account, child, Some(&full_label))?;
+        }
+    }
+    Ok(imported)
+}
+
+pub fn import_pst(paths: &AppPaths, account: &AccountProfile, source: &str) -> Result<usize, String> {
+    let source = ensure_readable_file(source, 16 * 1024 * 1024 * 1024)?;
+    let store = outlook_pst::open_store(&source)
+        .map_err(|error| format!("Não foi possível abrir o PST: {error}"))?;
+    let subtree_id = store
+        .properties()
+        .ipm_sub_tree_entry_id()
+        .map_err(|error| format!("PST sem árvore de mensagens: {error}"))?;
+    let subtree = store
+        .open_folder(&subtree_id)
+        .map_err(|error| format!("Não foi possível abrir a árvore do PST: {error}"))?;
+    let hierarchy = subtree
+        .hierarchy_table()
+        .ok_or_else(|| "PST sem pastas de mensagens.".to_string())?;
+
+    let mut imported = 0usize;
+    for row in hierarchy.rows_matrix() {
+        let row = row.map_err(|error| format!("Falha ao ler pasta PST: {error}"))?;
+        let node = NodeId::from(u32::from(row.id()));
+        let entry_id = store
+            .properties()
+            .make_entry_id(node)
+            .map_err(|error| format!("Falha ao resolver pasta PST: {error}"))?;
+        let folder = store
+            .open_folder(&entry_id)
+            .map_err(|error| format!("Falha ao abrir pasta PST: {error}"))?;
+        imported += import_pst_folder(paths, account, folder, None)?;
+    }
+    Ok(imported)
+}
 
 fn pst_filetime(value: &str) -> i64 {
     let unix = chrono::DateTime::parse_from_rfc3339(value)
