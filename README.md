@@ -135,10 +135,10 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Ignorar conversa
 - [x] Silenciar conversa
 - [x] Reenviar mensagem
-- [ ] Recuperar/recolher mensagem enviada quando suportado pelo provedor
-- [ ] Reações em mensagens quando suportadas
+- [x] Recuperar/recolher mensagem enviada quando suportado pelo provedor (capability detection + API nativa quando disponível)
+- [x] Reações em mensagens quando suportadas (fallback SMTP interoperável e respeito à política do provedor)
 - [x] Arrastar mensagens entre pastas
-- [ ] Arrastar mensagens entre contas quando suportado
+- [x] Arrastar mensagens entre contas quando suportado (IMAP APPEND/transferência entre contas compatíveis)
 - [x] Criar evento a partir de um e-mail
 - [x] Criar tarefa a partir de um e-mail
 
@@ -203,7 +203,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Bloqueio de extensões perigosas
 - [x] Arrastar anexos para a área de trabalho
 - [x] Arrastar anexos para outros aplicativos
-- [ ] Mover anexos entre mensagens e contas quando permitido
+- [x] Mover anexos entre mensagens e contas quando permitido (reutilização/staging respeitando direitos de cópia)
 
 ### Produtividade de e-mail
 
@@ -395,7 +395,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Descoberta automática de configuração
 - [x] CalDAV
 - [x] CardDAV
-- [ ] APIs nativas de provedores quando necessárias
+- [x] APIs nativas de provedores quando necessárias (adapter Microsoft Graph com capability detection)
 - [x] Autenticação por senha quando suportada
 - [x] Gmail
 - [x] Yahoo
@@ -637,7 +637,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Silenciar conta
 - [x] Silenciar conversa
 - [x] Horário silencioso
-- [ ] Ações rápidas pela notificação
+- [x] Ações rápidas pela notificação (toast acionável desktop: abrir, marcar como lida e arquivar; notificação nativa acompanha o aviso)
 
 ---
 
@@ -654,7 +654,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Arquivos MSG quando tecnicamente viável
 - [x] Arquivos OFT quando tecnicamente viável
 - [x] Arquivos MBOX
-- [ ] Arquivos PST quando tecnicamente disponível
+- [x] Arquivos PST quando tecnicamente disponível (importação e exportação pelo módulo nativo de migração)
 - [x] CSV
 - [x] ICS
 - [x] vCard
@@ -698,16 +698,16 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Bloqueio do aplicativo
 - [x] Sessões protegidas
 - [x] Limpeza segura de dados locais
-- [ ] Políticas de retenção quando oferecidas pelo provedor
-- [ ] Rótulos de sensibilidade quando oferecidos pelo provedor
-- [ ] Restrições de encaminhamento/cópia quando oferecidas pelo provedor
+- [x] Políticas de retenção quando oferecidas pelo provedor (catálogo nativo e capability detection)
+- [x] Rótulos de sensibilidade quando oferecidos pelo provedor (catálogo, identificação em mensagem e direitos de uso)
+- [x] Restrições de encaminhamento/cópia quando oferecidas pelo provedor (ações bloqueadas conforme direitos retornados)
 
 ## Criptografia de e-mail
 
-- [ ] S/MIME
-- [ ] Assinatura digital
-- [ ] Verificação de assinatura
-- [ ] Criptografia de mensagens quando suportada
+- [x] S/MIME
+- [x] Assinatura digital (CMS/PKCS#7 com identidade PKCS#12)
+- [x] Verificação de assinatura (integridade CMS/PKCS#7 na leitura)
+- [x] Criptografia de mensagens quando suportada (S/MIME com certificados X.509 dos destinatários)
 
 ---
 
@@ -818,7 +818,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 - [x] Sincronização em background
 - [x] Sincronização por intervalo
-- [ ] Push quando suportado
+- [x] Push quando suportado (IMAP IDLE/push para contas compatíveis; fallback por intervalo)
 - [x] Sincronização manual
 - [x] Sincronização por pasta
 - [x] Estado por conta
@@ -852,7 +852,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Arrastar anexos para área de trabalho
 - [x] Arrastar anexos para outros aplicativos
 - [x] Múltiplas janelas
-- [ ] Atualizações automáticas
+- [x] Atualizações automáticas (verificação automática e instalação guiada com SHA-256)
 
 ---
 
@@ -1051,27 +1051,27 @@ A aplicação deverá utilizar:
 
 ## 0.9.0 — Segurança e migração
 
-- [ ] S/MIME
-- [ ] Assinaturas digitais
+- [x] S/MIME
+- [x] Assinaturas digitais
 - [x] Importação
 - [x] Exportação
 - [x] Backup
 - [x] Criptografia local
 - [x] Regras e configurações importáveis/exportáveis
-- [ ] Políticas corporativas quando suportadas pelo provedor
+- [x] Políticas corporativas quando suportadas pelo provedor (retenção, sensibilidade, direitos e restrições via adapter nativo)
 
 ## 1.0.0 — Stable
 
 - [x] Windows
 - [x] Linux
 - [x] macOS
-- [ ] Atualizador automático
+- [x] Atualizador automático
 - [x] Instaladores
-- [ ] Migração completa
+- [x] Migração completa
 - [x] Testes de carga
 - [x] Testes de segurança
 - [x] Testes de sincronização
-- [ ] Documentação completa
+- [x] Documentação completa
 - [x] Caixas compartilhadas e delegação validadas
 - [x] Calendário/contatos sincronizados por provedor
 - [x] Compatibilidade EML/ICS validada
@@ -1134,6 +1134,18 @@ Issues e Pull Requests poderão ser utilizados para:
 - Segurança
 - Interface
 - Acessibilidade
+
+---
+
+## Documentação
+
+- [Índice da documentação](docs/README.md)
+- [Guia do usuário](docs/USER_GUIDE.md)
+- [Arquitetura](docs/ARCHITECTURE.md)
+- [Segurança](docs/SECURITY.md)
+- [Migração](docs/MIGRATION.md)
+- [Integrações corporativas](docs/ENTERPRISE.md)
+- [Releases e distribuição](docs/RELEASES.md)
 
 ---
 
