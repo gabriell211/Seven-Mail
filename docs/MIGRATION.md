@@ -54,7 +54,7 @@ O Seven Mail executa migração automática do armazenamento local para criptogr
 
 ## Backup Seven Mail
 
-Um backup JSON restaura workspace, preferências e metadados de contas. O backup criptografado protege esse conteúdo com senha definida pelo usuário.
+Um backup JSON pode restaurar workspace, preferências, regras, perfis e metadados de contas. O modo criptografado protege o arquivo de backup com senha. O backup criptografado protege esse conteúdo com senha definida pelo usuário.
 
 Para um computador novo:
 
@@ -68,3 +68,19 @@ Para um computador novo:
 ## Recomendações
 
 Sempre mantenha uma cópia intacta dos arquivos EML/MSG/OFT/PST originais durante migração e confirme o resultado antes de apagar o cliente anterior.
+
+
+## Checklist de migração completa
+
+Para uma migração entre computadores ou a partir de outro cliente:
+
+1. mantenha os arquivos originais intactos;
+2. importe mensagens por EML/MSG/MBOX/PST conforme a origem;
+3. importe modelos OFT quando existirem;
+4. importe contatos por CSV/vCard ou sincronize CardDAV/LDAP;
+5. importe calendários por ICS ou sincronize CalDAV;
+6. restaure o backup Seven Mail para regras, perfis, preferências e workspace;
+7. reautorize OAuth e/ou informe novamente credenciais protegidas;
+8. valide caixas, calendários, contatos e filas antes de remover a origem.
+
+Credenciais não são copiadas de forma insegura entre dispositivos.
