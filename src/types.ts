@@ -46,6 +46,11 @@ export interface AccountProfile {
   sendMode?: "as" | "on-behalf";
   muted?: boolean;
   connectionTimeoutSeconds?: 10 | 20 | 30 | 60 | 120;
+  autoReplyEnabled?: boolean;
+  autoReplySubject?: string;
+  autoReplyBody?: string;
+  autoReplyStart?: string;
+  autoReplyEnd?: string;
 }
 
 export interface ProviderSettings {
