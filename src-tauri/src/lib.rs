@@ -8,6 +8,7 @@ mod models;
 mod oauth;
 mod pop3_sync;
 mod providers;
+mod smime;
 mod storage;
 mod workspace;
 
@@ -248,6 +249,44 @@ fn delete_dav_contact(account_id: String, contact_id: String) -> Result<(), Stri
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
     dav_sync::delete_contact(&account, &contact_id)
+}
+
+#[tauri::command]
+fn import_smime_identity(
+    account_id: String,
+    path: String,
+    password: String,
+) -> Result<smime::SmimeIdentityStatus, String> {
+    let paths = AppPaths::resolve()?;
+    if !storage::list_accounts(&paths)?.iter().any(|item| item.id == account_id) {
+        return Err("Conta não encontrada.".to_string());
+    }
+    smime::import_identity(&paths, &account_id, &path, &password)
+}
+
+#[tauri::command]
+fn smime_identity_status(account_id: String) -> Result<smime::SmimeIdentityStatus, String> {
+    smime::identity_status(&AppPaths::resolve()?, &account_id)
+}
+
+#[tauri::command]
+fn remove_smime_identity(account_id: String) -> Result<(), String> {
+    smime::remove_identity(&AppPaths::resolve()?, &account_id)
+}
+
+#[tauri::command]
+fn import_smime_recipient_certificate(email: String, path: String) -> Result<(), String> {
+    smime::import_recipient_certificate(&AppPaths::resolve()?, &email, &path)
+}
+
+#[tauri::command]
+fn has_smime_recipient_certificate(email: String) -> Result<bool, String> {
+    Ok(smime::has_recipient_certificate(&AppPaths::resolve()?, &email))
+}
+
+#[tauri::command]
+fn inspect_smime_message(account_id: String, message_id: String) -> Result<smime::SmimeInspection, String> {
+    smime::inspect_message(&AppPaths::resolve()?, &account_id, &message_id)
 }
 
 #[tauri::command]
@@ -859,6 +898,12 @@ pub fn run() {
             oauth_status,
             oauth_clear,
             discover_provider,
+            import_smime_identity,
+            smime_identity_status,
+            remove_smime_identity,
+            import_smime_recipient_certificate,
+            has_smime_recipient_certificate,
+            inspect_smime_message,
             sync_ldap,
             test_ldap_connection,
             sync_dav,
