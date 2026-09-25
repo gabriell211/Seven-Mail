@@ -5,9 +5,10 @@ use crate::{
     oauth,
 };
 use lettre::{
+    address::Envelope,
     message::{header::{ContentType, HeaderName, HeaderValue}, Attachment, Mailbox, MessageBuilder, MultiPart, SinglePart},
     transport::smtp::authentication::{Credentials, Mechanism},
-    Message, SmtpTransport, Transport,
+    Address, Message, SmtpTransport, Transport,
 };
 use std::{fs, time::Duration};
 
@@ -151,7 +152,46 @@ fn attachment_mime(name: &str) -> &'static str {
     }
 }
 
+fn redirect_queued(account: &AccountProfile, operation: &QueueOperation) -> Result<(), String> {
+    if !account.can("send") {
+        return Err("A conta não possui permissão de envio.".to_string());
+    }
+    let target = operation.payload.get("to").and_then(|value| value.as_str()).unwrap_or("").trim();
+    let source_path = operation.payload.get("sourcePath").and_then(|value| value.as_str()).unwrap_or("").trim();
+    if target.is_empty() || source_path.is_empty() {
+        return Err("Redirecionamento sem destino ou mensagem de origem.".to_string());
+    }
+
+    let recipient: Address = target
+        .parse()
+        .map_err(|error| format!("Destinatário de redirecionamento inválido: {error}"))?;
+    let envelope_from: Address = account.email
+        .parse()
+        .map_err(|error| format!("Remetente de envelope inválido: {error}"))?;
+    let envelope = Envelope::new(Some(envelope_from), vec![recipient.clone()])
+        .map_err(|error| format!("Envelope SMTP inválido: {error}"))?;
+
+    let original = fs::read(source_path)
+        .map_err(|error| format!("Não foi possível ler a mensagem a redirecionar: {error}"))?;
+    let resent = format!(
+        "Resent-Date: {}\r\nResent-From: {}\r\nResent-To: {}\r\n",
+        chrono::Utc::now().to_rfc2822(),
+        account.email,
+        recipient
+    );
+    let mut raw = resent.into_bytes();
+    raw.extend_from_slice(&original);
+
+    smtp_transport(account)?
+        .send_raw(&envelope, &raw)
+        .map_err(|error| format!("Falha ao redirecionar mensagem: {error}"))?;
+    Ok(())
+}
+
 pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Result<(), String> {
+    if operation.kind == "redirect" {
+        return redirect_queued(account, operation);
+    }
     if operation.kind != "send" {
         return Err("Operação de fila não é um envio SMTP.".to_string());
     }
