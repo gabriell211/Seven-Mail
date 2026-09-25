@@ -81,6 +81,7 @@ export const bridge = {
   readFileDataUrl: (path: string): Promise<string> => command("read_file_data_url", { path }),
   writeTextFile: (path: string, content: string): Promise<void> => command("write_text_file", { path, content }),
   exportPst: (accountId: string | undefined, path: string): Promise<number> => command("export_pst", { accountId: accountId ?? null, path }),
+  importPst: (accountId: string, path: string): Promise<number> => command("import_pst", { accountId, path }),
   importEml: (accountId: string, path: string): Promise<MailMessage> => command("import_eml", { accountId, path }),
   importMsg: (accountId: string, path: string): Promise<MailMessage> => command("import_msg", { accountId, path }),
   readOftTemplate: (path: string): Promise<{name:string;subject:string;bodyText:string;bodyHtml:string;sourceFormat:string}> => command("read_oft_template", { path }),
