@@ -449,6 +449,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
   const [visibleCount,setVisibleCount] = useState<number>(settings.mailPageSize ?? 50);
   const [details,setDetails] = useState<{message:MailMessage;tab:"attachments"|"headers"|"source"}|null>(null);
   const [providerPolicy,setProviderPolicy] = useState<{sensitivityLabelId?:string;canForward:boolean;canCopy:boolean;reactionsAllowed:boolean;rights:string[]} | undefined>();
+  const [reactionBusy,setReactionBusy] = useState(false);
   const [collapsedGroups,setCollapsedGroups] = useState<string[]>([]);
   const swipeStartRef=useRef<{id:string;x:number;y:number}|null>(null);
   const selected = messages.find(m=>m.id===selectedId);
@@ -858,6 +859,9 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
         <SafeMessageBody message={selected} accountEmail={accounts.find((item)=>item.id===selected.accountId)?.email} settings={settings} onAllowRemote={onAllowRemoteContent}/>
         <ReadingAssist message={selected}/>
         {providerPolicy&&(providerPolicy.sensitivityLabelId||!providerPolicy.reactionsAllowed||!providerPolicy.canForward||!providerPolicy.canCopy)&&<div className="provider-policy-banner"><Icon name="shield" size={14}/><div><b>Política do provedor aplicada</b><span>{providerPolicy.sensitivityLabelId?`Rótulo ${providerPolicy.sensitivityLabelId}. `:""}{!providerPolicy.canForward?"Encaminhamento bloqueado. ":""}{!providerPolicy.canCopy?"Cópia bloqueada. ":""}{!providerPolicy.reactionsAllowed?"Reações desativadas pelo remetente/servidor.":""}</span></div></div>}
+        {providerPolicy?.reactionsAllowed!==false&&folder.role!=="sent"&&<div className="message-reactions" aria-label="Reagir à mensagem">
+          {["👍","❤️","😂","🎉","😮","🙏"].map((emoji)=><button key={emoji} disabled={reactionBusy} title={`Reagir com ${emoji}`} onClick={()=>{setReactionBusy(true);void bridge.sendMessageReaction(selected.accountId,selected.id,emoji).then(()=>window.alert(`Reação ${emoji} enviada.`)).catch((reason)=>window.alert(reason instanceof Error?reason.message:String(reason))).finally(()=>setReactionBusy(false));}}>{emoji}</button>)}
+        </div>}
         {(settings.quickSteps??[]).length>0&&<div className="message-quick-steps">{(settings.quickSteps??[]).map((step)=><button className="secondary" key={step.id} onClick={()=>void runQuickStep(selected,step)}><Icon name="rule" size={13}/>{step.name}{step.shortcut&&<kbd>{step.shortcut}</kbd>}</button>)}</div>}
         <div className="reply-actions advanced-actions">
           <button className="secondary" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={15}/> Responder</button>
