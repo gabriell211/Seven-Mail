@@ -16,9 +16,40 @@ LDAP pode alimentar o diretório de destinatários e contatos. Credenciais segue
 
 CalDAV suporta leitura e escrita de eventos. O workspace local mantém permissões, compartilhamento, delegados, respostas de participantes e recursos.
 
-## Políticas do provedor
+## APIs nativas do provedor
 
-Retenção, rótulos de sensibilidade, recall e restrições de encaminhamento/cópia dependem de APIs proprietárias do servidor. O Seven Mail não simula sucesso quando o servidor não oferece a operação.
+O módulo de capacidades separa recursos padrão (IMAP/SMTP/DAV/LDAP) de recursos proprietários.
+
+Para contas Microsoft OAuth, quando o tenant e os scopes permitem, o Seven Mail usa Microsoft Graph para:
+
+- consultar rótulos de sensibilidade;
+- consultar rótulos/políticas de retenção;
+- consultar direitos efetivos de um rótulo;
+- aplicar restrições de encaminhamento/cópia na interface;
+- solicitar recall de uma mensagem enviada.
+
+O recall continua sujeito às regras do serviço e do destinatário. Um pedido aceito pela API não garante que todos os destinatários tiveram a mensagem recolhida.
+
+## Rótulos de sensibilidade e direitos
+
+Ao abrir uma mensagem com metadados de sensibilidade reconhecidos, o Seven Mail consulta direitos do rótulo quando a conta possui capacidade nativa. Se o direito de encaminhar ou copiar não estiver presente, as ações correspondentes são desabilitadas.
+
+## Retenção
+
+As políticas de retenção são lidas do catálogo corporativo quando o tenant concede a permissão necessária. O Seven Mail não inventa políticas locais para representar uma retenção que deveria ser imposta no servidor.
+
+## Reações
+
+O Seven Mail:
+
+- respeita `x-ms-reactions: disallow` quando presente;
+- permite bloquear reações no compositor para provedores/clientes compatíveis;
+- envia reações por MIME compatível com clientes que suportam o formato de reação publicado pelo provedor;
+- mantém fallback textual/HTML para clientes que não renderizam reação nativamente.
+
+## Push
+
+Contas IMAP usam IDLE para detectar alterações em tempo real quando o servidor oferece suporte. POP3 usa sincronização periódica.
 
 ## S/MIME / PKI
 
