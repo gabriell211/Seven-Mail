@@ -201,8 +201,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Indicador de progresso
 - [x] Cancelamento de upload
 - [x] Bloqueio de extensões perigosas
-- [ ] Arrastar anexos para a área de trabalho
-- [ ] Arrastar anexos para outros aplicativos
+- [x] Arrastar anexos para a área de trabalho
+- [x] Arrastar anexos para outros aplicativos
 - [ ] Mover anexos entre mensagens e contas quando permitido
 
 ### Produtividade de e-mail
@@ -608,7 +608,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 - [x] Cache local de mensagens
-- [ ] Cache de anexos selecionados
+- [x] Cache de anexos selecionados
 - [x] Leitura offline
 - [x] Pesquisa offline
 - [x] Rascunhos offline
@@ -838,7 +838,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 - [x] Windows
 - [x] Linux
-- [ ] macOS
+- [x] macOS
 - [x] Bandeja do sistema
 - [x] Badge de mensagens não lidas
 - [x] Notificações nativas
@@ -849,8 +849,8 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [ ] Abrir arquivos OFT quando suportado
 - [x] Abrir arquivos ICS
 - [x] Arrastar arquivos para composição
-- [ ] Arrastar anexos para área de trabalho
-- [ ] Arrastar anexos para outros aplicativos
+- [x] Arrastar anexos para área de trabalho
+- [x] Arrastar anexos para outros aplicativos
 - [x] Múltiplas janelas
 - [ ] Atualizações automáticas
 
@@ -1064,7 +1064,7 @@ A aplicação deverá utilizar:
 
 - [x] Windows
 - [x] Linux
-- [ ] macOS
+- [x] macOS
 - [ ] Atualizador automático
 - [x] Instaladores
 - [ ] Migração completa
@@ -1080,12 +1080,12 @@ A aplicação deverá utilizar:
 
 # Extensões e integrações
 
-- [ ] Arquitetura de extensões
-- [ ] Integrações de reunião online
-- [ ] Integrações com armazenamento em nuvem
-- [ ] Ações externas seguras
-- [ ] Permissões isoladas por extensão
-- [ ] Ativar/desativar extensões individualmente
+- [x] Arquitetura de extensões
+- [x] Integrações de reunião online
+- [x] Integrações com armazenamento em nuvem
+- [x] Ações externas seguras
+- [x] Permissões isoladas por extensão
+- [x] Ativar/desativar extensões individualmente
 
 ---
 
