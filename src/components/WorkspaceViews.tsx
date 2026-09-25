@@ -962,7 +962,7 @@ function CalendarEditor({
   );
 }
 
-export function PersistentPeopleView({ query = "" }: { query?: string }) {
+export function PersistentPeopleView({ query = "", accounts = [] }: { query?: string; accounts?: AccountProfile[] }) {
   const store = useWorkspace<ContactItem>("contact");
   const groups = useWorkspace<ContactGroupItem>("contact-group");
   const [editing, setEditing] = useState<ContactItem | null>(null);
@@ -985,6 +985,48 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
 
   function fresh(): ContactItem {
     return { id: crypto.randomUUID(), displayName: "", email: "", phone: "", company: "", jobTitle: "", notes: "", favorite: false, firstName:"", lastName:"", nickname:"", emails:[], phones:[], addresses:[], importantDates:[], categories:[], groupIds:[] };
+  }
+
+  function contactAccount(contact:ContactItem):AccountProfile|undefined {
+    return contact.accountId ? accounts.find((item)=>item.id===contact.accountId) : undefined;
+  }
+
+  function contactCanEdit(contact:ContactItem):boolean {
+    const account=contactAccount(contact);
+    if(!contact.shared&&!account?.isSharedMailbox) return true;
+    return Boolean(account?.sharedPermissions?.includes("edit"));
+  }
+
+  async function saveContact(contact:ContactItem) {
+    if(!contactCanEdit(contact)){
+      window.alert("Este contato compartilhado é somente leitura.");
+      return;
+    }
+    await store.save(contact);
+    const account=contactAccount(contact);
+    if(account?.carddavUrl?.trim()){
+      try{
+        await bridge.putDavContact(account.id,contact.id,contactsToVcard([contact]));
+      }catch(error){
+        console.warn("CardDAV PUT pendente",error);
+      }
+    }
+  }
+
+  async function removeContact(contact:ContactItem) {
+    if(!contactCanEdit(contact)){
+      window.alert("Este contato compartilhado é somente leitura.");
+      return;
+    }
+    await store.remove(contact.id);
+    const account=contactAccount(contact);
+    if(account?.carddavUrl?.trim()){
+      try{
+        await bridge.deleteDavContact(account.id,contact.id);
+      }catch(error){
+        console.warn("CardDAV DELETE pendente",error);
+      }
+    }
   }
 
   async function importContacts() {
@@ -1023,7 +1065,17 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
   async function createContactGroup() {
     const name=window.prompt("Nome do grupo/lista")?.trim();
     if(!name) return;
-    await groups.save({id:crypto.randomUUID(),name});
+    const sharedAccounts=accounts.filter((account)=>Boolean(account.carddavUrl?.trim()));
+    const accountEmail=sharedAccounts.length
+      ? window.prompt("Conta CardDAV da lista (vazio = local)",sharedAccounts.find((item)=>item.isDefault)?.email??"")?.trim()
+      : "";
+    const account=sharedAccounts.find((item)=>item.email.toLocaleLowerCase("pt-BR")===accountEmail?.toLocaleLowerCase("pt-BR"));
+    await groups.save({
+      id:crypto.randomUUID(),
+      name,
+      accountId:account?.id,
+      shared:Boolean(account?.isSharedMailbox),
+    });
   }
 
   function toggleContactSelection(id:string) {
@@ -1032,7 +1084,7 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
 
   async function deleteSelectedContacts() {
     if(selectedIds.length===0||!window.confirm(`Excluir ${selectedIds.length} contato(s)?`)) return;
-    for(const id of selectedIds) await store.remove(id);
+    for(const id of selectedIds){const contact=store.items.find((item)=>item.id===id);if(contact)await removeContact(contact);}
     setSelectedIds([]);
   }
 
@@ -1041,7 +1093,7 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
     const category=window.prompt("Categoria para adicionar")?.trim();
     if(!category) return;
     for(const contact of store.items.filter((item)=>selectedIds.includes(item.id))){
-      await store.save({...contact,categories:[...new Set([...(contact.categories??[]),category])]});
+      await saveContact({...contact,categories:[...new Set([...(contact.categories??[]),category])]});
     }
   }
 
@@ -1104,8 +1156,8 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
         notes:items.map((item)=>item.notes).filter(Boolean).join("\n\n"),
         favorite:items.some((item)=>item.favorite),
       };
-      await store.save(next);
-      for(const item of rest){await store.remove(item.id);used.add(item.id);merged+=1;}
+      await saveContact(next);
+      for(const item of rest){await removeContact(item);used.add(item.id);merged+=1;}
       used.add(base.id);
     }
     window.alert(`${merged} contato(s) mesclado(s).`);
@@ -1123,7 +1175,7 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
         {selectedIds.length>0&&<button className="secondary" onClick={()=>void categorizeSelectedContacts()}>Categorizar {selectedIds.length}</button>}
         {selectedIds.length>0&&<button className="secondary danger-lite" onClick={()=>void deleteSelectedContacts()}><Icon name="trash" size={14}/> Excluir {selectedIds.length}</button>}
       </div>
-      {groups.items.length>0&&<div className="contact-groups">{groups.items.map((group)=><span key={group.id}><button onClick={()=>setGroupFilter(group.id)}>{group.name}</button><button aria-label={`Excluir ${group.name}`} onClick={()=>void groups.remove(group.id)}><Icon name="x" size={10}/></button></span>)}</div>}
+      {groups.items.length>0&&<div className="contact-groups">{groups.items.map((group)=><span key={group.id}><button onClick={()=>setGroupFilter(group.id)}>{group.name}{group.shared?" · compartilhada":""}</button><button aria-label={`Excluir ${group.name}`} onClick={()=>void groups.remove(group.id)}><Icon name="x" size={10}/></button></span>)}</div>}
       {store.loading ? <Empty icon="people" title="Carregando contatos" text="Lendo o cache local..." /> : filtered.length === 0 ? (
         <Empty icon="people" title="Nenhum contato ainda" text="Crie contatos locais; a sincronização em nuvem mantém a mesma identidade em outros dispositivos." />
       ) : (
@@ -1131,20 +1183,20 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
           {filtered.map((contact) => (
             <article className={selectedIds.includes(contact.id)?"contact-card selected":"contact-card"} key={contact.id}>
               <label className="contact-select"><input type="checkbox" checked={selectedIds.includes(contact.id)} onChange={()=>toggleContactSelection(contact.id)}/></label>
-              <button className="contact-main" onClick={() => setEditing(contact)}>
+              <button className="contact-main" onClick={() => setEditing(contact)} title={contactCanEdit(contact)?"Editar contato":"Contato compartilhado somente leitura"}>
                 <span className="avatar big contact-photo">{contact.photoDataUrl?<img src={contact.photoDataUrl} alt="" />:contact.displayName[0]?.toUpperCase() || "?"}</span>
-                <span><b>{contact.displayName}</b><small>{contact.nickname ? contact.nickname+" · " : ""}{contact.jobTitle}{contact.company ? ` · ${contact.company}` : ""}</small><em>{contact.emails?.[0] || contact.email || contact.phones?.[0] || contact.phone}</em>{(contact.categories??[]).length>0&&<small>{(contact.categories??[]).join(" · ")}</small>}</span>
+                <span><b>{contact.displayName}{contact.shared&&<em className="shared-badge"> · compartilhado</em>}</b><small>{contact.nickname ? contact.nickname+" · " : ""}{contact.jobTitle}{contact.company ? ` · ${contact.company}` : ""}</small><em>{contact.emails?.[0] || contact.email || contact.phones?.[0] || contact.phone}</em>{contact.accountId&&<small>{accounts.find((item)=>item.id===contact.accountId)?.email??"Conta removida"}</small>}{(contact.categories??[]).length>0&&<small>{(contact.categories??[]).join(" · ")}</small>}</span>
               </button>
               <div className="contact-actions">
-                <button className={contact.favorite ? "icon-button active" : "icon-button"} aria-label="Favoritar" onClick={() => void store.save({ ...contact, favorite: !contact.favorite })}><Icon name="star" size={15} /></button>
-                <button className="icon-button" aria-label="Excluir" onClick={() => void store.remove(contact.id)}><Icon name="trash" size={15} /></button>
+                <button className={contact.favorite ? "icon-button active" : "icon-button"} aria-label="Favoritar" disabled={!contactCanEdit(contact)} onClick={() => void saveContact({ ...contact, favorite: !contact.favorite })}><Icon name="star" size={15} /></button>
+                <button className="icon-button" aria-label="Excluir" disabled={!contactCanEdit(contact)} onClick={() => void removeContact(contact)}><Icon name="trash" size={15} /></button>
               </div>
             </article>
           ))}
         </div>
       )}
       {editing && (
-        <EditorModal title={editing.displayName || "Novo contato"} eyebrow="CONTATO" onClose={() => setEditing(null)} onSave={() => store.save(editing)} disabled={!editing.displayName.trim()}>
+        <EditorModal title={editing.displayName || "Novo contato"} eyebrow="CONTATO" onClose={() => setEditing(null)} onSave={() => saveContact(editing)} disabled={!editing.displayName.trim()||!contactCanEdit(editing)}>
           <div className="contact-photo-editor full">
             <span className="avatar contact-photo-preview">{editing.photoDataUrl?<img src={editing.photoDataUrl} alt="" />:(editing.displayName[0]?.toUpperCase()||"?")}</span>
             <div><button className="secondary" type="button" onClick={()=>void pickContactPhoto()}><Icon name="upload" size={13}/> Escolher foto</button>{editing.photoDataUrl&&<button className="ghost" type="button" onClick={()=>setEditing({...editing,photoDataUrl:undefined})}>Remover</button>}</div>
@@ -1155,6 +1207,7 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
           <label><span>Apelido</span><input value={editing.nickname??""} onChange={(event)=>setEditing({...editing,nickname:event.target.value})}/></label>
           <label><span>Empresa</span><input value={editing.company} onChange={(event) => setEditing({ ...editing, company: event.target.value })} /></label>
           <label><span>Cargo</span><input value={editing.jobTitle} onChange={(event) => setEditing({ ...editing, jobTitle: event.target.value })} /></label>
+          <label><span>Origem</span><select value={editing.accountId??""} disabled={Boolean(editing.shared)&&!contactCanEdit(editing)} onChange={(event)=>{const account=accounts.find((item)=>item.id===event.target.value);setEditing({...editing,accountId:event.target.value||undefined,shared:Boolean(account?.isSharedMailbox)});}}><option value="">Local</option>{accounts.filter((account)=>Boolean(account.carddavUrl?.trim())).map((account)=><option key={account.id} value={account.id}>{account.email}{account.isSharedMailbox?" · compartilhado":""}</option>)}</select></label>
           <label className="full"><span>E-mails</span><input value={(editing.emails?.length?editing.emails:[editing.email]).filter(Boolean).join(", ")} onChange={(event)=>{const values=event.target.value.split(",").map((value)=>value.trim()).filter(Boolean);setEditing({...editing,emails:values,email:values[0]??""});}} placeholder="principal@dominio.com, outro@dominio.com"/></label>
           <label className="full"><span>Telefones</span><input value={(editing.phones?.length?editing.phones:[editing.phone]).filter(Boolean).join(", ")} onChange={(event)=>{const values=event.target.value.split(",").map((value)=>value.trim()).filter(Boolean);setEditing({...editing,phones:values,phone:values[0]??""});}} /></label>
           <label className="full"><span>Endereços</span><textarea value={(editing.addresses??[]).join("\n")} onChange={(event)=>setEditing({...editing,addresses:event.target.value.split("\n").map((value)=>value.trim()).filter(Boolean)})} placeholder="Um endereço por linha"/></label>
