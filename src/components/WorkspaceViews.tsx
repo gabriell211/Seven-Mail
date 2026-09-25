@@ -959,6 +959,18 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
     return [...unique.values()];
   }
 
+  async function pickContactPhoto() {
+    if(!editing) return;
+    const selected=await open({
+      multiple:false,
+      directory:false,
+      filters:[{name:"Imagem do contato",extensions:["png","jpg","jpeg","gif","webp"]}],
+    });
+    if(!selected||Array.isArray(selected)) return;
+    const dataUrl=await bridge.readFileDataUrl(selected);
+    setEditing({...editing,photoDataUrl:dataUrl});
+  }
+
   async function mergeDuplicateContacts() {
     const duplicates=duplicateSets();
     if(duplicates.length===0){
@@ -1014,7 +1026,7 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
             <article className={selectedIds.includes(contact.id)?"contact-card selected":"contact-card"} key={contact.id}>
               <label className="contact-select"><input type="checkbox" checked={selectedIds.includes(contact.id)} onChange={()=>toggleContactSelection(contact.id)}/></label>
               <button className="contact-main" onClick={() => setEditing(contact)}>
-                <span className="avatar big">{contact.displayName[0]?.toUpperCase() || "?"}</span>
+                <span className="avatar big contact-photo">{contact.photoDataUrl?<img src={contact.photoDataUrl} alt="" />:contact.displayName[0]?.toUpperCase() || "?"}</span>
                 <span><b>{contact.displayName}</b><small>{contact.nickname ? contact.nickname+" · " : ""}{contact.jobTitle}{contact.company ? ` · ${contact.company}` : ""}</small><em>{contact.emails?.[0] || contact.email || contact.phones?.[0] || contact.phone}</em>{(contact.categories??[]).length>0&&<small>{(contact.categories??[]).join(" · ")}</small>}</span>
               </button>
               <div className="contact-actions">
@@ -1027,6 +1039,10 @@ export function PersistentPeopleView({ query = "" }: { query?: string }) {
       )}
       {editing && (
         <EditorModal title={editing.displayName || "Novo contato"} eyebrow="CONTATO" onClose={() => setEditing(null)} onSave={() => store.save(editing)} disabled={!editing.displayName.trim()}>
+          <div className="contact-photo-editor full">
+            <span className="avatar contact-photo-preview">{editing.photoDataUrl?<img src={editing.photoDataUrl} alt="" />:(editing.displayName[0]?.toUpperCase()||"?")}</span>
+            <div><button className="secondary" type="button" onClick={()=>void pickContactPhoto()}><Icon name="upload" size={13}/> Escolher foto</button>{editing.photoDataUrl&&<button className="ghost" type="button" onClick={()=>setEditing({...editing,photoDataUrl:undefined})}>Remover</button>}</div>
+          </div>
           <label><span>Nome</span><input autoFocus value={editing.firstName??""} onChange={(event) => setEditing({ ...editing, firstName:event.target.value, displayName:(event.target.value+" "+(editing.lastName??"")).trim()||editing.displayName })} /></label>
           <label><span>Sobrenome</span><input value={editing.lastName??""} onChange={(event) => setEditing({ ...editing, lastName:event.target.value, displayName:((editing.firstName??"")+" "+event.target.value).trim()||editing.displayName })} /></label>
           <label className="full"><span>Nome de exibição</span><input value={editing.displayName} onChange={(event) => setEditing({ ...editing, displayName: event.target.value })} /></label>
