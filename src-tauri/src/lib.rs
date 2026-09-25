@@ -505,6 +505,36 @@ fn move_message_to_folder(
 }
 
 #[tauri::command]
+fn move_message_to_account(
+    source_account_id: String,
+    message_id: String,
+    target_account_id: String,
+    target_mailbox: Option<String>,
+) -> Result<(), String> {
+    if source_account_id == target_account_id {
+        return Err("Escolha uma conta diferente para mover a mensagem.".to_string());
+    }
+
+    let paths = AppPaths::resolve()?;
+    let accounts = storage::list_accounts(&paths)?;
+    let target = accounts
+        .iter()
+        .find(|item| item.id == target_account_id)
+        .ok_or_else(|| "Conta de destino não encontrada.".to_string())?;
+    let raw = storage::read_raw_message(&paths, &source_account_id, &message_id)?;
+    let mailbox = target_mailbox.as_deref().unwrap_or("INBOX");
+    imap_sync::append_raw_message(target, mailbox, &raw)?;
+
+    storage::apply_message_action(&paths, &source_account_id, &message_id, "delete")?;
+    if let Some(source) = accounts.iter().find(|item| item.id == source_account_id) {
+        if !source.incoming_protocol.eq_ignore_ascii_case("pop3") {
+            let _ = imap_sync::flush_actions(&paths, source);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn clear_cache() -> Result<(), String> {
     storage::clear_cache(&AppPaths::resolve()?)
 }
@@ -843,6 +873,7 @@ pub fn run() {
             flush_outbox,
             message_action,
             move_message_to_folder,
+            move_message_to_account,
             clear_cache,
             prune_message_cache,
             secure_clear_local_data,
