@@ -228,6 +228,7 @@ pub fn import_eml(paths: &AppPaths, account: &AccountProfile, path: &str) -> Res
         is_muted: false,
         is_phishing: false,
         is_important: false,
+        source_format: Some("eml".to_string()),
     };
 
     storage::cache_message(paths, &message)?;
