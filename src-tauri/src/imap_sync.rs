@@ -140,6 +140,7 @@ fn parse_message(
         is_muted: false,
         is_phishing: false,
         is_important: false,
+        source_format: None,
     })
 }
 
