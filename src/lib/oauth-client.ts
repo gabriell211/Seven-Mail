@@ -18,11 +18,14 @@ async function challenge(verifier: string): Promise<string> {
   return base64Url(new Uint8Array(digest));
 }
 
+export type OAuthPurpose = "mail" | "provider";
+
 export interface PendingOAuth {
   accountId: string;
   verifier: string;
   redirectUri: string;
   createdAt: string;
+  purpose: OAuthPurpose;
 }
 
 export function oauthPreset(provider: AccountProfile["provider"]): Partial<AccountProfile> {
@@ -51,7 +54,11 @@ export function oauthPreset(provider: AccountProfile["provider"]): Partial<Accou
   return {};
 }
 
-export async function startOAuthAuthorization(account: AccountProfile): Promise<void> {
+async function startAuthorization(
+  account: AccountProfile,
+  purpose: OAuthPurpose,
+  scopes: string[],
+): Promise<void> {
   if (!account.oauthEnabled) throw new Error("OAuth não está ativado nesta conta.");
   if (!account.oauthClientId?.trim()) throw new Error("Informe o Client ID OAuth.");
   if (!account.oauthAuthorizationUrl?.trim()) throw new Error("Informe a URL de autorização OAuth.");
@@ -64,6 +71,7 @@ export async function startOAuthAuthorization(account: AccountProfile): Promise<
     verifier,
     redirectUri,
     createdAt: new Date().toISOString(),
+    purpose,
   };
   sessionStorage.setItem(PENDING_PREFIX + state, JSON.stringify(pending));
 
@@ -71,7 +79,7 @@ export async function startOAuthAuthorization(account: AccountProfile): Promise<
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", account.oauthClientId);
   url.searchParams.set("redirect_uri", redirectUri);
-  url.searchParams.set("scope", (account.oauthScopes ?? []).join(" "));
+  url.searchParams.set("scope", scopes.join(" "));
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", await challenge(verifier));
   url.searchParams.set("code_challenge_method", "S256");
@@ -79,9 +87,28 @@ export async function startOAuthAuthorization(account: AccountProfile): Promise<
   if (account.provider === "gmail") {
     url.searchParams.set("access_type", "offline");
     url.searchParams.set("prompt", "consent");
+  } else if (account.provider === "microsoft") {
+    url.searchParams.set("prompt", "select_account");
   }
 
   await openUrl(url.toString());
+}
+
+export function startOAuthAuthorization(account: AccountProfile): Promise<void> {
+  return startAuthorization(account, "mail", account.oauthScopes ?? []);
+}
+
+export function startProviderAuthorization(account: AccountProfile): Promise<void> {
+  if (account.provider !== "microsoft") {
+    throw new Error("A autorização de API nativa está disponível apenas para contas Microsoft.");
+  }
+
+  return startAuthorization(account, "provider", [
+    "offline_access",
+    "Mail.ReadWrite",
+    "SensitivityLabel.Read",
+    "RecordsManagement.Read.All",
+  ]);
 }
 
 export function takePendingOAuth(state: string): PendingOAuth | null {
@@ -91,9 +118,22 @@ export function takePendingOAuth(state: string): PendingOAuth | null {
   if (!raw) return null;
 
   try {
-    const pending = JSON.parse(raw) as PendingOAuth;
-    if (Date.now() - new Date(pending.createdAt).getTime() > 15 * 60_000) return null;
-    return pending;
+    const pending = JSON.parse(raw) as Partial<PendingOAuth>;
+    if (
+      !pending.accountId ||
+      !pending.verifier ||
+      !pending.redirectUri ||
+      !pending.createdAt ||
+      Date.now() - new Date(pending.createdAt).getTime() > 15 * 60_000
+    ) return null;
+
+    return {
+      accountId: pending.accountId,
+      verifier: pending.verifier,
+      redirectUri: pending.redirectUri,
+      createdAt: pending.createdAt,
+      purpose: pending.purpose === "provider" ? "provider" : "mail",
+    };
   } catch {
     return null;
   }
