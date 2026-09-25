@@ -1328,10 +1328,12 @@ export default function App() {
     });
   }
 
-  function automaticWindowActive(): boolean {
+  function automaticWindowActive(account?:AccountProfile): boolean {
     const now=Date.now();
-    const start=settings.autoReplyStart?new Date(settings.autoReplyStart).getTime():NaN;
-    const end=settings.autoReplyEnd?new Date(settings.autoReplyEnd).getTime():NaN;
+    const startValue=account?.autoReplyStart??settings.autoReplyStart;
+    const endValue=account?.autoReplyEnd??settings.autoReplyEnd;
+    const start=startValue?new Date(startValue).getTime():NaN;
+    const end=endValue?new Date(endValue).getTime():NaN;
     if(Number.isFinite(start)&&now<start) return false;
     if(Number.isFinite(end)&&now>end) return false;
     return true;
@@ -1349,7 +1351,12 @@ export default function App() {
       const markers=new Set(message.appliedRuleIds??[]);
       let updated=message;
 
-      if(settings.autoReplyEnabled&&settings.autoReplyBody?.trim()&&automaticWindowActive()&&!markers.has("__auto-reply__")&&!/^(no-?reply|mailer-daemon)@/i.test(sender)){
+      const accountAutoReply=account.isSharedMailbox&&account.autoReplyEnabled&&account.autoReplyBody?.trim();
+      const globalAutoReply=settings.autoReplyEnabled&&settings.autoReplyBody?.trim();
+      const autoReplyBody=(accountAutoReply?account.autoReplyBody:settings.autoReplyBody)?.trim();
+      const autoReplySubject=(accountAutoReply?account.autoReplySubject:settings.autoReplySubject)?.trim();
+
+      if((accountAutoReply||globalAutoReply)&&autoReplyBody&&automaticWindowActive(accountAutoReply?account:undefined)&&!markers.has("__auto-reply__")&&!/^(no-?reply|mailer-daemon)@/i.test(sender)){
         const id=crypto.randomUUID();
         await bridge.queueOperation({
           id,
@@ -1362,8 +1369,8 @@ export default function App() {
             to:message.from.email,
             cc:"",
             bcc:"",
-            subject:/^re:/i.test(message.subject)?message.subject:`Re: ${settings.autoReplySubject?.trim()||message.subject||"Resposta automática"}`,
-            bodyText:settings.autoReplyBody.trim(),
+            subject:/^re:/i.test(message.subject)?message.subject:`Re: ${autoReplySubject||message.subject||"Resposta automática"}`,
+            bodyText:autoReplyBody,
             bodyHtml:"",
             attachments:[],
             priority:"normal",
