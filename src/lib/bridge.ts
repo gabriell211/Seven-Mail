@@ -58,6 +58,7 @@ export const bridge = {
   pruneMessageCache: (retentionDays: number): Promise<number> => command("prune_message_cache", { retentionDays }),
   secureClearLocalData: (): Promise<void> => command("secure_clear_local_data"),
   readTextFile: (path: string): Promise<string> => command("read_text_file", { path }),
+  readFileDataUrl: (path: string): Promise<string> => command("read_file_data_url", { path }),
   writeTextFile: (path: string, content: string): Promise<void> => command("write_text_file", { path, content }),
   importEml: (accountId: string, path: string): Promise<MailMessage> => command("import_eml", { accountId, path }),
   readMessageSource: (accountId: string, messageId: string): Promise<string> => command("read_message_source", { accountId, messageId }),
