@@ -221,7 +221,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [ ] Abrir e reutilizar modelos OFT quando tecnicamente viável
 - [x] Importar e exportar regras
 - [x] Favoritar categorias
-- [ ] Ações por gesto quando suportadas pela plataforma
+- [x] Ações por gesto quando suportadas pela plataforma
 
 ---
 
@@ -490,9 +490,9 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Atualizar participantes
 - [ ] Enviar atualização somente para participantes adicionados/removidos
 - [x] Cancelar reunião
-- [ ] Adicionar reunião online por integração
+- [x] Adicionar reunião online por integração
 - [ ] Recusar automaticamente convites em conflito
-- [ ] Iniciar reuniões mais tarde ou terminar mais cedo
+- [x] Iniciar reuniões mais tarde ou terminar mais cedo
 - [x] Calendários de grupo
 - [ ] Compartilhar calendário
 - [ ] Permissões de calendário
