@@ -1108,6 +1108,7 @@ export default function App() {
   const [accountOpen,setAccountOpen] = useState(false);
   const [undoSend,setUndoSend] = useState<{id:string;expiresAt:number}|null>(null);
   const [search,setSearch] = useState("");
+  const [indexedMessageIds,setIndexedMessageIds] = useState<string[]|null>(null);
   const [searchHistory,setSearchHistory] = useState<string[]>(()=>{
     try{return JSON.parse(localStorage.getItem("seven-mail:search-history")||"[]");}catch{return [];}
   });
@@ -2643,10 +2644,32 @@ export default function App() {
     return valid;
   }
 
-  const filtered = useMemo(
-    ()=>messages.filter((message)=>matchesMailQuery(message,search)),
-    [messages,search],
-  );
+  useEffect(()=>{
+    const query=search.trim();
+    const hasOperators=/\b(?:from|to|subject|body|folder|category|is|has|after|before):/i.test(query);
+    if(!query||hasOperators){
+      setIndexedMessageIds(null);
+      return;
+    }
+    let disposed=false;
+    const timer=window.setTimeout(()=>{
+      void bridge.searchCachedMessageIds(query,unified?undefined:activeAccount?.id)
+        .then((ids)=>{if(!disposed)setIndexedMessageIds(ids);})
+        .catch(()=>{if(!disposed)setIndexedMessageIds(null);});
+    },120);
+    return ()=>{disposed=true;window.clearTimeout(timer);};
+  },[search,unified,activeAccount?.id,messages.length]);
+
+  const filtered = useMemo(()=>{
+    const query=search.trim();
+    if(!query) return messages;
+    const hasOperators=/\b(?:from|to|subject|body|folder|category|is|has|after|before):/i.test(query);
+    if(!hasOperators&&indexedMessageIds){
+      const indexed=new Set(indexedMessageIds);
+      return messages.filter((message)=>indexed.has(message.id));
+    }
+    return messages.filter((message)=>matchesMailQuery(message,search));
+  },[messages,search,indexedMessageIds]);
 
   const searchSuggestions=useMemo(()=>{
     const values=[
