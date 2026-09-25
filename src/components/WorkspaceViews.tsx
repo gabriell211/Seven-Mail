@@ -338,7 +338,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
       window.alert("Nenhum evento válido foi encontrado no arquivo ICS.");
       return;
     }
-    for (const event of events) await store.save(event);
+    for (const event of events) await saveCalendarEvent(event);
     window.alert(events.length === 1 ? "1 evento importado." : `${events.length} eventos importados.`);
   }
 
@@ -367,7 +367,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
     for(const [month,day,title] of fixed){
       const start=new Date(year,month,day);
       const id=`${calendarId}-${year}-${month+1}-${day}`;
-      await store.save({
+      await saveCalendarEvent({
         id,
         title,
         description:"",
@@ -396,7 +396,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
       await calendars.save({id:calendarId,name:"Feriados personalizados",color:"#d06d3f",visible:true});
     }
     for(const event of events){
-      await store.save({...event,id:crypto.randomUUID(),calendarId,color:"#d06d3f",categories:[...new Set([...(event.categories??[]),"Feriado"])]});
+      await saveCalendarEvent({...event,id:crypto.randomUUID(),calendarId,color:"#d06d3f",categories:[...new Set([...(event.categories??[]),"Feriado"])]});
     }
   }
 
@@ -438,7 +438,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
     if(calendar.id==="local") return;
     if(!window.confirm(`Excluir o calendário "${calendar.name}"? Os eventos permanecerão locais e serão movidos para Local.`)) return;
     for(const event of store.items.filter((item)=>item.calendarId===calendar.id)){
-      await store.save({...event,calendarId:"local"});
+      await saveCalendarEvent({...event,calendarId:"local"});
     }
     await calendars.remove(calendar.id);
   }
@@ -462,12 +462,12 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
         recurrence:"none",
         recurrenceParentId:source.id,
       });
-      await store.save(series);
-      await store.save(exception);
+      await saveCalendarEvent(series);
+      await saveCalendarEvent(exception);
       return;
     }
 
-    await store.save({...source,startAt:nextStart.toISOString(),endAt:nextEnd.toISOString()});
+    await saveCalendarEvent({...source,startAt:nextStart.toISOString(),endAt:nextEnd.toISOString()});
   }
 
   async function pasteCalendarEvent(targetDate?:Date) {
@@ -487,16 +487,16 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
       occurrenceOriginalStart:undefined,
       reminderNotifiedAt:undefined,
     };
-    await store.save(next);
+    await saveCalendarEvent(next);
     if(eventClipboard.mode==="cut"){
-      await store.remove(source.id);
+      await removeCalendarEvent(source.id);
       setEventClipboard(null);
     }
     setEditing(next);
   }
 
   async function duplicateEvent(event:CalendarEvent) {
-    await store.save({
+    await saveCalendarEvent({
       ...event,
       id:crypto.randomUUID(),
       title:`${event.title} (cópia)`,
@@ -528,8 +528,8 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
       recurrence:"none",
       recurrenceParentId:source.id,
     });
-    await store.save(series);
-    await store.save(exception);
+    await saveCalendarEvent(series);
+    await saveCalendarEvent(exception);
     setEditing(null);
     setEditingOccurrence(null);
   }
@@ -542,8 +542,8 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
       ...editing,
       id:undefined as never,
     });
-    await store.save(previous);
-    await store.save(following);
+    await saveCalendarEvent(previous);
+    await saveCalendarEvent(following);
     setEditing(null);
     setEditingOccurrence(null);
   }
@@ -553,6 +553,57 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
     return accounts.find((item)=>item.id===(event.accountId??calendar?.accountId))
       ?? accounts.find((item)=>item.isDefault)
       ?? accounts[0];
+  }
+
+  async function saveCalendarEvent(event:CalendarEvent) {
+    await store.save(event);
+    const account=eventAccount(event);
+    if(!account?.caldavUrl?.trim()) return;
+    try{
+      await bridge.putDavCalendar(account.id,event.id,eventsToIcs([event]));
+    }catch(error){
+      console.warn("CalDAV PUT pendente",error);
+    }
+  }
+
+  async function removeCalendarEvent(id:string) {
+    const event=store.items.find((item)=>item.id===id);
+    await store.remove(id);
+    const account=event?eventAccount(event):undefined;
+    if(!account?.caldavUrl?.trim()) return;
+    try{
+      await bridge.deleteDavCalendar(account.id,id);
+    }catch(error){
+      console.warn("CalDAV DELETE pendente",error);
+    }
+  }
+
+  function calendarCanEdit(calendar:CalendarListItem):boolean {
+    if(!calendar.shared) return true;
+    return (calendar.permissions??[]).includes("edit");
+  }
+
+  async function configureCalendarSharing(calendar:CalendarListItem) {
+    const account=accounts.find((item)=>item.id===calendar.accountId);
+    if(account?.isSharedMailbox&&!account.sharedPermissions?.includes("manage-calendar")){
+      window.alert("Esta conta compartilhada não permite gerenciar o calendário.");
+      return;
+    }
+    const delegatesRaw=window.prompt("Delegados (e-mails separados por vírgula)",(calendar.delegates??[]).join(", "))??"";
+    const delegates=delegatesRaw.split(",").map((item)=>item.trim()).filter(Boolean);
+    const level=(window.prompt("Permissão: read, edit ou delegate",(calendar.permissions??["read","edit"]).includes("delegate")?"delegate":(calendar.permissions??[]).includes("edit")?"edit":"read")??"read").toLowerCase();
+    const permissions:CalendarListItem["permissions"]=level==="delegate"
+      ? ["read","edit","share","delegate"]
+      : level==="edit"
+        ? ["read","edit"]
+        : ["read"];
+    await calendars.save({
+      ...calendar,
+      shared:delegates.length>0||Boolean(account?.isSharedMailbox),
+      ownerEmail:calendar.ownerEmail??account?.sharedOwnerEmail??account?.email,
+      delegates,
+      permissions,
+    });
   }
 
   async function sendMeeting(event:CalendarEvent,method:"REQUEST"|"CANCEL") {
@@ -612,7 +663,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
     }
 
     await bridge.flushOutbox().catch(()=>undefined);
-    await store.save({
+    await saveCalendarEvent({
       ...event,
       organizer:account.email,
       status:method==="CANCEL"?"cancelled":"confirmed",
@@ -635,7 +686,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
       attendeeResponse:response,
       freeBusyStatus:response==="declined"?"free":response==="tentative"?"tentative":"busy",
     } as CalendarEvent;
-    await store.save(updated);
+    await saveCalendarEvent(updated);
     const ics=eventInvitationToIcs(updated,event.organizer,"REPLY",response,account.email);
     await bridge.queueOperation({
       id:crypto.randomUUID(),
@@ -726,7 +777,8 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
       <div className="calendar-timezones"><span><b>{settings.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone}</b>{formatCalendarTime(clock,settings.timezone)}</span>{(settings.secondaryTimezones??[]).map((zone)=><span key={zone}><b>{zone}</b>{formatCalendarTime(clock,zone)}</span>)}{settings.workplace&&<span><b>Local</b>{settings.workplace}</span>}</div>
       <div className="calendar-list-bar">
         {calendarList.map((calendar)=><span className={calendar.visible===false?"calendar-pill muted":"calendar-pill"} key={calendar.id}>
-          <button onClick={()=>void toggleCalendar(calendar)}><i style={{background:calendar.color}}/>{calendar.name}{calendar.accountId&&<small>{accounts.find((item)=>item.id===calendar.accountId)?.email??""}</small>}</button>
+          <button onClick={()=>void toggleCalendar(calendar)}><i style={{background:calendar.color}}/>{calendar.name}{calendar.shared&&<em>Compartilhado</em>}{calendar.accountId&&<small>{accounts.find((item)=>item.id===calendar.accountId)?.email??""}</small>}</button>
+          {calendar.id!=="local"&&<button aria-label={`Compartilhar ou delegar ${calendar.name}`} onClick={()=>void configureCalendarSharing(calendar)}><Icon name="people" size={10}/></button>}
           {calendar.id!=="local"&&<button aria-label={`Excluir calendário ${calendar.name}`} onClick={()=>void removeCalendar(calendar)}><Icon name="x" size={10}/></button>}
         </span>)}
       </div>
@@ -797,7 +849,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
           occurrence={editingOccurrence}
           onChange={setEditing}
           onClose={() => {setEditing(null);setEditingOccurrence(null);}}
-          onSave={editingOccurrence?saveThisOccurrence:()=>store.save(editing)}
+          onSave={editingOccurrence?saveThisOccurrence:()=>saveCalendarEvent(editing)}
           onSaveFollowing={editingOccurrence?saveFollowingOccurrences:undefined}
           onEditSeries={editingOccurrence?()=>{const source=store.items.find((item)=>item.id===editingOccurrence.sourceId);if(source){setEditing(source);setEditingOccurrence(null);}}:undefined}
           onSendInvite={(event)=>sendMeeting(event,"REQUEST")}
@@ -808,7 +860,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
           onDuplicate={store.items.some((item)=>item.id===editing.id)?async()=>{await duplicateEvent(editing);setEditing(null);}:undefined}
           onCopy={()=>setEventClipboard({event:editing,mode:"copy"})}
           onCut={store.items.some((item)=>item.id===editing.id)?()=>{setEventClipboard({event:editing,mode:"cut"});setEditing(null);}:undefined}
-          onDelete={store.items.some((item) => item.id === editing.id) ? async () => { await store.remove(editing.id); setEditing(null); } : undefined}
+          onDelete={store.items.some((item) => item.id === editing.id) ? async () => { await removeCalendarEvent(editing.id); setEditing(null); } : undefined}
         />
       )}
     </Workspace>
