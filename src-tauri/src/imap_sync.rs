@@ -228,6 +228,25 @@ fn folder_identity(path: &str, attributes: &[NameAttribute<'_>]) -> (String, Str
     (path.to_owned(), "custom".into())
 }
 
+pub fn append_raw_message(account: &AccountProfile, mailbox: &str, raw: &[u8]) -> Result<(), String> {
+    if account.incoming_protocol.eq_ignore_ascii_case("pop3") {
+        return Err("A conta de destino usa POP3 e não oferece APPEND para receber mensagens.".to_string());
+    }
+    if mailbox.trim().is_empty() {
+        return Err("A pasta de destino é inválida.".to_string());
+    }
+
+    async_std::task::block_on(async {
+        let mut session = login(account).await?;
+        session
+            .append(mailbox, None, None, raw)
+            .await
+            .map_err(|error| format!("Falha ao anexar mensagem na conta de destino: {error}"))?;
+        session.logout().await.map_err(|error| error.to_string())?;
+        Ok(())
+    })
+}
+
 pub fn list_folders(account: &AccountProfile) -> Result<Vec<MailFolder>, String> {
     async_std::task::block_on(async {
         let mut session = login(account).await?;
