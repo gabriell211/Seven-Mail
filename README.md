@@ -330,7 +330,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Sinalizar
 - [x] Excluir
 - [x] Encaminhar
-- [ ] Redirecionar quando suportado
+- [x] Redirecionar quando suportado
 - [x] Parar processamento de outras regras
 
 ---
