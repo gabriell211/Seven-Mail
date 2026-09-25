@@ -438,6 +438,11 @@ fn read_text_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn read_file_data_url(path: String) -> Result<String, String> {
+    interchange::read_file_data_url(&path)
+}
+
+#[tauri::command]
 fn write_text_file(path: String, content: String) -> Result<(), String> {
     interchange::write_text_file(&path, &content)
 }
@@ -711,6 +716,7 @@ pub fn run() {
             prune_message_cache,
             secure_clear_local_data,
             read_text_file,
+            read_file_data_url,
             write_text_file,
             import_eml,
             read_message_source,
