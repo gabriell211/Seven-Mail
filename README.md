@@ -236,7 +236,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Spam
 - [x] Lixeira
 - [x] Pastas personalizadas
-- [ ] Subpastas
+- [x] Subpastas
 - [x] Renomear pasta
 - [x] Excluir pasta
 - [x] Reordenar pastas
