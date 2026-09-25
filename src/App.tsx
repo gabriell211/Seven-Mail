@@ -29,7 +29,7 @@ import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./li
 import { pendingRulesForMessage } from "./lib/rules";
 import { takePendingOAuth } from "./lib/oauth-client";
 import { contactsFromVcard, eventsFromIcs, messageToEml, safeExportName } from "./lib/interchange";
-import type { AccountProfile, AppSection, AppSettings, CalendarEvent, CalendarListItem, CategoryItem, ContactItem, MailFolder, MailMessage, ProfileItem, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
+import type { AccountProfile, AppSection, AppSettings, CalendarEvent, CalendarListItem, CategoryItem, ContactItem, MailFolder, MailMessage, MailTemplateItem, ProfileItem, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
@@ -1940,6 +1940,27 @@ export default function App() {
     }
   }
 
+  async function importOftPath(path:string) {
+    const parsed=await bridge.readOftTemplate(path);
+    const template:MailTemplateItem={
+      id:crypto.randomUUID(),
+      name:parsed.name?.trim()||"Modelo OFT",
+      subject:parsed.subject??"",
+      bodyText:parsed.bodyText??"",
+      bodyHtml:parsed.bodyHtml??"",
+    };
+    const document:WorkspaceDocument<MailTemplateItem>={
+      id:template.id,
+      kind:"template",
+      updatedAt:new Date().toISOString(),
+      payload:template,
+    };
+    await bridge.upsertWorkspace(document);
+    void pushCloudDocument(document).catch(()=>undefined);
+    setSection("settings");
+    window.alert(`Modelo "${template.name}" importado do OFT.`);
+  }
+
   async function handleExternalOpen(value:string) {
     const request=value.trim();
     if(!request) return;
@@ -1981,6 +2002,8 @@ export default function App() {
     const path=normalizeExternalPath(request);
     if(/\.(eml|msg)$/i.test(path)){
       await importMessagePath(path);
+    }else if(/\.oft$/i.test(path)){
+      await importOftPath(path);
     }else if(/\.ics$/i.test(path)){
       await importIcsPath(path);
     }
