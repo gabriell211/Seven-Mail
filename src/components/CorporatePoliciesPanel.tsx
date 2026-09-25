@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "../icons";
 import { bridge } from "../lib/bridge";
+import { startProviderAuthorization } from "../lib/oauth-client";
 import type { AccountProfile } from "../types";
 
 type Catalog = {
@@ -22,10 +23,44 @@ export function CorporatePoliciesPanel({ accounts }: { accounts: AccountProfile[
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const [rights,setRights]=useState<Record<string,string>>({});
+  const [providerAuthorized,setProviderAuthorized]=useState<Record<string,boolean>>({});
 
   useEffect(()=>{
     if(!eligible.some((account)=>account.id===selected)) setSelected(eligible[0]?.id??"");
   },[accounts.map((account)=>account.id).join("|")]);
+
+  useEffect(()=>{
+    const account=accounts.find((item)=>item.id===selected);
+    if(!account) return;
+    void bridge.providerOAuthStatus(account.id)
+      .then((value)=>setProviderAuthorized((current)=>({...current,[account.id]:value})))
+      .catch(()=>setProviderAuthorized((current)=>({...current,[account.id]:false})));
+  },[selected]);
+
+  useEffect(()=>{
+    const onAuthorized=()=>{ if(selected) setProviderAuthorized((current)=>({...current,[selected]:true})); };
+    window.addEventListener("seven-mail:provider-oauth-authorized",onAuthorized);
+    return ()=>window.removeEventListener("seven-mail:provider-oauth-authorized",onAuthorized);
+  },[selected]);
+
+  async function authorizeProvider() {
+    const account=accounts.find((item)=>item.id===selected);
+    if(!account) return;
+    setError("");
+    try{
+      await startProviderAuthorization(account);
+    }catch(reason){
+      setError(reason instanceof Error?reason.message:String(reason));
+    }
+  }
+
+  async function revokeProvider() {
+    if(!selected) return;
+    await bridge.providerOAuthClear(selected);
+    setProviderAuthorized((current)=>({...current,[selected]:false}));
+    setCatalog(undefined);
+    setRights({});
+  }
 
   async function refresh(accountId=selected) {
     if(!accountId) return;
@@ -66,7 +101,7 @@ export function CorporatePoliciesPanel({ accounts }: { accounts: AccountProfile[
   return <div className="settings-row corporate-settings">
     <div>
       <h3>Políticas corporativas</h3>
-      <p>Consulta APIs nativas do provedor para sensibilidade, retenção e direitos de uso quando o tenant e o OAuth permitirem.</p>
+      <p>Usa uma autorização OAuth separada do IMAP/SMTP para evitar mistura de audiences e só habilita recursos realmente concedidos pelo provedor.</p>
     </div>
     <div className="corporate-panel">
       {eligible.length===0?<div className="mini-empty">Autorize uma conta corporativa por OAuth para consultar políticas.</div>:<>
@@ -74,7 +109,10 @@ export function CorporatePoliciesPanel({ accounts }: { accounts: AccountProfile[
           <select value={selected} onChange={(event)=>{setSelected(event.target.value);setCatalog(undefined);setRights({});}}>
             {eligible.map((account)=><option key={account.id} value={account.id}>{account.email}</option>)}
           </select>
-          <button className="secondary" disabled={busy||!selected} onClick={()=>void refresh()}><Icon name="refresh" size={14}/>{busy?"Consultando...":"Consultar provedor"}</button>
+          {providerAuthorized[selected]
+            ? <button className="ghost" disabled={busy||!selected} onClick={()=>void revokeProvider()}>Desconectar API</button>
+            : <button className="secondary" disabled={busy||!selected} onClick={()=>void authorizeProvider()}>Autorizar API nativa</button>}
+          <button className="secondary" disabled={busy||!selected||!providerAuthorized[selected]} onClick={()=>void refresh()}><Icon name="refresh" size={14}/>{busy?"Consultando...":"Consultar provedor"}</button>
         </div>
         {error&&<div className="form-error">{error}</div>}
         {catalog&&<div className="corporate-columns">
