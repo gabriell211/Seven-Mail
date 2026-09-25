@@ -24,6 +24,7 @@ import { BrandLogo } from "./components/BrandLogo";
 import { LaunchScreen } from "./components/LaunchScreen";
 import { AppLockScreen } from "./components/AppLockScreen";
 import { QuickNotificationStack } from "./components/QuickNotificationStack";
+import { UpdateBanner, type UpdateInfo } from "./components/UpdateBanner";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
 import { ensureNotificationPermission, notifyCalendarReminder, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
 import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
@@ -48,6 +49,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   sendDelaySeconds: 10,
   notificationsEnabled: false,
   syncIntervalMinutes: 5,
+  autoUpdateEnabled: true,
   focusInboxEnabled: true,
   mailPageSize: 50,
   maxAttachmentMb: 25,
@@ -1181,7 +1183,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
     <ComposerAssetsPanel/>
     <ExtensionsPanel/>
     <CloudPanel/>
-    <div className="settings-row"><div><h3>Desktop</h3><p>Integração real com Windows, Linux e macOS.</p></div><div className="toggles"><button className="secondary" onClick={()=>void bridge.openDefaultMailSettings().then((message)=>window.alert(message)).catch((reason)=>window.alert(String(reason)))}><Icon name="mail" size={14}/> Definir como cliente padrão</button><label><span>Ao fechar a janela</span><select value={settings.closeBehavior??(settings.minimizeToTray?"tray":"exit")} onChange={e=>{const value=e.target.value as AppSettings["closeBehavior"];set("closeBehavior",value);set("minimizeToTray",value==="tray");}}><option value="tray">Minimizar para bandeja</option><option value="exit">Encerrar o aplicativo</option></select></label><label><input type="checkbox" checked={settings.startWithSystem} onChange={e=>set("startWithSystem",e.target.checked)}/> Iniciar com o sistema</label><label><input type="checkbox" checked={settings.confirmBeforeDelete} onChange={e=>set("confirmBeforeDelete",e.target.checked)}/> Confirmar exclusão</label></div></div>
+    <div className="settings-row"><div><h3>Desktop</h3><p>Integração real com Windows, Linux e macOS.</p></div><div className="toggles"><button className="secondary" onClick={()=>void bridge.openDefaultMailSettings().then((message)=>window.alert(message)).catch((reason)=>window.alert(String(reason)))}><Icon name="mail" size={14}/> Definir como cliente padrão</button><label><span>Ao fechar a janela</span><select value={settings.closeBehavior??(settings.minimizeToTray?"tray":"exit")} onChange={e=>{const value=e.target.value as AppSettings["closeBehavior"];set("closeBehavior",value);set("minimizeToTray",value==="tray");}}><option value="tray">Minimizar para bandeja</option><option value="exit">Encerrar o aplicativo</option></select></label><label><input type="checkbox" checked={settings.startWithSystem} onChange={e=>set("startWithSystem",e.target.checked)}/> Iniciar com o sistema</label><label><input type="checkbox" checked={settings.autoUpdateEnabled!==false} onChange={e=>set("autoUpdateEnabled",e.target.checked)}/> Verificar atualizações automaticamente</label><button className="secondary" onClick={()=>void bridge.checkForUpdate().then((info)=>{if(info.available)setUpdateInfo(info);else window.alert("Você já está usando a versão mais recente.");}).catch((reason)=>window.alert(String(reason)))}><Icon name="refresh" size={14}/> Verificar agora</button><label><input type="checkbox" checked={settings.confirmBeforeDelete} onChange={e=>set("confirmBeforeDelete",e.target.checked)}/> Confirmar exclusão</label></div></div>
   </Workspace>;
 }
 
@@ -1199,6 +1201,7 @@ export default function App() {
   const [activeId,setActiveId] = useState<string|undefined>(launchAccountId);
   const [messages,setMessages] = useState<MailMessage[]>([]);
   const [quickNotifications,setQuickNotifications] = useState<MailMessage[]>([]);
+  const [updateInfo,setUpdateInfo] = useState<UpdateInfo>();
   const [mailFolders,setMailFolders] = useState<MailFolder[]>(FALLBACK_FOLDERS);
   const [selectedFolder,setSelectedFolder] = useState<MailFolder>(FALLBACK_FOLDERS[0]);
   const [runtime,setRuntime] = useState<RuntimeInfo>();
@@ -2761,6 +2764,17 @@ export default function App() {
   },[profileAccounts,activeAccount?.id,unified,settings.notificationsEnabled,settings.syncIntervalMinutes,settings.batterySaverEnabled,settings.memorySaverEnabled,settings.maxConcurrentSyncs]);
 
   useEffect(()=>{
+    if(!bootReady||settings.autoUpdateEnabled===false) return;
+    let cancelled=false;
+    const timer=window.setTimeout(()=>{
+      void bridge.checkForUpdate()
+        .then((info)=>{if(!cancelled&&info.available&&info.assetUrl)setUpdateInfo(info);})
+        .catch(()=>undefined);
+    },2200);
+    return ()=>{cancelled=true;window.clearTimeout(timer);};
+  },[bootReady,settings.autoUpdateEnabled]);
+
+  useEffect(()=>{
     if(!bootReady||profileAccounts.length===0) return;
     let disposed=false;
     const sleep=(ms:number)=>new Promise<void>((resolve)=>window.setTimeout(resolve,ms));
@@ -3158,5 +3172,6 @@ export default function App() {
       onRead={(message)=>void quickNotificationAction(message,"read")}
       onArchive={(message)=>void quickNotificationAction(message,"archive")}
     />
+    {updateInfo&&<UpdateBanner info={updateInfo} onDismiss={()=>setUpdateInfo(undefined)}/>}
   </div></>;
 }
