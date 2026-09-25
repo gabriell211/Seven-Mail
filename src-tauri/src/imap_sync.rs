@@ -5,7 +5,7 @@ use crate::{
     providers,
     storage::{self, AppPaths},
 };
-use async_imap::{types::{Flag, NameAttribute}, Client};
+use async_imap::{extensions::idle::IdleResponse, types::{Flag, NameAttribute}, Client};
 use async_native_tls::{TlsConnector, TlsStream};
 use async_std::net::TcpStream;
 use futures::TryStreamExt;
@@ -226,6 +226,44 @@ fn folder_identity(path: &str, attributes: &[NameAttribute<'_>]) -> (String, Str
     }
 
     (path.to_owned(), "custom".into())
+}
+
+pub fn wait_for_inbox_change(account: &AccountProfile, timeout_seconds: u64) -> Result<bool, String> {
+    if account.incoming_protocol.eq_ignore_ascii_case("pop3") {
+        return Ok(false);
+    }
+
+    async_std::task::block_on(async {
+        let mut session = login(account).await?;
+        session
+            .select("INBOX")
+            .await
+            .map_err(|error| format!("Não foi possível abrir a caixa de entrada para IDLE: {error}"))?;
+
+        let capabilities = session
+            .capabilities()
+            .await
+            .map_err(|error| format!("Falha ao consultar recursos IMAP: {error}"))?;
+        if !capabilities.has_str("IDLE") {
+            session.logout().await.map_err(|error| error.to_string())?;
+            return Ok(false);
+        }
+
+        let mut idle = session.idle();
+        idle.init()
+            .await
+            .map_err(|error| format!("Servidor recusou IMAP IDLE: {error}"))?;
+        let (wait, _interrupt) = idle.wait_with_timeout(std::time::Duration::from_secs(timeout_seconds.clamp(5, 60)));
+        let outcome = wait
+            .await
+            .map_err(|error| format!("IMAP IDLE falhou: {error}"))?;
+        let changed = matches!(outcome, IdleResponse::NewData(_));
+        let mut session = idle.done()
+            .await
+            .map_err(|error| format!("Falha ao encerrar IMAP IDLE: {error}"))?;
+        session.logout().await.map_err(|error| error.to_string())?;
+        Ok(changed)
+    })
 }
 
 pub fn append_raw_message(account: &AccountProfile, mailbox: &str, raw: &[u8]) -> Result<(), String> {
