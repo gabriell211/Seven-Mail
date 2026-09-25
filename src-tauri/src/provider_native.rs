@@ -31,7 +31,7 @@ pub fn capabilities(account: &AccountProfile) -> ProviderCapabilities {
     ProviderCapabilities {
         native_api: graph,
         recall: graph,
-        reactions: false,
+        reactions: account.can("send"),
         reaction_policy: graph,
         sensitivity_labels: graph,
         retention_labels: graph,
