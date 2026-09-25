@@ -513,10 +513,6 @@ pub fn list_queue(paths: &AppPaths) -> Result<Vec<QueueOperation>, String> {
     list_operations(&paths.pending)
 }
 
-pub fn claim_next_kind(paths: &AppPaths, kind: &str) -> Result<Option<QueueOperation>, String> {
-    claim_next_matching(paths, |operation| operation.kind == kind)
-}
-
 pub fn claim_next_send_due(paths: &AppPaths) -> Result<Option<QueueOperation>, String> {
     let now = chrono::Utc::now();
     claim_next_matching(paths, |operation| {
