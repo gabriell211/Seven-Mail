@@ -12,6 +12,7 @@ import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { SignaturesPanel } from "./components/SignaturesPanel";
 import { SmimePanel } from "./components/SmimePanel";
+import { CorporatePoliciesPanel } from "./components/CorporatePoliciesPanel";
 import { MessageDetailsModal, SenderPoliciesPanel } from "./components/AdvancedMailPanels";
 import { ComposerAssetsPanel } from "./components/ComposerAssetsPanel";
 import { ProfilesPanel } from "./components/ProfilesPanel";
@@ -1134,6 +1135,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
     <AccountsPanel accounts={accounts} onChange={onAccountsChange}/>
     <SignaturesPanel accounts={accounts} signatures={signatures} onSave={onSaveSignature} onDelete={onDeleteSignature}/>
     <SmimePanel accounts={accounts}/>
+    <CorporatePoliciesPanel accounts={accounts}/>
     <ComposerAssetsPanel/>
     <ExtensionsPanel/>
     <CloudPanel/>
