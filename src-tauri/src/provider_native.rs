@@ -188,7 +188,7 @@ pub fn recall_message(paths: &AppPaths, account: &AccountProfile, local_message_
     }
 
     let internet_id = internet_message_id(paths, &account.id, local_message_id)?;
-    let filter = format!("internetMessageId eq '{}'", internet_id.replace(''', "''"));
+    let filter = format!("internetMessageId eq '{}'", internet_id.replace('\'', "''"));
     let token = bearer(account)?;
     let client = graph_client(account)?;
     let search = client
