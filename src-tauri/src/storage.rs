@@ -440,6 +440,10 @@ pub fn update_cached_remote_flags(
     Ok(true)
 }
 
+fn remote_uid_missing(remote_uids: &std::collections::HashSet<u32>, uid: u32) -> bool {
+    !remote_uids.contains(&uid)
+}
+
 pub fn reconcile_remote_uids(
     paths: &AppPaths,
     account_id: &str,
@@ -455,7 +459,7 @@ pub fn reconcile_remote_uids(
         let Some(uid) = message.remote_id.as_deref().and_then(|value| value.parse::<u32>().ok()) else {
             continue;
         };
-        if remote_uids.contains(&uid) {
+        if !remote_uid_missing(remote_uids, uid) {
             continue;
         }
         let path = paths.message_cache.join(account_id).join(format!("{}.json", message.id));
@@ -1010,4 +1014,40 @@ pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
         fs::create_dir_all(directory).map_err(io_error)?;
     }
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn security_rejects_path_traversal_components() {
+        for value in ["../segredo", "conta/fora", r"conta\fora", "..", ""] {
+            assert!(safe_component(value).is_err(), "{value} deveria ser rejeitado");
+        }
+        assert!(safe_component("account-123_ABC").is_ok());
+    }
+
+    #[test]
+    fn synchronization_detects_only_missing_remote_uids() {
+        let remote = HashSet::from([1_u32, 3, 5, 8]);
+        assert!(!remote_uid_missing(&remote, 1));
+        assert!(!remote_uid_missing(&remote, 8));
+        assert!(remote_uid_missing(&remote, 2));
+        assert!(remote_uid_missing(&remote, 13));
+    }
+
+    #[test]
+    fn load_normalizes_large_search_batch() {
+        let mut checksum = 0usize;
+        for index in 0..50_000usize {
+            let input = format!("Cliente {index} <user{index}@example.com> — Assunto Importante!");
+            let normalized = normalize_search_text(&input);
+            assert!(normalized.contains("example.com"));
+            checksum = checksum.wrapping_add(normalized.len());
+        }
+        assert!(checksum > 1_000_000);
+    }
 }
