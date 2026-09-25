@@ -311,6 +311,11 @@ fn list_cached_messages(account_id: Option<String>) -> Result<Vec<MailMessage>, 
 }
 
 #[tauri::command]
+fn search_cached_message_ids(account_id: Option<String>, query: String) -> Result<Vec<String>, String> {
+    storage::search_cached_message_ids(&AppPaths::resolve()?, account_id.as_deref(), &query)
+}
+
+#[tauri::command]
 fn cache_message(message: MailMessage) -> Result<(), String> {
     storage::cache_message(&AppPaths::resolve()?, &message)
 }
@@ -703,6 +708,7 @@ pub fn run() {
             delete_mail_folder,
             flush_mail_actions,
             list_cached_messages,
+            search_cached_message_ids,
             cache_message,
             queue_operation,
             stage_attachments,
