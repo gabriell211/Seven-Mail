@@ -60,14 +60,23 @@ export function ComposerAssetsPanel() {
     const selected=await open({
       multiple:false,
       directory:false,
-      filters:[{name:"Modelo",extensions:["json","txt","html","htm"]}],
+      filters:[{name:"Modelo",extensions:["json","txt","html","htm","oft"]}],
     });
     if(!selected||Array.isArray(selected)) return;
     const raw=await bridge.readTextFile(selected);
     const lower=selected.toLowerCase();
     const fileName=selected.split(/[\\/]/).pop()?.replace(/\.[^.]+$/,"")||"Modelo importado";
     let value:MailTemplateItem;
-    if(lower.endsWith(".json")){
+    if(lower.endsWith(".oft")){
+      const parsed=await bridge.readOftTemplate(selected);
+      value={
+        id:crypto.randomUUID(),
+        name:parsed.name?.trim()||fileName,
+        subject:parsed.subject??"",
+        bodyText:parsed.bodyText??"",
+        bodyHtml:parsed.bodyHtml??textHtml(parsed.bodyText??""),
+      };
+    }else if(lower.endsWith(".json")){
       const parsed=JSON.parse(raw) as Partial<MailTemplateItem>;
       value={
         id:crypto.randomUUID(),
