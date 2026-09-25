@@ -256,3 +256,74 @@ pub struct MailAttachmentPreview {
     pub text: Option<String>,
     pub kind: String,
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::AccountProfile;
+
+    fn shared() -> AccountProfile {
+        AccountProfile {
+            id: "shared".into(),
+            display_name: "Shared".into(),
+            email: "shared@example.com".into(),
+            provider: "imap".into(),
+            color: "#000".into(),
+            is_default: false,
+            username: Some("shared@example.com".into()),
+            incoming_protocol: "imap".into(),
+            imap_host: None,
+            imap_port: None,
+            pop3_host: None,
+            pop3_port: None,
+            caldav_url: None,
+            carddav_url: None,
+            ldap_url: None,
+            ldap_base_dn: None,
+            ldap_filter: None,
+            oauth_enabled: false,
+            oauth_client_id: None,
+            oauth_authorization_url: None,
+            oauth_token_url: None,
+            oauth_scopes: Vec::new(),
+            oauth_redirect_uri: None,
+            smtp_host: None,
+            smtp_port: None,
+            security_mode: None,
+            aliases: Vec::new(),
+            is_shared_mailbox: true,
+            shared_owner_account_id: Some("owner".into()),
+            shared_owner_email: Some("owner@example.com".into()),
+            shared_mode: Some("account".into()),
+            shared_permissions: vec!["read".into(), "send".into()],
+            send_mode: Some("on-behalf".into()),
+            muted: false,
+            connection_timeout_seconds: 30,
+            auto_reply_enabled: true,
+            auto_reply_subject: Some("Ausente".into()),
+            auto_reply_body: Some("Retornaremos em breve".into()),
+            auto_reply_start: None,
+            auto_reply_end: None,
+        }
+    }
+
+    #[test]
+    fn shared_mailbox_uses_owner_credentials_and_permissions() {
+        let account = shared();
+        assert_eq!(account.credential_account_id(), "owner");
+        assert!(account.can("read"));
+        assert!(account.can("send"));
+        assert!(!account.can("manage-calendar"));
+    }
+
+    #[test]
+    fn shared_mailbox_configuration_round_trips() {
+        let account = shared();
+        let json = serde_json::to_string(&account).unwrap();
+        let restored: AccountProfile = serde_json::from_str(&json).unwrap();
+        assert!(restored.is_shared_mailbox);
+        assert!(restored.auto_reply_enabled);
+        assert_eq!(restored.send_mode.as_deref(), Some("on-behalf"));
+        assert_eq!(restored.shared_owner_email.as_deref(), Some("owner@example.com"));
+    }
+}
