@@ -502,6 +502,30 @@ export function Composer({
     }
   }
 
+  function insertMention() {
+    const query=window.prompt("Nome ou e-mail para mencionar")?.trim();
+    if(!query) return;
+    const needle=query.toLocaleLowerCase("pt-BR");
+    const match=recipientDirectory.find((item)=>
+      item.email.toLocaleLowerCase("pt-BR")===needle||
+      item.email.toLocaleLowerCase("pt-BR").includes(needle)||
+      item.name.toLocaleLowerCase("pt-BR").includes(needle)
+    );
+    const name=(match?.name||query).replace(/[<>]/g,"").trim();
+    const email=(match?.email||query).replace(/[\r\n<>"']/g,"").trim();
+    if(!email.includes("@")){
+      window.alert("Escolha um contato ou informe um e-mail válido.");
+      return;
+    }
+    if(draft.mode==="rich"){
+      const safeName=name.replace(/&/g,"&amp;").replace(/"/g,"&quot;");
+      const safeEmail=email.replace(/&/g,"&amp;").replace(/"/g,"&quot;");
+      format("insertHTML",`<a href="mailto:${safeEmail}" data-seven-mention="${safeEmail}">@${safeName}</a>&nbsp;`);
+    }else{
+      setDraft((current)=>({...current,bodyText:`${current.bodyText}${current.bodyText&&!/\s$/.test(current.bodyText)?" ":""}@${name} <${email}> `}));
+    }
+  }
+
   function useTemplate(id: string) {
     const template = templates.find((item)=>item.id===id);
     if (!template) return;
@@ -782,6 +806,7 @@ export function Composer({
             <button type="button" onClick={() => void pickInlineImage()}>Imagem</button>
             <button type="button" onClick={insertTable}>Tabela</button>
             <button type="button" onClick={insertEmoji}>Emoji</button>
+            <button type="button" onClick={insertMention}>@ Menção</button>
             <button type="button" onClick={() => format("removeFormat")}>Limpar</button>
           </>}
         </div>
