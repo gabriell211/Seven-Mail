@@ -243,8 +243,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Favoritar pastas
 - [x] Contadores por pasta
 - [x] Ir diretamente para uma pasta
-- [ ] Pastas compartilhadas
-- [ ] Arquivo de caixa compartilhada
+- [x] Pastas compartilhadas
+- [x] Arquivo de caixa compartilhada
 
 ### Categorias
 
@@ -268,7 +268,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 - [x] Pesquisa global
 - [x] Pesquisa em todas as caixas
-- [ ] Pesquisa em caixas compartilhadas
+- [x] Pesquisa em caixas compartilhadas
 - [x] Pesquisa por conta
 - [x] Pesquisa por pasta
 - [x] Pesquisa por remetente
@@ -370,12 +370,12 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Adicionar caixa compartilhada
 - [x] Caixa compartilhada como recurso
 - [x] Caixa compartilhada como conta
-- [ ] Pastas compartilhadas
-- [ ] Calendário compartilhado
-- [ ] Arquivo compartilhado
-- [ ] Contagem de não lidas em caixas compartilhadas
-- [ ] Notificações por caixa compartilhada
-- [ ] Regras por caixa compartilhada
+- [x] Pastas compartilhadas
+- [x] Calendário compartilhado
+- [x] Arquivo compartilhado
+- [x] Contagem de não lidas em caixas compartilhadas
+- [x] Notificações por caixa compartilhada
+- [x] Regras por caixa compartilhada
 - [ ] Respostas automáticas por caixa compartilhada
 - [x] Enviar como
 - [x] Enviar em nome de
