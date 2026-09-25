@@ -17,7 +17,7 @@ function labelName(item: Record<string, unknown>): string {
 }
 
 export function CorporatePoliciesPanel({ accounts }: { accounts: AccountProfile[] }) {
-  const eligible = accounts.filter((account) => account.oauthEnabled);
+  const eligible = accounts.filter((account) => account.oauthEnabled && account.provider === "microsoft");
   const [selected,setSelected]=useState(eligible[0]?.id ?? "");
   const [catalog,setCatalog]=useState<Catalog>();
   const [busy,setBusy]=useState(false);
