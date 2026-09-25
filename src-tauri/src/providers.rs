@@ -265,6 +265,11 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
         .get("requestDeliveryReceipt")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
+    let disallow_reactions = operation
+        .payload
+        .get("disallowReactions")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
     let body_text = operation
         .payload
         .get("bodyText")
@@ -335,6 +340,9 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
     }
     if request_delivery_receipt {
         builder = builder.raw_header(raw_header("Return-Receipt-To", from_address_raw.to_string()));
+    }
+    if disallow_reactions {
+        builder = builder.raw_header(raw_header("x-ms-reactions", "disallow".to_string()));
     }
     let (builder, to_count) = add_recipients(builder, to, "to")?;
     let (builder, cc_count) = add_recipients(builder, cc, "cc")?;
