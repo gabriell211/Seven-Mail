@@ -42,6 +42,7 @@ export const bridge = {
   deleteFolder: (accountId: string, path: string, label: string): Promise<void> => command("delete_mail_folder", { accountId, path, label }),
   flushMailActions: (accountId: string): Promise<number> => command("flush_mail_actions", { accountId }),
   listCachedMessages: (accountId?: string): Promise<MailMessage[]> => command("list_cached_messages", { accountId: accountId ?? null }),
+  searchCachedMessageIds: (query: string, accountId?: string): Promise<string[]> => command("search_cached_message_ids", { accountId: accountId ?? null, query }),
   cacheMessage: (message: MailMessage): Promise<void> => command("cache_message", { message }),
   queueOperation: (operation: QueueOperation): Promise<void> => command("queue_operation", { operation }),
   stageAttachments: (operationId: string, sources: string[], maxFileMb = 25, maxTotalMb = 100): Promise<QueuedAttachment[]> => command("stage_attachments", { operationId, sources, maxFileMb, maxTotalMb }),
