@@ -775,3 +775,17 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .message-date-group{content-visibility:auto;contain-intrinsic-size:420px}
 .message-list .message{content-visibility:auto;contain-intrinsic-size:74px;contain:layout paint style}
 :root[data-density="compact"] .message-list .message{contain-intrinsic-size:60px}
+
+
+/* Shared resources and attendee response tracking */
+.attendee-response-panel{display:flex;flex-direction:column;gap:8px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--soft)}
+.attendee-response-panel>b{font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.attendee-response-panel>div{display:flex;flex-direction:column;gap:5px}
+.attendee-response-panel span{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:9px}
+.attendee-response-panel strong{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attendee-response-panel em{font-style:normal;font-size:8px;font-weight:800;padding:3px 7px;border-radius:999px;background:var(--line);color:var(--muted)}
+.attendee-response-panel .response-accepted{background:rgba(44,170,111,.12);color:#238b5b}
+.attendee-response-panel .response-tentative{background:rgba(229,167,52,.13);color:#a97317}
+.attendee-response-panel .response-declined{background:rgba(220,84,84,.12);color:#c74b4b}
+.calendar-pill em,.shared-badge{font-style:normal;font-size:7px;font-weight:850;letter-spacing:.03em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);padding:2px 5px;border-radius:999px}
+.contact-card button:disabled{opacity:.48;cursor:not-allowed}
