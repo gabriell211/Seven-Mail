@@ -450,7 +450,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Excluir evento
 - [x] Duplicar evento
 - [x] Arrastar evento
-- [ ] Redimensionar evento
+- [x] Redimensionar evento
 - [x] Local
 - [x] Descrição
 - [x] Participantes
@@ -482,10 +482,10 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Aceitar
 - [x] Aceitar provisoriamente
 - [x] Recusar
-- [ ] Manter reunião recusada no calendário
+- [x] Manter reunião recusada no calendário
 - [ ] Manter convite na caixa de entrada após responder
 - [x] Acompanhar reunião sem bloquear o horário quando suportado
-- [ ] Sugerir novo horário quando suportado
+- [x] Sugerir novo horário quando suportado
 - [ ] Acompanhar respostas
 - [x] Atualizar participantes
 - [ ] Enviar atualização somente para participantes adicionados/removidos
@@ -1008,9 +1008,9 @@ A aplicação deverá utilizar:
 - [x] Calendários
 - [x] Eventos
 - [x] Recorrência
-- [ ] Convites
+- [x] Convites
 - [x] Assistente de agendamento
-- [ ] Livre/ocupado
+- [x] Livre/ocupado
 - [ ] Compartilhamento e delegação
 - [x] ICS
 - [x] Lembretes
