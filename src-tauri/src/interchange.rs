@@ -31,6 +31,20 @@ pub fn write_text_file(path: &str, content: &str) -> Result<(), String> {
     fs::write(path, content.as_bytes()).map_err(|error| format!("Não foi possível salvar o arquivo: {error}"))
 }
 
+pub fn read_file_data_url(path: &str) -> Result<String, String> {
+    let path = ensure_readable_file(path, 8 * 1024 * 1024)?;
+    let bytes = fs::read(&path).map_err(|error| format!("Não foi possível ler o arquivo: {error}"))?;
+    let extension = path.extension().and_then(|value| value.to_str()).unwrap_or("").to_ascii_lowercase();
+    let mime = match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => return Err("Use uma imagem PNG, JPG, GIF ou WebP.".to_string()),
+    };
+    Ok(format!("data:{mime};base64,{}", BASE64.encode(bytes)))
+}
+
 fn mail_address(address: Option<&mail_parser::Addr<'_>>) -> MailAddress {
     MailAddress {
         name: address.and_then(|value| value.name()).map(ToOwned::to_owned),
