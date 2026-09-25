@@ -1,6 +1,7 @@
 use crate::{local_crypto, models::{AccountProfile, MailAddress, MailAttachmentInfo, MailAttachmentPreview, MailMessage}, storage::{self, AppPaths}};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use mail_parser::{MessageParser, MimeHeaders};
+use msg_parser::Outlook;
 use std::{fs, io::{Cursor, Read}, path::Path};
 
 const MAX_TEXT_FILE_BYTES: u64 = 32 * 1024 * 1024;
@@ -67,6 +68,115 @@ fn recipients(addresses: Option<&mail_parser::Address<'_>>) -> Vec<MailAddress> 
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn outlook_person(person: &msg_parser::Person) -> MailAddress {
+    MailAddress {
+        name: if person.name.trim().is_empty() { None } else { Some(person.name.clone()) },
+        email: if person.email.trim().is_empty() { "desconhecido@localhost".to_string() } else { person.email.clone() },
+    }
+}
+
+pub fn import_msg(paths: &AppPaths, account: &AccountProfile, path: &str) -> Result<MailMessage, String> {
+    let source = ensure_readable_file(path, MAX_EML_FILE_BYTES)?;
+    let raw = fs::read(&source).map_err(|error| format!("Não foi possível ler o MSG: {error}"))?;
+    let outlook = Outlook::from_slice(&raw).map_err(|error| format!("Não foi possível interpretar o MSG: {error}"))?;
+
+    let body_html = if !outlook.html.trim().is_empty() {
+        Some(outlook.html.clone())
+    } else {
+        outlook.html_from_rtf().filter(|value| !value.trim().is_empty())
+    };
+    let body_text = if outlook.body.trim().is_empty() { None } else { Some(outlook.body.clone()) };
+    let preview = body_text.as_deref()
+        .unwrap_or_else(|| body_html.as_deref().unwrap_or(""))
+        .chars()
+        .take(180)
+        .collect::<String>();
+
+    let attachment_names = outlook.attachments.iter().map(|attachment| {
+        if !attachment.long_file_name.trim().is_empty() {
+            attachment.long_file_name.clone()
+        } else if !attachment.file_name.trim().is_empty() {
+            attachment.file_name.clone()
+        } else if !attachment.display_name.trim().is_empty() {
+            attachment.display_name.clone()
+        } else {
+            "anexo".to_string()
+        }
+    }).collect::<Vec<_>>();
+
+    let received_at = [
+        outlook.message_delivery_time.as_str(),
+        outlook.client_submit_time.as_str(),
+        outlook.creation_time.as_str(),
+    ].into_iter().find(|value| !value.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+    let message = MailMessage {
+        id: format!("{}-msg-{}", account.id, uuid::Uuid::new_v4()),
+        account_id: account.id.clone(),
+        remote_id: None,
+        remote_folder: None,
+        folder: "Caixa de entrada".to_string(),
+        subject: if outlook.subject.trim().is_empty() { "(sem assunto)".to_string() } else { outlook.subject.clone() },
+        preview,
+        from: outlook_person(&outlook.sender),
+        to: outlook.to.iter().map(outlook_person).collect(),
+        received_at,
+        is_read: false,
+        is_flagged: false,
+        is_pinned: false,
+        has_attachments: !outlook.attachments.is_empty(),
+        body_html,
+        body_text,
+        categories: vec!["Importado".to_string(), "MSG".to_string()],
+        applied_rule_ids: Vec::new(),
+        size_bytes: Some(raw.len() as u64),
+        attachment_names,
+        importance: Some(match outlook.importance { 2 => "high", 0 => "low", _ => "normal" }.to_string()),
+        snoozed_until: None,
+        is_muted: false,
+        is_phishing: false,
+        is_important: outlook.importance == 2,
+        source_format: Some("msg".to_string()),
+    };
+
+    storage::cache_message(paths, &message)?;
+    storage::cache_raw_message(paths, &message.account_id, &message.id, &raw)?;
+    Ok(message)
+}
+
+pub fn read_oft_template(path: &str) -> Result<serde_json::Value, String> {
+    let source = ensure_readable_file(path, MAX_EML_FILE_BYTES)?;
+    let outlook = Outlook::from_path(&source).map_err(|error| format!("Não foi possível interpretar o OFT: {error}"))?;
+    let body_html = if !outlook.html.trim().is_empty() {
+        outlook.html.clone()
+    } else {
+        outlook.html_from_rtf().unwrap_or_default()
+    };
+    let body_text = outlook.body.clone();
+    let name = source.file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("Modelo OFT")
+        .to_string();
+    Ok(serde_json::json!({
+        "name": name,
+        "subject": outlook.subject,
+        "bodyText": body_text,
+        "bodyHtml": body_html,
+        "sourceFormat": "oft"
+    }))
+}
+
+pub fn save_original_message(paths: &AppPaths, account_id: &str, message_id: &str, destination: &str) -> Result<(), String> {
+    let raw = storage::read_raw_message(paths, account_id, message_id)?;
+    let destination = Path::new(destination);
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("Não foi possível preparar a pasta: {error}"))?;
+    }
+    fs::write(destination, raw).map_err(|error| format!("Não foi possível salvar a mensagem original: {error}"))
 }
 
 pub fn import_eml(paths: &AppPaths, account: &AccountProfile, path: &str) -> Result<MailMessage, String> {
