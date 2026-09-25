@@ -12,7 +12,7 @@
     "desktop:dev": "tauri dev",
     "desktop:build": "npm run icons && tauri build",
     "test": "node --test --experimental-strip-types tests/*.test.mts",
-    "check": "npm run test && npm run build && cargo test --manifest-path src-tauri/Cargo.toml && cargo check --manifest-path src-tauri/Cargo.toml"
+    "check": "npm run test && npm run build && cargo test --locked --manifest-path src-tauri/Cargo.toml && cargo check --locked --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@neondatabase/neon-js": "0.7.0-beta",
