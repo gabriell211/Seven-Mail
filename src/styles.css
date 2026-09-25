@@ -810,3 +810,35 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .smime-account>span small{font-size:8px;color:var(--muted)}
 .smime-account>div{display:flex;gap:7px;align-items:center}
 @media(max-width:760px){.smime-account{align-items:flex-start;flex-direction:column}.smime-account>div{width:100%;flex-wrap:wrap}}
+
+
+/* Native provider policies + desktop notification actions */
+.corporate-settings{align-items:flex-start}
+.corporate-panel{width:min(820px,100%);display:flex;flex-direction:column;gap:12px}
+.corporate-toolbar{display:flex;align-items:center;gap:8px}
+.corporate-toolbar select{min-width:260px;height:34px;border:1px solid var(--line);border-radius:9px;background:var(--solid);color:var(--text);padding:0 9px}
+.corporate-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.corporate-columns>section{display:flex;flex-direction:column;gap:7px;border:1px solid var(--line);border-radius:14px;background:var(--soft);padding:11px}
+.corporate-columns>section>header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px}
+.corporate-columns>section>header b{font-size:10px}
+.corporate-columns>section>header span{font-size:8px;color:var(--muted);background:var(--solid);border-radius:999px;padding:3px 7px}
+.policy-card{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:9px;align-items:center;border:1px solid var(--line);border-radius:11px;background:var(--solid);padding:9px}
+.policy-card>div{display:flex;flex-direction:column;min-width:0;gap:2px}
+.policy-card b{font-size:9px}.policy-card small{font-size:8px;color:var(--muted)}.policy-card em{font-size:8px;color:var(--accent);font-style:normal}
+.policy-color{width:9px;height:32px;border-radius:999px;background:var(--accent)}
+.policy-color.retention{background:linear-gradient(180deg,#55c89b,#2e8b79)}
+.policy-error{color:#d65a5a;font-size:8px}
+
+.quick-notification-stack{position:fixed;right:18px;bottom:18px;z-index:12000;width:min(390px,calc(100vw - 36px));display:flex;flex-direction:column;gap:9px;pointer-events:none}
+.quick-notification{position:relative;pointer-events:auto;border:1px solid var(--line);border-radius:16px;background:color-mix(in srgb,var(--solid) 94%,transparent);box-shadow:0 22px 60px rgba(18,41,88,.18);padding:13px;backdrop-filter:blur(18px);animation:quickNotificationIn .24s ease-out both}
+.quick-notification-copy{display:flex;flex-direction:column;gap:3px;padding-right:25px}
+.quick-notification-copy>span{font-size:8px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:850}
+.quick-notification-copy>b{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quick-notification-copy>small{font-size:9px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.quick-notification-close{position:absolute;right:8px;top:8px;width:24px;height:24px;display:grid;place-items:center;border-radius:7px;background:transparent;color:var(--muted)}
+.quick-notification-close:hover{background:var(--soft);color:var(--text)}
+.quick-notification-actions{display:flex;gap:6px;margin-top:10px}
+.quick-notification-actions button{height:28px;padding:0 10px;border-radius:8px;background:var(--soft);color:var(--text);font-size:8px;font-weight:800}
+.quick-notification-actions button:first-child{background:var(--accent);color:#fff}
+@keyframes quickNotificationIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+@media(max-width:760px){.corporate-columns{grid-template-columns:1fr}.corporate-toolbar{align-items:stretch;flex-direction:column}.corporate-toolbar select{width:100%}}
