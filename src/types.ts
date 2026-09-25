@@ -199,6 +199,7 @@ export interface AppSettings {
   maxConcurrentSyncs?: 1 | 2 | 3 | 4;
   batterySaverEnabled?: boolean;
   memorySaverEnabled?: boolean;
+  autoDeclineConflicts?: boolean;
 }
 
 
@@ -243,6 +244,9 @@ export interface CalendarEvent {
   attendeeResponse?: "needs-action" | "accepted" | "tentative" | "declined";
   keepInvitationInInbox?: boolean;
   freeBusyStatus?: "busy" | "free" | "tentative";
+  participantResponses?: Record<string,"needs-action"|"accepted"|"tentative"|"declined">;
+  lastSentParticipants?: string[];
+  invitationMessageId?: string;
 }
 
 export interface CalendarListItem {
@@ -251,6 +255,10 @@ export interface CalendarListItem {
   color: string;
   accountId?: string;
   visible: boolean;
+  shared?: boolean;
+  ownerEmail?: string;
+  permissions?: Array<"read"|"edit"|"share"|"delegate">;
+  delegates?: string[];
 }
 
 export interface ContactItem {
@@ -262,6 +270,8 @@ export interface ContactItem {
   jobTitle: string;
   notes: string;
   favorite: boolean;
+  accountId?: string;
+  shared?: boolean;
   firstName?: string;
   lastName?: string;
   nickname?: string;
@@ -278,6 +288,8 @@ export interface ContactGroupItem {
   id: string;
   name: string;
   description?: string;
+  accountId?: string;
+  shared?: boolean;
 }
 
 export interface TaskItem {
