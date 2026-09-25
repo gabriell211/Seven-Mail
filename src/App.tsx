@@ -2203,9 +2203,15 @@ export default function App() {
         window.alert("A sessão OAuth expirou ou não corresponde à autorização iniciada.");
         return;
       }
-      await bridge.oauthExchangeCode(pending.accountId,code,pending.verifier,pending.redirectUri);
-      window.dispatchEvent(new Event("seven-mail:oauth-authorized"));
-      window.alert("Conta autorizada por OAuth com sucesso.");
+      if(pending.purpose==="provider"){
+        await bridge.providerOAuthExchangeCode(pending.accountId,code,pending.verifier,pending.redirectUri);
+        window.dispatchEvent(new Event("seven-mail:provider-oauth-authorized"));
+        window.alert("Recursos nativos do provedor autorizados com sucesso.");
+      }else{
+        await bridge.oauthExchangeCode(pending.accountId,code,pending.verifier,pending.redirectUri);
+        window.dispatchEvent(new Event("seven-mail:oauth-authorized"));
+        window.alert("Conta autorizada por OAuth com sucesso.");
+      }
       return;
     }
 
