@@ -122,6 +122,66 @@ fn internet_message_id(paths: &AppPaths, account_id: &str, message_id: &str) -> 
         .ok_or_else(|| "Message-ID original não encontrado. Sincronize novamente a mensagem antes de recolher.".to_string())
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagePolicy {
+    pub sensitivity_label_id: Option<String>,
+    pub can_forward: bool,
+    pub can_copy: bool,
+    pub reactions_allowed: bool,
+    pub rights: Vec<String>,
+}
+
+fn rights_list(value: &Value) -> Vec<String> {
+    match value.get("value") {
+        Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).map(|value| value.to_ascii_lowercase()).collect(),
+        Some(Value::String(value)) => value.split(',').map(|item| item.trim().to_ascii_lowercase()).filter(|item| !item.is_empty()).collect(),
+        _ => Vec::new(),
+    }
+}
+
+pub fn message_policy(paths: &AppPaths, account: &AccountProfile, local_message_id: &str) -> Result<MessagePolicy, String> {
+    let raw = storage::read_raw_message(paths, &account.id, local_message_id)?;
+    let source = String::from_utf8_lossy(&raw);
+    let reactions_allowed = !Regex::new(r"(?im)^x-ms-reactions:\s*disallow\s*$")
+        .map_err(|error| error.to_string())?
+        .is_match(&source);
+    let label_id = Regex::new(r"(?i)MSIP_Label_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_Enabled\s*=\s*True")
+        .map_err(|error| error.to_string())?
+        .captures(&source)
+        .and_then(|capture| capture.get(1))
+        .map(|value| value.as_str().to_string());
+
+    let Some(label_id) = label_id else {
+        return Ok(MessagePolicy {
+            sensitivity_label_id: None,
+            can_forward: true,
+            can_copy: true,
+            reactions_allowed,
+            rights: Vec::new(),
+        });
+    };
+
+    let rights = if capabilities(account).usage_rights {
+        sensitivity_rights(account, &label_id, Some(&account.email))
+            .map(|value| rights_list(&value))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let restricted = !rights.is_empty();
+    let can_forward = !restricted || rights.iter().any(|value| value == "forward");
+    let can_copy = !restricted || rights.iter().any(|value| matches!(value.as_str(), "extract" | "objmodel" | "edit" | "docedit"));
+
+    Ok(MessagePolicy {
+        sensitivity_label_id: Some(label_id),
+        can_forward,
+        can_copy,
+        reactions_allowed,
+        rights,
+    })
+}
+
 pub fn recall_message(paths: &AppPaths, account: &AccountProfile, local_message_id: &str) -> Result<String, String> {
     if !capabilities(account).recall {
         return Err("O provedor desta conta não oferece recall pela API configurada.".to_string());
