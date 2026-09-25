@@ -211,6 +211,46 @@ fn test_dav_connection(account_id: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+fn put_dav_calendar(account_id: String, event_id: String, ics: String) -> Result<(), String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    dav_sync::put_calendar(&account, &event_id, &ics)
+}
+
+#[tauri::command]
+fn delete_dav_calendar(account_id: String, event_id: String) -> Result<(), String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    dav_sync::delete_calendar(&account, &event_id)
+}
+
+#[tauri::command]
+fn put_dav_contact(account_id: String, contact_id: String, vcard: String) -> Result<(), String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    dav_sync::put_contact(&account, &contact_id, &vcard)
+}
+
+#[tauri::command]
+fn delete_dav_contact(account_id: String, contact_id: String) -> Result<(), String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    dav_sync::delete_contact(&account, &contact_id)
+}
+
+#[tauri::command]
 fn test_smtp_connection(account_id: String) -> Result<bool, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -779,6 +819,10 @@ pub fn run() {
             test_ldap_connection,
             sync_dav,
             test_dav_connection,
+            put_dav_calendar,
+            delete_dav_calendar,
+            put_dav_contact,
+            delete_dav_contact,
             test_smtp_connection,
             test_imap_connection,
             sync_inbox,
