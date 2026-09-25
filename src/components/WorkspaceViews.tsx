@@ -563,37 +563,68 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
     }
     const recipients=[...(event.requiredParticipants?.length?event.requiredParticipants:event.participants),...(event.optionalParticipants??[])];
     const unique=[...new Set(recipients.map((item)=>item.trim()).filter(Boolean).filter((item)=>item.toLocaleLowerCase("pt-BR")!==account.email.toLocaleLowerCase("pt-BR")))];
-    if(unique.length===0){
+    if(unique.length===0&&method!=="CANCEL"){
       window.alert("Adicione pelo menos um participante.");
       return;
     }
-    const ics=eventInvitationToIcs({...event,organizer:account.email},account.email,method);
-    await bridge.queueOperation({
-      id:crypto.randomUUID(),
-      kind:"send",
-      accountId:account.id,
-      createdAt:new Date().toISOString(),
-      attempts:0,
-      payload:{
-        fromAddress:account.email,
-        to:unique.join(", "),
-        cc:"",
-        bcc:"",
-        subject:`${method==="CANCEL"?"Cancelado:":event.status==="draft"?"Convite:":"Reunião:"} ${event.title}`,
-        bodyText:`${method==="CANCEL"?"Esta reunião foi cancelada.":"Você foi convidado para uma reunião."}\n\n${event.title}\n${new Date(event.startAt).toLocaleString("pt-BR")}${event.location?`\n${event.location}`:""}`,
-        bodyHtml:"",
-        attachments:[],
-        calendarIcs:ics,
-        calendarMethod:method,
-        priority:"normal",
-        requestReadReceipt:false,
-        requestDeliveryReceipt:false,
-        sendAt:new Date().toISOString(),
-      },
-    });
+
+    const previous=[...new Set(event.lastSentParticipants??[])];
+    const currentSet=new Set(unique.map((item)=>item.toLocaleLowerCase("pt-BR")));
+    const previousSet=new Set(previous.map((item)=>item.toLocaleLowerCase("pt-BR")));
+    const added=unique.filter((item)=>!previousSet.has(item.toLocaleLowerCase("pt-BR")));
+    const removed=previous.filter((item)=>!currentSet.has(item.toLocaleLowerCase("pt-BR")));
+
+    const queueCalendarMessage=async(targets:string[],calendarMethod:"REQUEST"|"CANCEL")=>{
+      if(targets.length===0) return;
+      const ics=eventInvitationToIcs({...event,organizer:account.email},account.email,calendarMethod);
+      await bridge.queueOperation({
+        id:crypto.randomUUID(),
+        kind:"send",
+        accountId:account.id,
+        createdAt:new Date().toISOString(),
+        attempts:0,
+        payload:{
+          fromAddress:account.email,
+          to:targets.join(", "),
+          cc:"",
+          bcc:"",
+          subject:`${calendarMethod==="CANCEL"?"Cancelado:":event.status==="draft"?"Convite:":"Reunião:"} ${event.title}`,
+          bodyText:`${calendarMethod==="CANCEL"?"Esta reunião foi cancelada.":"Você foi convidado para uma reunião."}\n\n${event.title}\n${new Date(event.startAt).toLocaleString("pt-BR")}${event.location?`\n${event.location}`:""}`,
+          bodyHtml:"",
+          attachments:[],
+          calendarIcs:ics,
+          calendarMethod,
+          priority:"normal",
+          requestReadReceipt:false,
+          requestDeliveryReceipt:false,
+          sendAt:new Date().toISOString(),
+        },
+      });
+    };
+
+    if(method==="CANCEL"){
+      await queueCalendarMessage(previous.length?previous:unique,"CANCEL");
+    }else if(previous.length&& (added.length||removed.length)){
+      await queueCalendarMessage(added,"REQUEST");
+      await queueCalendarMessage(removed,"CANCEL");
+    }else{
+      await queueCalendarMessage(unique,"REQUEST");
+    }
+
     await bridge.flushOutbox().catch(()=>undefined);
-    await store.save({...event,organizer:account.email,status:method==="CANCEL"?"cancelled":"confirmed"});
-    window.alert(method==="CANCEL"?"Cancelamento enviado.":"Convite/atualização enviado.");
+    await store.save({
+      ...event,
+      organizer:account.email,
+      status:method==="CANCEL"?"cancelled":"confirmed",
+      lastSentParticipants:method==="CANCEL"?[]:unique,
+      participantResponses:method==="CANCEL"
+        ? event.participantResponses
+        : Object.fromEntries(unique.map((email)=>[
+            email.toLocaleLowerCase("pt-BR"),
+            event.participantResponses?.[email.toLocaleLowerCase("pt-BR")]??"needs-action",
+          ])),
+    });
+    window.alert(method==="CANCEL"?"Cancelamento enviado.":previous.length&&(added.length||removed.length)?"Atualização enviada somente aos participantes alterados.":"Convite/atualização enviado.");
   }
 
   async function respondMeeting(event:CalendarEvent,response:NonNullable<CalendarEvent["attendeeResponse"]>) {
