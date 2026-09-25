@@ -39,6 +39,8 @@ export interface ComposeDraft {
   priority?: "low" | "normal" | "high";
   requestReadReceipt?: boolean;
   requestDeliveryReceipt?: boolean;
+  smimeSign?: boolean;
+  smimeEncrypt?: boolean;
   attachments: QueuedAttachment[];
 }
 
@@ -180,6 +182,8 @@ export function Composer({
       priority: "normal",
       requestReadReceipt: false,
       requestDeliveryReceipt: false,
+      smimeSign: false,
+      smimeEncrypt: false,
       attachments: [],
     };
   });
@@ -200,6 +204,7 @@ export function Composer({
   const [recipientSuggestionsOpen,setRecipientSuggestionsOpen]=useState(false);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [dictating,setDictating]=useState(false);
+  const [smimeIdentity,setSmimeIdentity]=useState(false);
   const [uploadProgress,setUploadProgress]=useState<{done:number;total:number;name:string}|null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const finishedRef = useRef(false);
@@ -310,6 +315,18 @@ export function Composer({
       setDraft((current)=>({...current,fromAddress:account.email}));
     }
   }, [account?.id,fromAddresses.join("|")]);
+
+  useEffect(()=>{
+    let disposed=false;
+    if(!account){
+      setSmimeIdentity(false);
+      return;
+    }
+    void bridge.smimeIdentityStatus(account.id)
+      .then((status)=>{if(!disposed)setSmimeIdentity(status.configured);})
+      .catch(()=>{if(!disposed)setSmimeIdentity(false);});
+    return ()=>{disposed=true;};
+  },[account?.id]);
 
   useEffect(() => {
     let unlisten: (()=>void) | undefined;
@@ -625,6 +642,8 @@ export function Composer({
             priority:draft.priority??"normal",
             requestReadReceipt:Boolean(draft.requestReadReceipt),
             requestDeliveryReceipt:Boolean(draft.requestDeliveryReceipt),
+            smimeSign:Boolean(draft.smimeSign),
+            smimeEncrypt:Boolean(draft.smimeEncrypt),
             sendAt,
           },
         });
@@ -667,6 +686,25 @@ export function Composer({
       return;
     }
 
+    if(draft.smimeSign&&!smimeIdentity){
+      setError("Configure uma identidade S/MIME para esta conta antes de assinar.");
+      return;
+    }
+    if(draft.smimeEncrypt){
+      const recipients=[draft.to,draft.cc,draft.bcc]
+        .flatMap((value)=>value.split(/[;,]/))
+        .map((value)=>value.trim().replace(/^.*<([^>]+)>.*$/,"$1"))
+        .filter((value)=>value.includes("@"));
+      const missing:string[]=[];
+      for(const email of [...new Set(recipients)]){
+        if(!(await bridge.hasSmimeRecipientCertificate(email).catch(()=>false))) missing.push(email);
+      }
+      if(missing.length){
+        setError(`Faltam certificados S/MIME para: ${missing.join(", ")}`);
+        return;
+      }
+    }
+
     setBusy(true);
     setError("");
 
@@ -700,6 +738,8 @@ export function Composer({
           priority: draft.priority ?? "normal",
           requestReadReceipt: Boolean(draft.requestReadReceipt),
           requestDeliveryReceipt: Boolean(draft.requestDeliveryReceipt),
+          smimeSign: Boolean(draft.smimeSign),
+          smimeEncrypt: Boolean(draft.smimeEncrypt),
           sendAt: effectiveSendAt.toISOString(),
         },
       });
@@ -911,6 +951,8 @@ export function Composer({
             <select className="signature-picker" value={draft.priority??"normal"} onChange={(event)=>setDraft((current)=>({...current,priority:event.target.value as ComposeDraft["priority"]}))} aria-label="Prioridade"><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option></select>
             <label className="composer-mini-check"><input type="checkbox" checked={Boolean(draft.requestReadReceipt)} onChange={(event)=>setDraft((current)=>({...current,requestReadReceipt:event.target.checked}))}/> Recibo leitura</label>
             <label className="composer-mini-check"><input type="checkbox" checked={Boolean(draft.requestDeliveryReceipt)} onChange={(event)=>setDraft((current)=>({...current,requestDeliveryReceipt:event.target.checked}))}/> Recibo entrega</label>
+            <label className="composer-mini-check"><input type="checkbox" disabled={!smimeIdentity} checked={Boolean(draft.smimeSign)} onChange={(event)=>setDraft((current)=>({...current,smimeSign:event.target.checked}))}/> Assinar S/MIME</label>
+            <label className="composer-mini-check"><input type="checkbox" checked={Boolean(draft.smimeEncrypt)} onChange={(event)=>setDraft((current)=>({...current,smimeEncrypt:event.target.checked}))}/> Criptografar S/MIME</label>
             <button className={showSchedule ? "ghost active" : "ghost"} onClick={() => setShowSchedule((value) => !value)}><Icon name="clock" size={15} /> Programar</button>
             <button className={showMerge?"ghost active":"ghost"} onClick={()=>setShowMerge((value)=>!value)}><Icon name="people" size={15}/> Mala direta</button>
             <span className="send-delay">{settings.sendDelaySeconds > 0 ? `Desfazer por ${settings.sendDelaySeconds}s` : "Envio imediato"}</span>
