@@ -17,6 +17,7 @@ import { ProfilesPanel } from "./components/ProfilesPanel";
 import { ExtensionsPanel } from "./components/ExtensionsPanel";
 import { SafeMessageBody } from "./components/SafeMessageBody";
 import { ReadingAssist } from "./components/ReadingAssist";
+import { VirtualList } from "./components/VirtualList";
 import { BrandLogo } from "./components/BrandLogo";
 import { LaunchScreen } from "./components/LaunchScreen";
 import { AppLockScreen } from "./components/AppLockScreen";
@@ -586,6 +587,16 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
       .filter((group)=>group.messages.length>0);
   },[folderMessages]);
 
+  const virtualRows=useMemo<Array<
+    | {kind:"group";label:string;count:number}
+    | {kind:"message";message:MailMessage}
+  >>(()=>messageGroups.flatMap((group)=>[
+    {kind:"group" as const,label:group.label,count:group.messages.length},
+    ...(collapsedGroups.includes(group.label)
+      ? []
+      : group.messages.map((message)=>({kind:"message" as const,message}))),
+  ]),[messageGroups,collapsedGroups]);
+
   function conditionalAccent(message:MailMessage):string|undefined {
     for(const rule of settings.conditionalMailRules??[]){
       const value=rule.value.toLocaleLowerCase("pt-BR");
@@ -599,6 +610,32 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
       if(match) return rule.accent;
     }
     return undefined;
+  }
+
+  function renderMessageRow(message:MailMessage) {
+    const accent=conditionalAccent(message);
+    const sender=message.from.name||message.from.email;
+    const selectedRow=selectedId===message.id;
+    return <div
+      role="option"
+      aria-selected={selectedRow}
+      aria-label={`${message.isRead?"Lida":"Não lida"}, de ${sender}, assunto ${message.subject||"sem assunto"}`}
+      tabIndex={selectedRow?0:-1}
+      draggable={Boolean(onMoveToFolder)}
+      onDragStart={(event)=>{event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("application/x-seven-mail-message",message.id);}}
+      onPointerDown={(event)=>{if(event.pointerType!=="mouse"||event.button===0)swipeStartRef.current={id:message.id,x:event.clientX,y:event.clientY};}}
+      onPointerCancel={()=>{swipeStartRef.current=null;}}
+      onPointerUp={(event)=>{const start=swipeStartRef.current;swipeStartRef.current=null;if(!start||start.id!==message.id)return;const dx=event.clientX-start.x;const dy=event.clientY-start.y;if(Math.abs(dx)<72||Math.abs(dx)<Math.abs(dy)*1.35)return;event.preventDefault();event.stopPropagation();void act(message.id,dx>0?"archive":"delete");}}
+      onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();setSelectedId(message.id);}}}
+      style={accent?{borderLeftColor:accent}:undefined}
+      className={"message swipeable "+(accent?"conditional ":"")+(selectedRow?"selected ":"")+(!message.isRead?"unread ":"")+(message.isPhishing?"phishing ":"")+(message.isImportant?"important ":"")+(isBlocked(message)?"blocked ":"")}
+      onClick={()=>{setSelectedId(message.id);if(!message.isRead){window.setTimeout(()=>void act(message.id,"read"),settings.markReadDelayMs);}}}
+    >
+      {settings.showSenderPhotos!==false&&<span className="avatar" aria-hidden="true">{sender[0].toUpperCase()}</span>}
+      <span className="message-copy"><span className="message-meta"><b>{sender}</b><time>{new Date(message.receivedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</time></span><strong>{message.subject||"(sem assunto)"}{conversationView&&(conversationCounts.get(conversationKey(message))??0)>1&&<em className="conversation-count"> {conversationCounts.get(conversationKey(message))}</em>}</strong><small>{message.preview}</small>{message.categories.length>0&&<span className="message-category-dots" aria-label={`Categorias: ${message.categories.join(", ")}`}>{message.categories.slice(0,4).map(name=>{const category=categories.find(item=>item.name===name);return <i key={name} title={name} style={{background:category?.color||"#888"}}/>;})}</span>}</span>
+      <span className="message-indicators" aria-hidden="true">{message.isImportant&&<Icon name="star" size={13}/>} {message.isMuted&&<Icon name="moon" size={13}/>} {message.isPinned&&<Icon name="pin" size={13}/>} {message.hasAttachments&&<Icon name="paperclip" size={14}/>}</span>
+      <span className="message-quick-actions" aria-label="Ações rápidas">{(settings.quickActions??["archive","flag","read"]).map((action)=><button type="button" title={action} aria-label={action} key={action} onClick={(event)=>runQuickAction(event as unknown as MouseEvent,message,action)}><Icon name={quickActionIcon(action)} size={12}/></button>)}</span>
+    </div>;
   }
 
   function runQuickAction(event:MouseEvent,message:MailMessage,action:NonNullable<AppSettings["quickActions"]>[number]){
@@ -753,23 +790,25 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
         {(periodFilter!=="all"||senderFilter||priorityFilter!=="all")&&<button className="ghost" onClick={()=>{setPeriodFilter("all");setSenderFilter("");setPriorityFilter("all");}}>Limpar</button>}
       </div>
       {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : folderMessages.length===0 && (folder.role!=="drafts" || localDrafts.length===0) ? <div className="empty-state small"><div className="empty-symbol"><Icon name={folder.role==="drafts"?"draft":"inbox"} size={30}/></div><h3>{folder.role==="drafts"?"Nenhum rascunho":"Tudo limpo"}</h3><p>{folder.role==="drafts"?"Mensagens em edição aparecerão aqui automaticamente.":"As mensagens sincronizadas aparecerão aqui."}</p></div> :
-        <div className="message-list">
-          {folder.role==="drafts"&&localDrafts.map(draft=><button key={draft.id} className="message local-draft-message" onClick={()=>onOpenDraft(draft)}>
-            <span className="avatar draft-avatar"><Icon name="draft" size={15}/></span>
+        <>
+          {folder.role==="drafts"&&<div className="draft-list" role="list" aria-label="Rascunhos locais">{localDrafts.map(draft=><button key={draft.id} className="message local-draft-message" onClick={()=>onOpenDraft(draft)}>
+            <span className="avatar draft-avatar" aria-hidden="true"><Icon name="draft" size={15}/></span>
             <span className="message-copy"><span className="message-meta"><b>Rascunho local</b><time>autosave</time></span><strong>{draft.subject||"(sem assunto)"}</strong><small>{draft.to?`Para: ${draft.to}`:(draft.bodyText||"Comece a escrever...")}</small></span>
             {draft.attachments.length>0&&<span className="draft-attachment-count"><Icon name="paperclip" size={13}/>{draft.attachments.length}</span>}
-          </button>)}
-          {messageGroups.map((group)=><section className="message-date-group" key={group.label}>
-            <button className="message-group-header" onClick={()=>setCollapsedGroups((current)=>current.includes(group.label)?current.filter((item)=>item!==group.label):[...current,group.label])}><Icon name="chevron" size={12}/><b>{group.label}</b><span>{group.messages.length}</span></button>
-            {!collapsedGroups.includes(group.label)&&group.messages.map(message=>{const accent=conditionalAccent(message);return <button key={message.id} draggable={Boolean(onMoveToFolder)} onDragStart={(event)=>{event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("application/x-seven-mail-message",message.id);}} onPointerDown={(event)=>{if(event.pointerType!=="mouse"||event.button===0)swipeStartRef.current={id:message.id,x:event.clientX,y:event.clientY};}} onPointerCancel={()=>{swipeStartRef.current=null;}} onPointerUp={(event)=>{const start=swipeStartRef.current;swipeStartRef.current=null;if(!start||start.id!==message.id)return;const dx=event.clientX-start.x;const dy=event.clientY-start.y;if(Math.abs(dx)<72||Math.abs(dx)<Math.abs(dy)*1.35)return;event.preventDefault();event.stopPropagation();void act(message.id,dx>0?"archive":"delete");}} style={accent?{borderLeftColor:accent}:undefined} className={"message swipeable "+(accent?"conditional ":"")+(selectedId===message.id?"selected ":"")+(!message.isRead?"unread ":"")+(message.isPhishing?"phishing ":"")+(message.isImportant?"important ":"")+(isBlocked(message)?"blocked ":"")} onClick={()=>{setSelectedId(message.id);if(!message.isRead){window.setTimeout(()=>void act(message.id,"read"),settings.markReadDelayMs);}}}>
-              {settings.showSenderPhotos!==false&&<span className="avatar">{(message.from.name||message.from.email)[0].toUpperCase()}</span>}
-              <span className="message-copy"><span className="message-meta"><b>{message.from.name||message.from.email}</b><time>{new Date(message.receivedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</time></span><strong>{message.subject||"(sem assunto)"}{conversationView&&(conversationCounts.get(conversationKey(message))??0)>1&&<em className="conversation-count"> {conversationCounts.get(conversationKey(message))}</em>}</strong><small>{message.preview}</small>{message.categories.length>0&&<span className="message-category-dots">{message.categories.slice(0,4).map(name=>{const category=categories.find(item=>item.name===name);return <i key={name} title={name} style={{background:category?.color||"#888"}}/>;})}</span>}</span>
-              <span className="message-indicators">{message.isImportant&&<Icon name="star" size={13}/>} {message.isMuted&&<Icon name="moon" size={13}/>} {message.isPinned&&<Icon name="pin" size={13}/>} {message.hasAttachments&&<Icon name="paperclip" size={14}/>}</span>
-              <span className="message-quick-actions">{(settings.quickActions??["archive","flag","read"]).map((action)=><span role="button" tabIndex={0} title={action} key={action} onClick={(event)=>runQuickAction(event,message,action)} onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();runQuickAction(event as unknown as MouseEvent,message,action);}}}><Icon name={quickActionIcon(action)} size={12}/></span>)}</span>
-            </button>})}
-          </section>)}
+          </button>)}</div>}
+          <VirtualList
+            items={virtualRows}
+            estimateSize={settings.compact?62:78}
+            getSize={(row)=>row.kind==="group"?34:(settings.compact?62:78)}
+            getKey={(row)=>row.kind==="group"?`group-${row.label}`:row.message.id}
+            className="message-list virtual-message-list"
+            ariaLabel={`Mensagens em ${folder.name}`}
+            renderItem={(row)=>row.kind==="group"
+              ? <button className="message-group-header" aria-expanded={!collapsedGroups.includes(row.label)} onClick={()=>setCollapsedGroups((current)=>current.includes(row.label)?current.filter((item)=>item!==row.label):[...current,row.label])}><Icon name="chevron" size={12}/><b>{row.label}</b><span>{row.count}</span></button>
+              : renderMessageRow(row.message)}
+          />
           {displayMessages.length>folderMessages.length&&<button className="load-more-mail" onClick={()=>setVisibleCount(value=>value+(settings.mailPageSize??50))}>Carregar mais · {displayMessages.length-folderMessages.length} restantes</button>}
-        </div>
+        </>
       }
     </section>
 
