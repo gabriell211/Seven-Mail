@@ -4,6 +4,7 @@ import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { disable as disableAutostart, enable as enableAutostart } from "@tauri-apps/plugin-autostart";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Icon, type IconName } from "./icons";
 import { bridge } from "./lib/bridge";
 import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, PersistentRulesView, PersistentTasksView } from "./components/WorkspaceViews";
@@ -1082,7 +1083,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
     <SignaturesPanel accounts={accounts} signatures={signatures} onSave={onSaveSignature} onDelete={onDeleteSignature}/>
     <ComposerAssetsPanel/>
     <CloudPanel/>
-    <div className="settings-row"><div><h3>Desktop</h3><p>Integração real com Windows, Linux e macOS.</p></div><div className="toggles"><label><span>Ao fechar a janela</span><select value={settings.closeBehavior??(settings.minimizeToTray?"tray":"exit")} onChange={e=>{const value=e.target.value as AppSettings["closeBehavior"];set("closeBehavior",value);set("minimizeToTray",value==="tray");}}><option value="tray">Minimizar para bandeja</option><option value="exit">Encerrar o aplicativo</option></select></label><label><input type="checkbox" checked={settings.startWithSystem} onChange={e=>set("startWithSystem",e.target.checked)}/> Iniciar com o sistema</label><label><input type="checkbox" checked={settings.confirmBeforeDelete} onChange={e=>set("confirmBeforeDelete",e.target.checked)}/> Confirmar exclusão</label></div></div>
+    <div className="settings-row"><div><h3>Desktop</h3><p>Integração real com Windows, Linux e macOS.</p></div><div className="toggles"><button className="secondary" onClick={()=>void bridge.openDefaultMailSettings().then((message)=>window.alert(message)).catch((reason)=>window.alert(String(reason)))}><Icon name="mail" size={14}/> Definir como cliente padrão</button><label><span>Ao fechar a janela</span><select value={settings.closeBehavior??(settings.minimizeToTray?"tray":"exit")} onChange={e=>{const value=e.target.value as AppSettings["closeBehavior"];set("closeBehavior",value);set("minimizeToTray",value==="tray");}}><option value="tray">Minimizar para bandeja</option><option value="exit">Encerrar o aplicativo</option></select></label><label><input type="checkbox" checked={settings.startWithSystem} onChange={e=>set("startWithSystem",e.target.checked)}/> Iniciar com o sistema</label><label><input type="checkbox" checked={settings.confirmBeforeDelete} onChange={e=>set("confirmBeforeDelete",e.target.checked)}/> Confirmar exclusão</label></div></div>
   </Workspace>;
 }
 
@@ -1150,6 +1151,16 @@ export default function App() {
   const activeAccount = unified ? undefined : (profileAccounts.find(a=>a.id===activeId)||profileAccounts[0]);
   const composeAccount = activeAccount ?? profileAccounts.find((account)=>account.isDefault) ?? profileAccounts[0];
   const bootReady = bootState.runtime && bootState.accounts && bootState.workspace && bootState.messages;
+  const unreadBadgeCount=useMemo(
+    ()=>messages.filter((message)=>!message.isRead&&message.folder==="Caixa de entrada").length,
+    [messages],
+  );
+
+  useEffect(()=>{
+    if(!bootReady) return;
+    document.title=unreadBadgeCount>0?`(${unreadBadgeCount}) Seven Mail`:"Seven Mail";
+    void getCurrentWindow().setBadgeCount(unreadBadgeCount>0?unreadBadgeCount:undefined).catch(()=>undefined);
+  },[bootReady,unreadBadgeCount]);
 
   async function loadWorkspaceCollection<T>(kind: WorkspaceKind): Promise<T[]> {
     const documents = await syncWorkspaceCollection<T>(kind).catch(() => []);
