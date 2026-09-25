@@ -3,6 +3,8 @@ use crate::{
     local_crypto,
     models::{AccountProfile, ProviderSettings, QueueOperation, QueuedAttachment},
     oauth,
+    smime,
+    storage::AppPaths,
 };
 use lettre::{
     address::Envelope,
@@ -127,6 +129,27 @@ fn add_recipients(
     }
 
     Ok((builder, count))
+}
+
+fn recipient_emails(values: &[&str]) -> Vec<String> {
+    let mut result = Vec::new();
+    for raw in values {
+        for item in raw.split([',', ';']) {
+            let value = item.trim();
+            if value.is_empty() {
+                continue;
+            }
+            let email = if let (Some(start), Some(end)) = (value.rfind('<'), value.rfind('>')) {
+                if end > start { value[start + 1..end].trim() } else { value }
+            } else {
+                value
+            };
+            if email.contains('@') && !result.iter().any(|existing: &String| existing.eq_ignore_ascii_case(email)) {
+                result.push(email.to_string());
+            }
+        }
+    }
+    result
 }
 
 fn attachment_mime(name: &str) -> &'static str {
@@ -359,10 +382,37 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
     }
 
     let message = builder.multipart(mixed).map_err(|error| error.to_string())?;
+    let smime_sign = operation
+        .payload
+        .get("smimeSign")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let smime_encrypt = operation
+        .payload
+        .get("smimeEncrypt")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
 
-    smtp_transport(account)?
-        .send(&message)
-        .map_err(|error| error.to_string())?;
+    let transport = smtp_transport(account)?;
+    if smime_sign || smime_encrypt {
+        let raw = message.formatted();
+        let recipients = recipient_emails(&[to, cc, bcc]);
+        let protected = smime::protect_message(
+            &AppPaths::resolve()?,
+            account,
+            &recipients,
+            &raw,
+            smime_sign,
+            smime_encrypt,
+        )?;
+        transport
+            .send_raw(message.envelope(), &protected)
+            .map_err(|error| error.to_string())?;
+    } else {
+        transport
+            .send(&message)
+            .map_err(|error| error.to_string())?;
+    }
 
     Ok(())
 }
