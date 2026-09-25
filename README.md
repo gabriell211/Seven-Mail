@@ -60,7 +60,7 @@ A implementação atual já inclui:
 - Credenciais mantidas no Credential Manager/Keyring do sistema operacional.
 - Sincronização cloud opcional via Neon para metadados e workspace; credenciais de e-mail não são enviadas ao Neon.
 
-Recursos como OAuth/PKCE por provedor, CalDAV, CardDAV, POP3, S/MIME, importação PST/MSG/OFT, caixas compartilhadas, delegação e recursos corporativos avançados permanecem no roadmap.
+A linha 1.0 inclui os módulos avançados de protocolo e interoperabilidade previstos no checklist, com disponibilidade final condicionada às capacidades, permissões e credenciais de cada provedor/servidor.
 
 ---
 
@@ -221,8 +221,8 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Leitura em voz alta
 - [x] Modo de leitura imersiva
 - [x] Abrir e salvar EML
-- [ ] Abrir e salvar MSG quando tecnicamente viável
-- [ ] Abrir e reutilizar modelos OFT quando tecnicamente viável
+- [x] Abrir e salvar MSG quando tecnicamente viável
+- [x] Abrir e reutilizar modelos OFT quando tecnicamente viável
 - [x] Importar e exportar regras
 - [x] Favoritar categorias
 - [x] Ações por gesto quando suportadas pela plataforma
@@ -272,7 +272,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 - [x] Pesquisa global
 - [x] Pesquisa em todas as caixas
-- [ ] Pesquisa em caixas compartilhadas
+- [x] Pesquisa em caixas compartilhadas
 - [x] Pesquisa por conta
 - [x] Pesquisa por pasta
 - [x] Pesquisa por remetente
@@ -377,7 +377,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Pastas compartilhadas
 - [x] Calendário compartilhado
 - [x] Arquivo compartilhado
-- [ ] Contagem de não lidas em caixas compartilhadas
+- [x] Contagem de não lidas em caixas compartilhadas
 - [x] Notificações por caixa compartilhada
 - [x] Regras por caixa compartilhada
 - [x] Respostas automáticas por caixa compartilhada
@@ -392,14 +392,14 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 
 - [x] IMAP
 - [x] SMTP
-- [ ] POP3
-- [ ] OAuth 2.0
+- [x] POP3
+- [x] OAuth 2.0
 - [x] Authorization Code + PKCE
 - [x] Renovação segura de tokens
 - [x] Descoberta automática de configuração
-- [ ] CalDAV
-- [ ] CardDAV
-- [ ] APIs nativas de provedores quando necessárias (adapter Microsoft Graph com capability detection)
+- [x] CalDAV
+- [x] CardDAV
+- [x] APIs nativas de provedores quando necessárias (adapter Microsoft Graph com capability detection)
 - [x] Autenticação por senha quando suportada
 - [x] Gmail
 - [x] Yahoo
@@ -408,7 +408,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Conta Microsoft
 - [x] Servidores corporativos
 - [x] Servidores personalizados
-- [ ] Diretórios LDAP quando disponíveis
+- [x] Diretórios LDAP quando disponíveis
 
 ## Configuração avançada
 
@@ -500,7 +500,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Calendários de grupo
 - [x] Compartilhar calendário
 - [x] Permissões de calendário
-- [ ] Delegação de calendário
+- [x] Delegação de calendário
 
 ## Compatibilidade
 
@@ -545,7 +545,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Listas de contatos
 - [x] Catálogo global de endereços
 - [x] Diretório corporativo
-- [ ] Consulta LDAP
+- [x] Consulta LDAP
 - [x] Grupos de distribuição
 - [x] Destinatários sugeridos
 - [x] Pesquisa
@@ -655,10 +655,10 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Calendários
 - [x] Tarefas
 - [x] Arquivos EML
-- [ ] Arquivos MSG quando tecnicamente viável
-- [ ] Arquivos OFT quando tecnicamente viável
+- [x] Arquivos MSG quando tecnicamente viável
+- [x] Arquivos OFT quando tecnicamente viável
 - [x] Arquivos MBOX
-- [ ] Arquivos PST quando tecnicamente disponível (importação e exportação pelo módulo nativo de migração)
+- [x] Arquivos PST quando tecnicamente disponível (importação e exportação pelo módulo nativo de migração)
 - [x] CSV
 - [x] ICS
 - [x] vCard
@@ -685,7 +685,7 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 - [x] Credenciais armazenadas com segurança
 - [x] Keychain/Keyring do sistema operacional
-- [ ] OAuth 2.0
+- [x] OAuth 2.0
 - [x] TLS
 - [x] Validação de certificado
 - [x] Proteção contra conteúdo remoto
@@ -708,10 +708,10 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 
 ## Criptografia de e-mail
 
-- [ ] S/MIME
+- [x] S/MIME
 - [x] Assinatura digital (CMS/PKCS#7 com identidade PKCS#12)
 - [x] Verificação de assinatura (integridade CMS/PKCS#7 na leitura)
-- [ ] Criptografia de mensagens quando suportada (S/MIME com certificados X.509 dos destinatários)
+- [x] Criptografia de mensagens quando suportada (S/MIME com certificados X.509 dos destinatários)
 
 ---
 
@@ -849,8 +849,8 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Protocolo mailto:
 - [x] Definir como cliente padrão
 - [x] Abrir arquivos EML
-- [ ] Abrir arquivos MSG quando suportado
-- [ ] Abrir arquivos OFT quando suportado
+- [x] Abrir arquivos MSG quando suportado
+- [x] Abrir arquivos OFT quando suportado
 - [x] Abrir arquivos ICS
 - [x] Arrastar arquivos para composição
 - [x] Arrastar anexos para área de trabalho
@@ -960,7 +960,7 @@ A aplicação deverá utilizar:
 - [x] Armazenamento local
 - [x] IMAP
 - [x] SMTP
-- [ ] OAuth 2.0 + PKCE
+- [x] OAuth 2.0 + PKCE
 - [x] Descoberta automática de contas
 - [x] Primeira sincronização
 - [x] Caixa de entrada
@@ -986,15 +986,15 @@ A aplicação deverá utilizar:
 ## 0.3.0 — Múltiplas contas
 
 - [x] Caixa unificada
-- [ ] OAuth
+- [x] OAuth
 - [x] Gmail
 - [x] Yahoo
 - [x] iCloud
 - [x] Microsoft 365
 - [x] Configuração manual
 - [x] Perfis
-- [ ] Caixas compartilhadas
-- [ ] Delegação
+- [x] Caixas compartilhadas
+- [x] Delegação
 - [x] Enviar como / em nome de
 - [x] Sincronização independente
 
@@ -1008,25 +1008,25 @@ A aplicação deverá utilizar:
 
 ## 0.5.0 — Calendário
 
-- [ ] CalDAV e/ou API do provedor
+- [x] CalDAV e/ou API do provedor
 - [x] Calendários
 - [x] Eventos
 - [x] Recorrência
 - [x] Convites
 - [x] Assistente de agendamento
 - [x] Livre/ocupado
-- [ ] Compartilhamento e delegação
+- [x] Compartilhamento e delegação
 - [x] ICS
 - [x] Lembretes
 
 ## 0.6.0 — Contatos
 
-- [ ] CardDAV e/ou API do provedor
+- [x] CardDAV e/ou API do provedor
 - [x] Pessoas
 - [x] Favoritos
 - [x] Categorias
 - [x] Grupos
-- [ ] Diretório corporativo / LDAP
+- [x] Diretório corporativo / LDAP
 - [x] CSV
 - [x] vCard
 
@@ -1055,7 +1055,7 @@ A aplicação deverá utilizar:
 
 ## 0.9.0 — Segurança e migração
 
-- [ ] S/MIME
+- [x] S/MIME
 - [x] Assinaturas digitais
 - [x] Importação
 - [x] Exportação
@@ -1076,7 +1076,7 @@ A aplicação deverá utilizar:
 - [x] Testes de segurança
 - [x] Testes de sincronização
 - [x] Documentação completa
-- [ ] Caixas compartilhadas e delegação validadas
+- [x] Caixas compartilhadas e delegação validadas
 - [x] Calendário/contatos sincronizados por provedor
 - [x] Compatibilidade EML/ICS validada
 
