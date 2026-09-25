@@ -448,9 +448,21 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
   const [priorityFilter,setPriorityFilter] = useState<"all"|"low"|"normal"|"high">("all");
   const [visibleCount,setVisibleCount] = useState<number>(settings.mailPageSize ?? 50);
   const [details,setDetails] = useState<{message:MailMessage;tab:"attachments"|"headers"|"source"}|null>(null);
+  const [providerPolicy,setProviderPolicy] = useState<{sensitivityLabelId?:string;canForward:boolean;canCopy:boolean;reactionsAllowed:boolean;rights:string[]} | undefined>();
   const [collapsedGroups,setCollapsedGroups] = useState<string[]>([]);
   const swipeStartRef=useRef<{id:string;x:number;y:number}|null>(null);
   const selected = messages.find(m=>m.id===selectedId);
+
+  useEffect(()=>{
+    let cancelled=false;
+    setProviderPolicy(undefined);
+    if(!selected) return;
+    void bridge.providerMessagePolicy(selected.accountId,selected.id)
+      .then((policy)=>{if(!cancelled)setProviderPolicy(policy);})
+      .catch(()=>undefined);
+    return ()=>{cancelled=true;};
+  },[selected?.id,selected?.accountId]);
+
   const now = Date.now();
   const baseFolderMessages = messages.filter(message=>{
     if (message.folder!==folder.name || !matchesQuickFilter(message,quickFilter)) return false;
@@ -845,14 +857,15 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
         {conversationView&&selectedThread.length>1&&<div className="thread-summary"><b>{selectedThread.length} mensagens nesta conversa</b>{selectedThread.map(item=><button key={item.id} className={item.id===selected.id?"active":""} onClick={()=>setSelectedId(item.id)}><span>{item.from.name||item.from.email}</span><time>{new Date(item.receivedAt).toLocaleString("pt-BR")}</time></button>)}</div>}
         <SafeMessageBody message={selected} accountEmail={accounts.find((item)=>item.id===selected.accountId)?.email} settings={settings} onAllowRemote={onAllowRemoteContent}/>
         <ReadingAssist message={selected}/>
+        {providerPolicy&&(providerPolicy.sensitivityLabelId||!providerPolicy.reactionsAllowed||!providerPolicy.canForward||!providerPolicy.canCopy)&&<div className="provider-policy-banner"><Icon name="shield" size={14}/><div><b>Política do provedor aplicada</b><span>{providerPolicy.sensitivityLabelId?`Rótulo ${providerPolicy.sensitivityLabelId}. `:""}{!providerPolicy.canForward?"Encaminhamento bloqueado. ":""}{!providerPolicy.canCopy?"Cópia bloqueada. ":""}{!providerPolicy.reactionsAllowed?"Reações desativadas pelo remetente/servidor.":""}</span></div></div>}
         {(settings.quickSteps??[]).length>0&&<div className="message-quick-steps">{(settings.quickSteps??[]).map((step)=><button className="secondary" key={step.id} onClick={()=>void runQuickStep(selected,step)}><Icon name="rule" size={13}/>{step.name}{step.shortcut&&<kbd>{step.shortcut}</kbd>}</button>)}</div>}
         <div className="reply-actions advanced-actions">
           <button className="secondary" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={15}/> Responder</button>
           <button className="secondary" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people" size={15}/> Responder a todos</button>
-          <button className="secondary" onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward" size={15}/> Encaminhar</button>
-          <button className="secondary" onClick={()=>onForwardAsAttachment(selected)}><Icon name="paperclip" size={15}/> Como anexo</button>{selected.hasAttachments&&<button className="secondary" onClick={()=>onComposeWithAttachments(selected)}><Icon name="copy" size={15}/> Usar anexos</button>}
+          <button className="secondary" disabled={providerPolicy?.canForward===false} title={providerPolicy?.canForward===false?"Bloqueado pela política de sensibilidade":undefined} onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward" size={15}/> Encaminhar</button>
+          <button className="secondary" disabled={providerPolicy?.canCopy===false} title={providerPolicy?.canCopy===false?"Bloqueado pela política de sensibilidade":undefined} onClick={()=>onForwardAsAttachment(selected)}><Icon name="paperclip" size={15}/> Como anexo</button>{selected.hasAttachments&&<button className="secondary" disabled={providerPolicy?.canCopy===false} onClick={()=>onComposeWithAttachments(selected)}><Icon name="copy" size={15}/> Usar anexos</button>}
           <button className="secondary" onClick={()=>onResendMessage(selected)}><Icon name="send" size={15}/> Reenviar</button>
-          <button className="secondary" onClick={()=>onRedirectMessage(selected)}><Icon name="forward" size={15}/> Redirecionar</button>
+          <button className="secondary" disabled={providerPolicy?.canForward===false} onClick={()=>onRedirectMessage(selected)}><Icon name="forward" size={15}/> Redirecionar</button>
           {folder.role==="sent"&&<button className="secondary danger-lite" onClick={()=>onRecallMessage(selected)}><Icon name="refresh" size={15}/> Recolher envio</button>}
           {folder.role==="trash"&&<button className="secondary" onClick={()=>void act(selected.id,"inbox")}><Icon name="inbox" size={15}/> Restaurar</button>}
           <button className="secondary" onClick={()=>snooze(selected)}><Icon name="clock" size={15}/> Adiar</button>
