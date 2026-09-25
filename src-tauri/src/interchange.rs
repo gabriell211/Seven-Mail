@@ -6,8 +6,12 @@ use std::{fs, io::{Cursor, Read}, path::Path, rc::Rc};
 
 use outlook_pst::{
     ltp::prop_context::PropertyValue,
-    messaging::{folder::Folder as PstFolder, store::Store},
+    messaging::folder::Folder as PstFolder,
     ndb::node_id::NodeId,
+    UnicodePstFile,
+    UnicodePstMessage,
+    UnicodePstRecipient,
+    UnicodePstRecipientType,
 };
 
 const MAX_TEXT_FILE_BYTES: u64 = 32 * 1024 * 1024;
