@@ -229,6 +229,28 @@ fn provider_message_policy(account_id: String, message_id: String) -> Result<pro
 }
 
 #[tauri::command]
+fn send_message_reaction(account_id: String, message_id: String, emoji: String) -> Result<(), String> {
+    let paths = AppPaths::resolve()?;
+    let accounts = storage::list_accounts(&paths)?;
+    let account = accounts
+        .iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    let message = storage::list_cached_messages(&paths, Some(&account_id))?
+        .into_iter()
+        .find(|item| item.id == message_id)
+        .ok_or_else(|| "Mensagem não encontrada no cache.".to_string())?;
+    let internet_id = provider_native::internet_message_id(&paths, &account_id, &message_id)?;
+    providers::send_email_reaction(
+        account,
+        &message.from.email,
+        &message.subject,
+        &internet_id,
+        &emoji,
+    )
+}
+
+#[tauri::command]
 fn provider_recall_message(account_id: String, message_id: String) -> Result<String, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -987,6 +1009,7 @@ pub fn run() {
             provider_corporate_catalog,
             provider_sensitivity_rights,
             provider_message_policy,
+            send_message_reaction,
             provider_recall_message,
             import_smime_identity,
             smime_identity_status,
