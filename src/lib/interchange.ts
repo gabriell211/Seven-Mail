@@ -94,8 +94,13 @@ function eventIcsLines(event: CalendarEvent, organizer?: string): string[] {
   if(organizer||event.organizer) lines.push("ORGANIZER:mailto:"+(organizer??event.organizer));
 
   const required=event.requiredParticipants?.length?event.requiredParticipants:event.participants;
-  for(const participant of required) lines.push("ATTENDEE;ROLE=REQ-PARTICIPANT:mailto:"+participant);
-  for(const participant of event.optionalParticipants??[]) lines.push("ATTENDEE;ROLE=OPT-PARTICIPANT:mailto:"+participant);
+  const attendeeLine=(participant:string,role:string)=>{
+    const response=event.participantResponses?.[participant.toLocaleLowerCase("pt-BR")]??"needs-action";
+    const partstat=response==="accepted"?"ACCEPTED":response==="tentative"?"TENTATIVE":response==="declined"?"DECLINED":"NEEDS-ACTION";
+    return `ATTENDEE;ROLE=${role};PARTSTAT=${partstat}:mailto:${participant}`;
+  };
+  for(const participant of required) lines.push(attendeeLine(participant,"REQ-PARTICIPANT"));
+  for(const participant of event.optionalParticipants??[]) lines.push(attendeeLine(participant,"OPT-PARTICIPANT"));
   for(const resource of event.resources??[]) lines.push("ATTENDEE;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT:mailto:"+resource);
 
   const rule=recurrenceRule(event);
@@ -165,10 +170,21 @@ export function eventsFromIcs(raw: string): CalendarEvent[] {
       const frequency=rrule.match(/(?:^|;)FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)/i)?.[1]?.toLowerCase() as CalendarEvent["recurrence"]|undefined;
       const untilRaw=rrule.match(/(?:^|;)UNTIL=([^;]+)/i)?.[1];
       const until=untilRaw?parseIcsDate(untilRaw).value.slice(0,10):undefined;
-      const attendeeLines=current.ATTENDEE??[];
-      const required=attendeeLines.filter((value)=>!/ROLE=OPT-PARTICIPANT|CUTYPE=RESOURCE/i.test(value)).map((value)=>value.replace(/^.*mailto:/i,"").trim()).filter(Boolean);
-      const optional=attendeeLines.filter((value)=>/ROLE=OPT-PARTICIPANT/i.test(value)).map((value)=>value.replace(/^.*mailto:/i,"").trim()).filter(Boolean);
-      const resources=attendeeLines.filter((value)=>/CUTYPE=RESOURCE/i.test(value)).map((value)=>value.replace(/^.*mailto:/i,"").trim()).filter(Boolean);
+      const attendeeEntries=Object.entries(current)
+        .filter(([key])=>key==="ATTENDEE"||key.startsWith("ATTENDEE;"))
+        .flatMap(([key,values])=>values.map((value)=>({key,value})));
+      const attendeeEmail=(value:string)=>value.replace(/^.*mailto:/i,"").trim();
+      const required=attendeeEntries.filter(({key})=>!/ROLE=OPT-PARTICIPANT|CUTYPE=RESOURCE/i.test(key)).map(({value})=>attendeeEmail(value)).filter(Boolean);
+      const optional=attendeeEntries.filter(({key})=>/ROLE=OPT-PARTICIPANT/i.test(key)).map(({value})=>attendeeEmail(value)).filter(Boolean);
+      const resources=attendeeEntries.filter(({key})=>/CUTYPE=RESOURCE/i.test(key)).map(({value})=>attendeeEmail(value)).filter(Boolean);
+      const participantResponses=Object.fromEntries(attendeeEntries
+        .map(({key,value})=>{
+          const email=attendeeEmail(value).toLocaleLowerCase("pt-BR");
+          const raw=key.match(/(?:^|;)PARTSTAT=([^;]+)/i)?.[1]?.toUpperCase();
+          const response:NonNullable<CalendarEvent["attendeeResponse"]>=raw==="ACCEPTED"?"accepted":raw==="TENTATIVE"?"tentative":raw==="DECLINED"?"declined":"needs-action";
+          return [email,response];
+        })
+        .filter(([email])=>Boolean(email)));
       events.push({
         id: (current.UID?.[0] ?? crypto.randomUUID()).split("@")[0] || crypto.randomUUID(),
         title: unescapeText(current.SUMMARY?.[0] ?? "Evento importado"),
@@ -191,6 +207,8 @@ export function eventsFromIcs(raw: string): CalendarEvent[] {
         freeBusyStatus:(current.TRANSP?.[0]??"").toUpperCase()==="TRANSPARENT"?"free":"busy",
         onlineMeetingUrl:current.URL?.[0] ? unescapeText(current.URL[0]) : undefined,
         timezone:current["X-WR-TIMEZONE"]?.[0],
+        participantResponses,
+        lastSentParticipants:[...new Set([...required,...optional])],
       });
       current = null;
       continue;
@@ -202,8 +220,8 @@ export function eventsFromIcs(raw: string): CalendarEvent[] {
     const base = key.split(";")[0].toUpperCase();
     const value = line.slice(separator + 1);
     (current[base] ??= []).push(value);
-    if (base === "DTSTART" || base === "DTEND") {
-      current[key.toUpperCase()] = [value];
+    if (base === "DTSTART" || base === "DTEND" || base === "ATTENDEE" || base === "ORGANIZER") {
+      (current[key.toUpperCase()] ??= []).push(value);
     }
   }
 
