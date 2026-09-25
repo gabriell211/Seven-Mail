@@ -14,6 +14,7 @@ import { SignaturesPanel } from "./components/SignaturesPanel";
 import { MessageDetailsModal, SenderPoliciesPanel } from "./components/AdvancedMailPanels";
 import { ComposerAssetsPanel } from "./components/ComposerAssetsPanel";
 import { ProfilesPanel } from "./components/ProfilesPanel";
+import { ExtensionsPanel } from "./components/ExtensionsPanel";
 import { SafeMessageBody } from "./components/SafeMessageBody";
 import { ReadingAssist } from "./components/ReadingAssist";
 import { BrandLogo } from "./components/BrandLogo";
@@ -1083,6 +1084,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
     <AccountsPanel accounts={accounts} onChange={onAccountsChange}/>
     <SignaturesPanel accounts={accounts} signatures={signatures} onSave={onSaveSignature} onDelete={onDeleteSignature}/>
     <ComposerAssetsPanel/>
+    <ExtensionsPanel/>
     <CloudPanel/>
     <div className="settings-row"><div><h3>Desktop</h3><p>Integração real com Windows, Linux e macOS.</p></div><div className="toggles"><button className="secondary" onClick={()=>void bridge.openDefaultMailSettings().then((message)=>window.alert(message)).catch((reason)=>window.alert(String(reason)))}><Icon name="mail" size={14}/> Definir como cliente padrão</button><label><span>Ao fechar a janela</span><select value={settings.closeBehavior??(settings.minimizeToTray?"tray":"exit")} onChange={e=>{const value=e.target.value as AppSettings["closeBehavior"];set("closeBehavior",value);set("minimizeToTray",value==="tray");}}><option value="tray">Minimizar para bandeja</option><option value="exit">Encerrar o aplicativo</option></select></label><label><input type="checkbox" checked={settings.startWithSystem} onChange={e=>set("startWithSystem",e.target.checked)}/> Iniciar com o sistema</label><label><input type="checkbox" checked={settings.confirmBeforeDelete} onChange={e=>set("confirmBeforeDelete",e.target.checked)}/> Confirmar exclusão</label></div></div>
   </Workspace>;
