@@ -347,6 +347,37 @@ pub fn preview_message_attachment(
     })
 }
 
+pub fn cache_message_attachment(
+    paths: &AppPaths,
+    account_id: &str,
+    message_id: &str,
+    index: usize,
+) -> Result<String, String> {
+    let raw = storage::read_raw_message(paths, account_id, message_id)?;
+    let parsed = MessageParser::default()
+        .parse(&raw)
+        .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
+    let part = parsed
+        .attachment(index as u32)
+        .ok_or_else(|| "Anexo não encontrado.".to_string())?;
+    let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
+
+    let account = account_id
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') { ch } else { '_' })
+        .collect::<String>();
+    let message = message_id
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') { ch } else { '_' })
+        .collect::<String>();
+    let directory = paths.attachment_cache.join(account).join(message);
+    fs::create_dir_all(&directory).map_err(|error| format!("Não foi possível preparar o cache de anexos: {error}"))?;
+    let destination = directory.join(format!("{index:03}-{name}"));
+    fs::write(&destination, part.contents())
+        .map_err(|error| format!("Não foi possível materializar o anexo: {error}"))?;
+    Ok(destination.display().to_string())
+}
+
 pub fn save_message_attachment(
     paths: &AppPaths,
     account_id: &str,
