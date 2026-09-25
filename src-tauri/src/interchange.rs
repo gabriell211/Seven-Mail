@@ -578,3 +578,57 @@ pub fn save_all_message_attachments(
     }
     Ok(saved)
 }
+
+
+fn pst_filetime(value: &str) -> i64 {
+    let unix = chrono::DateTime::parse_from_rfc3339(value)
+        .map(|date| date.timestamp())
+        .unwrap_or_else(|_| chrono::Utc::now().timestamp());
+    (unix.saturating_add(11_644_473_600)).saturating_mul(10_000_000)
+}
+
+pub fn export_pst(paths: &AppPaths, account_id: Option<&str>, destination: &str) -> Result<usize, String> {
+    let messages = storage::list_cached_messages(paths, account_id)?;
+    if messages.is_empty() {
+        return Err("Não há mensagens em cache para exportar.".to_string());
+    }
+
+    let destination = Path::new(destination);
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("Não foi possível preparar a pasta: {error}"))?;
+    }
+    if destination.exists() {
+        fs::remove_file(destination).map_err(|error| format!("Não foi possível substituir o PST existente: {error}"))?;
+    }
+
+    for (index, message) in messages.iter().enumerate() {
+        let recipients = message.to.iter().map(|recipient| UnicodePstRecipient {
+            name: recipient.name.as_deref().unwrap_or(recipient.email.as_str()),
+            email: recipient.email.as_str(),
+            recipient_type: UnicodePstRecipientType::To,
+        }).collect::<Vec<_>>();
+
+        let sender_name = message.from.name.as_deref().unwrap_or(message.from.email.as_str());
+        let body = message.body_text.as_deref().unwrap_or(message.preview.as_str());
+        let pst_message = UnicodePstMessage {
+            subject: message.subject.as_str(),
+            sender_name,
+            sender_email: message.from.email.as_str(),
+            recipients: &recipients,
+            body,
+            html_body: message.body_html.as_deref(),
+            message_id: message.id.as_str(),
+            delivery_time: pst_filetime(&message.received_at),
+        };
+
+        if index == 0 {
+            UnicodePstFile::create(destination, &pst_message)
+                .map_err(|error| format!("Falha ao criar PST: {error}"))?;
+        } else {
+            UnicodePstFile::append(destination, &pst_message)
+                .map_err(|error| format!("Falha ao adicionar mensagem ao PST: {error}"))?;
+        }
+    }
+
+    Ok(messages.len())
+}
