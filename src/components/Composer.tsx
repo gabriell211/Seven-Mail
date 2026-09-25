@@ -41,6 +41,7 @@ export interface ComposeDraft {
   requestDeliveryReceipt?: boolean;
   smimeSign?: boolean;
   smimeEncrypt?: boolean;
+  disallowReactions?: boolean;
   attachments: QueuedAttachment[];
 }
 
@@ -184,6 +185,7 @@ export function Composer({
       requestDeliveryReceipt: false,
       smimeSign: false,
       smimeEncrypt: false,
+      disallowReactions: false,
       attachments: [],
     };
   });
@@ -644,6 +646,7 @@ export function Composer({
             requestDeliveryReceipt:Boolean(draft.requestDeliveryReceipt),
             smimeSign:Boolean(draft.smimeSign),
             smimeEncrypt:Boolean(draft.smimeEncrypt),
+            disallowReactions:Boolean(draft.disallowReactions),
             sendAt,
           },
         });
@@ -740,6 +743,7 @@ export function Composer({
           requestDeliveryReceipt: Boolean(draft.requestDeliveryReceipt),
           smimeSign: Boolean(draft.smimeSign),
           smimeEncrypt: Boolean(draft.smimeEncrypt),
+          disallowReactions: Boolean(draft.disallowReactions),
           sendAt: effectiveSendAt.toISOString(),
         },
       });
@@ -953,6 +957,7 @@ export function Composer({
             <label className="composer-mini-check"><input type="checkbox" checked={Boolean(draft.requestDeliveryReceipt)} onChange={(event)=>setDraft((current)=>({...current,requestDeliveryReceipt:event.target.checked}))}/> Recibo entrega</label>
             <label className="composer-mini-check"><input type="checkbox" disabled={!smimeIdentity} checked={Boolean(draft.smimeSign)} onChange={(event)=>setDraft((current)=>({...current,smimeSign:event.target.checked}))}/> Assinar S/MIME</label>
             <label className="composer-mini-check"><input type="checkbox" checked={Boolean(draft.smimeEncrypt)} onChange={(event)=>setDraft((current)=>({...current,smimeEncrypt:event.target.checked}))}/> Criptografar S/MIME</label>
+            <label className="composer-mini-check" title="Exchange Online e clientes compatíveis respeitam esta política quando suportada pelo provedor"><input type="checkbox" checked={Boolean(draft.disallowReactions)} onChange={(event)=>setDraft((current)=>({...current,disallowReactions:event.target.checked}))}/> Bloquear reações</label>
             <button className={showSchedule ? "ghost active" : "ghost"} onClick={() => setShowSchedule((value) => !value)}><Icon name="clock" size={15} /> Programar</button>
             <button className={showMerge?"ghost active":"ghost"} onClick={()=>setShowMerge((value)=>!value)}><Icon name="people" size={15}/> Mala direta</button>
             <span className="send-delay">{settings.sendDelaySeconds > 0 ? `Desfazer por ${settings.sendDelaySeconds}s` : "Envio imediato"}</span>
