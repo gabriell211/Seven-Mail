@@ -3,8 +3,6 @@ name: Desktop Release
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
     tags:
       - "v*"
 
@@ -73,20 +71,7 @@ jobs:
           tagName: v__VERSION__
           releaseName: "Seven Mail v__VERSION__"
           releaseBody: |
-            Seven Mail 1.0.0 — primeira versão estável.
-
-            O checklist funcional do README está concluído.
-
-            Destaques:
-            - Cliente local-first multi-conta com IMAP/SMTP, POP3, OAuth, CalDAV, CardDAV e LDAP
-            - Caixa unificada, conversas, pesquisa avançada, regras, offline e fila durável
-            - Calendário, contatos, tarefas, notas, perfis e migração completa
-            - EML, MSG, OFT, MBOX, PST, ICS, CSV e vCard
-            - S/MIME com assinatura, verificação e criptografia
-            - Integrações corporativas condicionais: recall, políticas, sensibilidade, retenção e direitos
-            - Reações compatíveis, push quando suportado e notificações acionáveis
-            - Atualizador integrado com verificação SHA-256
-            - Identidade visual, splash e instaladores nativos
+            Instaladores oficiais do Seven Mail.
 
             Windows:
             - MSI
