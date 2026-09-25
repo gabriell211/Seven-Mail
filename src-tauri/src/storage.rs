@@ -9,6 +9,7 @@ pub struct AppPaths {
     pub cache: PathBuf,
     pub message_cache: PathBuf,
     pub search_index: PathBuf,
+    pub attachment_cache: PathBuf,
     pub queue: PathBuf,
     pub queue_attachments: PathBuf,
     pub pending: PathBuf,
@@ -35,6 +36,7 @@ impl AppPaths {
             cache: root.join("cache"),
             message_cache: root.join("cache").join("messages"),
             search_index: root.join("cache").join("search-index"),
+            attachment_cache: root.join("cache").join("attachments"),
             queue: root.join("queue"),
             queue_attachments: root.join("queue").join("attachments"),
             pending: root.join("queue").join("pending"),
@@ -56,6 +58,7 @@ impl AppPaths {
             &self.cache,
             &self.message_cache,
             &self.search_index,
+            &self.attachment_cache,
             &self.queue,
             &self.queue_attachments,
             &self.pending,
@@ -1000,9 +1003,11 @@ pub fn prune_message_cache(paths: &AppPaths, retention_days: u32) -> Result<usiz
 }
 
 pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
-    if paths.message_cache.exists() {
-        fs::remove_dir_all(&paths.message_cache).map_err(io_error)?;
+    for directory in [&paths.message_cache, &paths.search_index, &paths.attachment_cache] {
+        if directory.exists() {
+            fs::remove_dir_all(directory).map_err(io_error)?;
+        }
+        fs::create_dir_all(directory).map_err(io_error)?;
     }
-    fs::create_dir_all(&paths.message_cache).map_err(io_error)?;
     Ok(())
 }
