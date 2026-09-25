@@ -26,16 +26,30 @@ fn microsoft(account: &AccountProfile) -> bool {
         || account.oauth_authorization_url.as_deref().unwrap_or("").contains("microsoftonline.com")
 }
 
+fn scope_granted(scopes: &[String], required: &str) -> bool {
+    scopes.iter().any(|scope| {
+        let normalized = scope.rsplit('/').next().unwrap_or(scope.as_str());
+        normalized.eq_ignore_ascii_case(required)
+    })
+}
+
 pub fn capabilities(account: &AccountProfile) -> ProviderCapabilities {
-    let graph = microsoft(account) && account.oauth_enabled;
+    let scopes = oauth::provider_scopes(account.credential_account_id()).unwrap_or_default();
+    let graph = microsoft(account) && account.oauth_enabled && !scopes.is_empty();
+    let mail_read_write = scope_granted(&scopes, "Mail.ReadWrite");
+    let sensitivity_read = scope_granted(&scopes, "SensitivityLabel.Read")
+        || scope_granted(&scopes, "SensitivityLabels.Read.All");
+    let retention_read = scope_granted(&scopes, "RecordsManagement.Read.All")
+        || scope_granted(&scopes, "RecordsManagement.ReadWrite.All");
+
     ProviderCapabilities {
         native_api: graph,
-        recall: graph,
+        recall: graph && mail_read_write,
         reactions: account.can("send"),
-        reaction_policy: graph,
-        sensitivity_labels: graph,
-        retention_labels: graph,
-        usage_rights: graph,
+        reaction_policy: graph && mail_read_write,
+        sensitivity_labels: graph && sensitivity_read,
+        retention_labels: graph && retention_read,
+        usage_rights: graph && sensitivity_read,
         push: !account.incoming_protocol.eq_ignore_ascii_case("pop3"),
     }
 }
@@ -51,7 +65,9 @@ fn bearer(account: &AccountProfile) -> Result<String, String> {
     if !microsoft(account) || !account.oauth_enabled {
         return Err("Esta conta não possui API nativa Microsoft OAuth habilitada.".to_string());
     }
-    oauth::access_token(account)
+    oauth::provider_access_token(account).map_err(|error| {
+        format!("Autorize os recursos nativos do provedor separadamente do IMAP/SMTP: {error}")
+    })
 }
 
 fn graph_get(account: &AccountProfile, url: &str) -> Result<Value, String> {
@@ -231,4 +247,23 @@ pub fn recall_message(paths: &AppPaths, account: &AccountProfile, local_message_
     let status = response.status();
     let detail = response.text().unwrap_or_default();
     Err(format!("O provedor recusou o recall ({status}): {detail}"))
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::scope_granted;
+
+    #[test]
+    fn graph_scope_matching_accepts_short_and_qualified_names() {
+        let scopes = vec![
+            "Mail.ReadWrite".to_string(),
+            "https://graph.microsoft.com/SensitivityLabel.Read".to_string(),
+            "RecordsManagement.Read.All".to_string(),
+        ];
+        assert!(scope_granted(&scopes, "Mail.ReadWrite"));
+        assert!(scope_granted(&scopes, "SensitivityLabel.Read"));
+        assert!(scope_granted(&scopes, "RecordsManagement.Read.All"));
+        assert!(!scope_granted(&scopes, "Mail.Send"));
+    }
 }
