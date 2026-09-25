@@ -2161,6 +2161,10 @@ export default function App() {
       allDay:false,
       color:"#3d83f6",
       participants:[message.from.email],
+      organizer:message.from.email,
+      invitationMessageId:message.id,
+      keepInvitationInInbox:true,
+      attendeeResponse:"needs-action",
     };
     const document: WorkspaceDocument<CalendarEvent> = {
       id:event.id,
