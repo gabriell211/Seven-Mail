@@ -11,6 +11,7 @@ mod provider_native;
 mod providers;
 mod smime;
 mod storage;
+mod updater;
 mod workspace;
 
 use models::{AccountProfile, DavSyncResult, DirectoryContact, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
@@ -25,6 +26,21 @@ struct DesktopState {
 #[tauri::command]
 fn runtime_info() -> Result<RuntimeInfo, String> {
     Ok(AppPaths::resolve()?.runtime_info())
+}
+
+#[tauri::command]
+fn check_for_update() -> Result<updater::UpdateInfo, String> {
+    updater::check()
+}
+
+#[tauri::command]
+fn download_update(info: updater::UpdateInfo) -> Result<String, String> {
+    updater::download(&info)
+}
+
+#[tauri::command]
+fn install_update(path: String) -> Result<String, String> {
+    updater::install(&path)
 }
 
 #[tauri::command]
@@ -938,6 +954,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            check_for_update,
+            download_update,
+            install_update,
             initial_open_requests,
             set_close_to_tray,
             list_accounts,
