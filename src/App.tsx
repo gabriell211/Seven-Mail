@@ -773,7 +773,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
     <section className="message-pane">
       <header className="pane-header">
         <div><span className="eyebrow">{folder.name.toUpperCase()}</span><h2>{folder.name}</h2></div>
-        <div className="pane-tools">{onImportEml&&activeAccount&&<button className="icon-button" title="Importar EML" aria-label="Importar EML" onClick={onImportEml}><Icon name="upload" size={16}/></button>}<button className={conversationView?"icon-button active":"icon-button"} title="Visualização por conversa" aria-label="Alternar visualização por conversa" onClick={()=>setConversationView(value=>!value)}><Icon name="people" size={16}/></button><select className="mail-sort" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Ordenar mensagens"><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="sender">Remetente</option><option value="subject">Assunto</option><option value="size">Tamanho</option><option value="status">Status</option><option value="unread">Não lidas primeiro</option></select><div className="icon-group"><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div></div>
+        <div className="pane-tools">{onImportEml&&activeAccount&&<button className="icon-button" title="Importar EML ou MSG" aria-label="Importar EML ou MSG" onClick={onImportEml}><Icon name="upload" size={16}/></button>}<button className={conversationView?"icon-button active":"icon-button"} title="Visualização por conversa" aria-label="Alternar visualização por conversa" onClick={()=>setConversationView(value=>!value)}><Icon name="people" size={16}/></button><select className="mail-sort" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Ordenar mensagens"><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="sender">Remetente</option><option value="subject">Assunto</option><option value="size">Tamanho</option><option value="status">Status</option><option value="unread">Não lidas primeiro</option></select><div className="icon-group"><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div></div>
       </header>
       {folder.role==="inbox"&&settings.focusInboxEnabled&&<div className="segmented focus-tabs"><button className={focusTab==="focused"?"active":""} onClick={()=>setFocusTab("focused")}>Prioritária</button><button className={focusTab==="other"?"active":""} onClick={()=>setFocusTab("other")}>Outros</button></div>}
       <div className="segmented mail-filters">
@@ -1806,14 +1806,16 @@ export default function App() {
     setSection("mail");
   }
 
-  async function importEmlPath(path:string) {
+  async function importMessagePath(path:string) {
     const account = activeAccount ?? profileAccounts.find((item)=>item.isDefault) ?? profileAccounts[0];
     if (!account) {
       setAccountOpen(true);
-      window.alert("Adicione uma conta antes de abrir um arquivo EML.");
+      window.alert("Adicione uma conta antes de abrir uma mensagem.");
       return;
     }
-    const imported = await bridge.importEml(account.id,path);
+    const imported = /\.msg$/i.test(path)
+      ? await bridge.importMsg(account.id,path)
+      : await bridge.importEml(account.id,path);
     setMessages((current)=>[imported,...current.filter((item)=>item.id!==imported.id)]);
     setSelectedFolder(FALLBACK_FOLDERS[0]);
     setFocusMessageId(imported.id);
@@ -1824,10 +1826,10 @@ export default function App() {
     const selected = await open({
       multiple:false,
       directory:false,
-      filters:[{name:"Mensagem EML",extensions:["eml"]}],
+      filters:[{name:"Mensagem",extensions:["eml","msg"]}],
     });
     if (!selected || Array.isArray(selected)) return;
-    await importEmlPath(selected);
+    await importMessagePath(selected);
   }
 
   async function syncLdapForAccount(account:AccountProfile) {
@@ -1977,14 +1979,23 @@ export default function App() {
     }
 
     const path=normalizeExternalPath(request);
-    if(/\.eml$/i.test(path)){
-      await importEmlPath(path);
+    if(/\.(eml|msg)$/i.test(path)){
+      await importMessagePath(path);
     }else if(/\.ics$/i.test(path)){
       await importIcsPath(path);
     }
   }
 
   async function exportEml(message: MailMessage) {
+    if(message.sourceFormat==="msg"){
+      const destination=await saveDialog({
+        defaultPath:`${safeExportName(message.subject,"mensagem")}.msg`,
+        filters:[{name:"Mensagem MSG",extensions:["msg"]}],
+      });
+      if(!destination) return;
+      await bridge.saveOriginalMessage(message.accountId,message.id,destination);
+      return;
+    }
     const destination = await saveDialog({
       defaultPath:`${safeExportName(message.subject,"mensagem")}.eml`,
       filters:[{name:"Mensagem EML",extensions:["eml"]}],
