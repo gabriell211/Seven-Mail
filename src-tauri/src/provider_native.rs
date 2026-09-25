@@ -109,7 +109,7 @@ pub fn sensitivity_rights(account: &AccountProfile, label_id: &str, owner_email:
         .map_err(|error| format!("Resposta de direitos inválida: {error}"))
 }
 
-fn internet_message_id(paths: &AppPaths, account_id: &str, message_id: &str) -> Result<String, String> {
+pub fn internet_message_id(paths: &AppPaths, account_id: &str, message_id: &str) -> Result<String, String> {
     let raw = storage::read_raw_message(paths, account_id, message_id)?;
     let text = String::from_utf8_lossy(&raw);
     let unfolded = Regex::new(r"\r?\n[ \t]+").map_err(|error| error.to_string())?.replace_all(&text, " ");
