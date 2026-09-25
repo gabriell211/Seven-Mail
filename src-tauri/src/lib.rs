@@ -623,6 +623,16 @@ fn export_pst(account_id: Option<String>, path: String) -> Result<usize, String>
 }
 
 #[tauri::command]
+fn import_pst(account_id: String, path: String) -> Result<usize, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    interchange::import_pst(&paths, &account, &path)
+}
+
+#[tauri::command]
 fn import_eml(account_id: String, path: String) -> Result<MailMessage, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -946,6 +956,7 @@ pub fn run() {
             read_file_data_url,
             write_text_file,
             export_pst,
+            import_pst,
             import_eml,
             import_msg,
             read_oft_template,
