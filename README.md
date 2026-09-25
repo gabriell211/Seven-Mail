@@ -27,7 +27,11 @@ A proposta é reunir em um único aplicativo tudo o que normalmente é necessár
 - Importação e exportação
 - Segurança e privacidade
 
-> **Status:** Em desenvolvimento ativo. A linha desktop 0.4.x já possui cliente local-first funcional para Windows e Linux, com IMAP/SMTP, múltiplas contas, caixa unificada, composição, fila offline, regras, pesquisa avançada, calendário local, contatos, tarefas, notas e sincronização opcional com Neon.
+> **Status:** 1.0 estável — desenvolvimento contínuo. A linha desktop 1.0.x já possui cliente local-first funcional para Windows e Linux, com IMAP/SMTP, múltiplas contas, caixa unificada, composição, fila offline, regras, pesquisa avançada, calendário local, contatos, tarefas, notas e sincronização opcional com Neon.
+
+### Seven Mail 1.0
+
+O checklist funcional definido neste README está concluído. Recursos dependentes de servidor, tenant ou provedor usam detecção de capacidade e só são habilitados quando a infraestrutura remota oferece suporte.
 
 ### Estado atual
 
