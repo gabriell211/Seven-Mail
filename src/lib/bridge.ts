@@ -36,6 +36,7 @@ export const bridge = {
   testSmtpConnection: (accountId: string): Promise<boolean> => command("test_smtp_connection", { accountId }),
   testImapConnection: (accountId: string): Promise<boolean> => command("test_imap_connection", { accountId }),
   syncInbox: (accountId: string, limit = 50): Promise<number> => command("sync_inbox", { accountId, limit }),
+  waitForMailPush: (accountId: string, timeoutSeconds = 25): Promise<boolean> => command("wait_for_mail_push", { accountId, timeoutSeconds }),
   listFolders: (accountId: string): Promise<MailFolder[]> => command("list_mail_folders", { accountId }),
   syncFolder: (accountId: string, path: string, label: string, limit = 50): Promise<number> => command("sync_mail_folder", { accountId, path, label, limit }),
   createFolder: (accountId: string, name: string): Promise<void> => command("create_mail_folder", { accountId, name }),
