@@ -28,16 +28,19 @@ export function MessageDetailsModal({
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [cachedAttachments,setCachedAttachments]=useState<Record<number,string>>({});
+  const [smime,setSmime]=useState<{signed:boolean;signatureValid?:boolean;encrypted:boolean;decrypted:boolean;decryptedPreview?:string;error?:string}>();
 
   useEffect(() => {
     let disposed = false;
     void Promise.all([
       bridge.readMessageSource(message.accountId, message.id).catch(() => ""),
       bridge.listMessageAttachments(message.accountId, message.id).catch(() => [] as MailAttachmentInfo[]),
-    ]).then(([nextSource, nextAttachments]) => {
+      bridge.inspectSmimeMessage(message.accountId,message.id).catch(() => undefined),
+    ]).then(([nextSource, nextAttachments, smimeStatus]) => {
       if (disposed) return;
       setSource(nextSource);
       setAttachments(nextAttachments);
+      setSmime(smimeStatus);
       setBusy(false);
     }).catch((reason) => {
       if (disposed) return;
@@ -145,6 +148,9 @@ export function MessageDetailsModal({
         )}
         {!busy && tab==="security" && <div className="auth-results">
           {(["spf","dkim","dmarc"] as const).map((key)=>{const value=authentication[key];const good=value==="pass";const bad=["fail","softfail","permerror"].includes(value);return <article className={good?"pass":bad?"fail":"neutral"} key={key}><b>{key.toUpperCase()}</b><span>{value}</span><small>{good?"Validação aprovada pelo servidor.":bad?"O servidor reportou falha nesta validação.":"Resultado não disponível ou inconclusivo."}</small></article>;})}
+          <article className={smime?.signed?(smime.signatureValid===false?"fail":"pass"):"neutral"}><b>S/MIME ASSINATURA</b><span>{smime?.signed?(smime.signatureValid===false?"inválida":"válida"):"ausente"}</span><small>{smime?.signed?"Integridade CMS verificada localmente.":"A mensagem não contém assinatura S/MIME opaca."}</small></article>
+          <article className={smime?.encrypted?(smime.decrypted?"pass":"fail"):"neutral"}><b>S/MIME CRIPTOGRAFIA</b><span>{smime?.encrypted?(smime.decrypted?"descriptografada":"protegida"):"ausente"}</span><small>{smime?.encrypted?(smime.decrypted?"A identidade desta conta conseguiu abrir o envelope.":smime.error||"A identidade desta conta não abriu o envelope."):"A mensagem não usa envelope S/MIME."}</small></article>
+          {smime?.decryptedPreview&&<details open><summary>Conteúdo S/MIME descriptografado</summary><pre className="message-source">{smime.decryptedPreview}</pre></details>}
           {authentication.results.length>0&&<details><summary>Authentication-Results original</summary><pre className="message-source">{authentication.results.join("\n")}</pre></details>}
         </div>}
         {!busy && tab==="headers" && <pre className="message-source">{headers || "Cabeçalhos originais indisponíveis. Sincronize a mensagem novamente."}</pre>}
