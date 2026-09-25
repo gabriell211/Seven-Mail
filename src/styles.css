@@ -769,3 +769,9 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .skip-link{position:fixed;left:12px;top:10px;z-index:20000;transform:translateY(-150%);padding:9px 12px;border-radius:9px;background:var(--accent);color:#fff;font-size:10px;font-weight:800;box-shadow:0 8px 30px rgba(0,0,0,.22)}
 .skip-link:focus{transform:translateY(0)}
 :focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 78%,white);outline-offset:2px}
+
+
+/* Browser-native message list virtualization */
+.message-date-group{content-visibility:auto;contain-intrinsic-size:420px}
+.message-list .message{content-visibility:auto;contain-intrinsic-size:74px;contain:layout paint style}
+:root[data-density="compact"] .message-list .message{contain-intrinsic-size:60px}
