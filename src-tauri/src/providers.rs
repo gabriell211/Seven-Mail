@@ -241,6 +241,16 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
     let from = Mailbox::new(Some(account.display_name.clone()), from_address);
 
     let mut builder = Message::builder().from(from).subject(subject);
+    if account.is_shared_mailbox && account.send_mode.as_deref() == Some("on-behalf") {
+        let owner_email = account
+            .shared_owner_email
+            .as_deref()
+            .ok_or_else(|| "Conta proprietária ausente para envio em nome de.".to_string())?;
+        let sender_address = owner_email
+            .parse()
+            .map_err(|error| format!("Remetente delegante inválido: {error}"))?;
+        builder = builder.sender(Mailbox::new(None, sender_address));
+    }
     let raw_header = |name: &'static str, value: String| {
         HeaderValue::new(HeaderName::new_from_ascii_str(name), value)
     };
