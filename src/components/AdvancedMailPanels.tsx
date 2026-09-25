@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import { Icon } from "../icons";
 import { bridge } from "../lib/bridge";
 import type { AppSettings, MailAttachmentInfo, MailAttachmentPreview, MailMessage } from "../types";
@@ -26,6 +27,7 @@ export function MessageDetailsModal({
   const [previewBusy,setPreviewBusy] = useState(false);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const [cachedAttachments,setCachedAttachments]=useState<Record<number,string>>({});
 
   useEffect(() => {
     let disposed = false;
@@ -63,6 +65,24 @@ export function MessageDetailsModal({
       results:normalized.match(/^Authentication-Results:.*$/gim)??[],
     };
   },[headers]);
+
+  async function cacheOne(item: MailAttachmentInfo):Promise<string> {
+    const existing=cachedAttachments[item.index];
+    if(existing) return existing;
+    const path=await bridge.cacheMessageAttachment(message.accountId,message.id,item.index);
+    setCachedAttachments((current)=>({...current,[item.index]:path}));
+    return path;
+  }
+
+  async function dragOne(item: MailAttachmentInfo) {
+    setError("");
+    try{
+      const path=await cacheOne(item);
+      await startDrag({item:[path],icon:""});
+    }catch(reason){
+      setError(reason instanceof Error?reason.message:String(reason));
+    }
+  }
 
   async function saveOne(item: MailAttachmentInfo) {
     const destination = await saveDialog({ defaultPath: item.name });
@@ -106,10 +126,16 @@ export function MessageDetailsModal({
         {!busy && tab==="attachments" && (
           attachments.length ? <div className="attachment-browser">
             <div className="attachment-browser-toolbar"><span>{attachments.length} arquivo(s)</span><button className="secondary" onClick={()=>void saveAll()}><Icon name="download" size={14}/> Baixar todos</button></div>
-            {attachments.map((item)=><article key={item.index} className="attachment-browser-row">
+            {attachments.map((item)=><article
+              key={item.index}
+              className={cachedAttachments[item.index]?"attachment-browser-row cached":"attachment-browser-row"}
+              draggable
+              title="Arraste para a Área de Trabalho ou outro aplicativo"
+              onDragStart={(event)=>{event.preventDefault();void dragOne(item);}}
+            >
               <span className="attachment-file-icon"><Icon name="paperclip" size={17}/></span>
-              <span><b>{item.name}</b><small>{item.mime} · {humanSize(item.size)}{item.inline ? " · inline" : ""}</small></span>
-              <div className="attachment-row-actions"><button className="secondary" onClick={()=>void previewOne(item)}>Visualizar</button><button className="secondary" onClick={()=>void saveOne(item)}><Icon name="download" size={14}/> Salvar</button></div>
+              <span><b>{item.name}</b><small>{item.mime} · {humanSize(item.size)}{item.inline ? " · inline" : ""}{cachedAttachments[item.index]?" · em cache":""}</small></span>
+              <div className="attachment-row-actions"><button className="secondary" onClick={()=>void previewOne(item)}>Visualizar</button><button className="secondary" onClick={()=>void cacheOne(item)}>{cachedAttachments[item.index]?"Em cache":"Manter offline"}</button><button className="secondary" onClick={()=>void saveOne(item)}><Icon name="download" size={14}/> Salvar</button></div>
             </article>)}
             {(previewBusy||preview)&&<div className="attachment-preview">
               <header><b>{preview?.name??"Carregando..."}</b>{preview&&<small>{preview.mime} · {humanSize(preview.size)}</small>}<button className="icon-button" aria-label="Fechar pré-visualização" onClick={()=>setPreview(null)}><Icon name="x" size={13}/></button></header>
