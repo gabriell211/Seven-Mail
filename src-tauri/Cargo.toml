@@ -38,8 +38,9 @@ base64 = "0.22"
 zip = { version = "4.6", default-features = false, features = ["deflate"] }
 aes-gcm = "0.10"
 rand = "0.8"
-reqwest = { version = "0.13", features = ["blocking", "form", "json"] }
+reqwest = { version = "0.13", features = ["blocking", "form", "json", "query"] }
 regex = "1"
+sha2 = "0.10.9"
 ldap3 = "0.12.1"
 openssl = { version = "0.10", features = ["vendored"] }
 outlook-pst-rw = "1.2.9"
