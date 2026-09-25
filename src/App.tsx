@@ -28,7 +28,7 @@ import { syncWorkspaceCollection } from "./lib/workspace-sync";
 import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
 import { pendingRulesForMessage } from "./lib/rules";
 import { takePendingOAuth } from "./lib/oauth-client";
-import { contactsFromVcard, eventsFromIcs, messageToEml, safeExportName } from "./lib/interchange";
+import { contactsFromVcard, eventInvitationToIcs, eventsFromIcs, messageToEml, safeExportName } from "./lib/interchange";
 import type { AccountProfile, AppSection, AppSettings, CalendarEvent, CalendarListItem, CategoryItem, ContactItem, MailFolder, MailMessage, MailTemplateItem, ProfileItem, ProviderSettings, RuleItem, RuntimeInfo, SavedSearchItem, SignatureItem, TaskItem, WorkspaceDocument, WorkspaceKind } from "./types";
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -80,6 +80,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   maxConcurrentSyncs: 2,
   batterySaverEnabled: false,
   memorySaverEnabled: false,
+  autoDeclineConflicts: false,
   blockRemoteContent: true,
   remoteContentAllowedSenders: [],
   warnSuspiciousLinks: true,
