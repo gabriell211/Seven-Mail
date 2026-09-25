@@ -1,5 +1,5 @@
 use crate::{local_crypto, models::{AccountProfile, MailMessage, QueueOperation, QueuedAttachment, RuntimeInfo}};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{fs, io::{self, Write}, path::{Path, PathBuf}};
 
 #[derive(Debug, Clone)]
@@ -8,6 +8,7 @@ pub struct AppPaths {
     pub config: PathBuf,
     pub cache: PathBuf,
     pub message_cache: PathBuf,
+    pub search_index: PathBuf,
     pub queue: PathBuf,
     pub queue_attachments: PathBuf,
     pub pending: PathBuf,
@@ -33,6 +34,7 @@ impl AppPaths {
             config: root.join("config"),
             cache: root.join("cache"),
             message_cache: root.join("cache").join("messages"),
+            search_index: root.join("cache").join("search-index"),
             queue: root.join("queue"),
             queue_attachments: root.join("queue").join("attachments"),
             pending: root.join("queue").join("pending"),
@@ -53,6 +55,7 @@ impl AppPaths {
             &self.config,
             &self.cache,
             &self.message_cache,
+            &self.search_index,
             &self.queue,
             &self.queue_attachments,
             &self.pending,
@@ -177,12 +180,106 @@ pub fn delete_account(paths: &AppPaths, account_id: &str) -> Result<Vec<AccountP
     if message_dir.exists() {
         fs::remove_dir_all(message_dir).map_err(io_error)?;
     }
+    let index_dir = paths.search_index.join(account_id);
+    if index_dir.exists() {
+        fs::remove_dir_all(index_dir).map_err(io_error)?;
+    }
 
     for dir in [&paths.pending, &paths.processing, &paths.completed, &paths.failed] {
         remove_account_operations(dir, account_id)?;
     }
 
     Ok(accounts)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchIndexEntry {
+    message_id: String,
+    account_id: String,
+    text: String,
+}
+
+fn normalize_search_text(value: &str) -> String {
+    value
+        .to_lowercase()
+        .chars()
+        .map(|ch| if ch.is_alphanumeric() || ch == '@' || ch == '.' { ch } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn search_index_path(paths: &AppPaths, account_id: &str, message_id: &str) -> Result<PathBuf, String> {
+    safe_component(account_id)?;
+    safe_component(message_id)?;
+    Ok(paths.search_index.join(account_id).join(format!("{}.json", message_id)))
+}
+
+fn index_message(paths: &AppPaths, message: &MailMessage) -> Result<(), String> {
+    let recipients = message.to.iter()
+        .map(|item| format!("{} {}", item.name.as_deref().unwrap_or(""), item.email))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let text = normalize_search_text(&format!(
+        "{} {} {} {} {} {} {}",
+        message.subject,
+        message.preview,
+        message.body_text.as_deref().unwrap_or(""),
+        message.from.name.as_deref().unwrap_or(""),
+        message.from.email,
+        recipients,
+        message.categories.join(" "),
+    ));
+    write_json(
+        &search_index_path(paths, &message.account_id, &message.id)?,
+        &SearchIndexEntry {
+            message_id: message.id.clone(),
+            account_id: message.account_id.clone(),
+            text,
+        },
+    )
+}
+
+pub fn search_cached_message_ids(
+    paths: &AppPaths,
+    account_id: Option<&str>,
+    query: &str,
+) -> Result<Vec<String>, String> {
+    let query = normalize_search_text(query);
+    let tokens = query.split_whitespace().filter(|value| !value.is_empty()).collect::<Vec<_>>();
+    if tokens.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let root = match account_id {
+        Some(id) => {
+            safe_component(id)?;
+            paths.search_index.join(id)
+        }
+        None => paths.search_index.clone(),
+    };
+
+    let mut matches = Vec::new();
+    fn walk(dir: &Path, tokens: &[&str], output: &mut Vec<String>) -> Result<(), String> {
+        if !dir.exists() { return Ok(()); }
+        for entry in fs::read_dir(dir).map_err(io_error)? {
+            let path = entry.map_err(io_error)?.path();
+            if path.is_dir() {
+                walk(&path, tokens, output)?;
+                continue;
+            }
+            if path.extension().and_then(|value| value.to_str()) != Some("json") { continue; }
+            let Ok(entry) = read_json::<SearchIndexEntry>(&path) else { continue; };
+            if tokens.iter().all(|token| entry.text.contains(token)) {
+                output.push(entry.message_id);
+            }
+        }
+        Ok(())
+    }
+    walk(&root, &tokens, &mut matches)?;
+    Ok(matches)
 }
 
 pub fn cache_message(paths: &AppPaths, message: &MailMessage) -> Result<(), String> {
@@ -192,7 +289,8 @@ pub fn cache_message(paths: &AppPaths, message: &MailMessage) -> Result<(), Stri
         .message_cache
         .join(&message.account_id)
         .join(format!("{}.json", message.id));
-    write_json(&path, message)
+    write_json(&path, message)?;
+    index_message(paths, message)
 }
 
 fn raw_message_path(paths: &AppPaths, account_id: &str, message_id: &str) -> Result<PathBuf, String> {
@@ -360,6 +458,10 @@ pub fn reconcile_remote_uids(
         let path = paths.message_cache.join(account_id).join(format!("{}.json", message.id));
         if path.exists() {
             fs::remove_file(&path).map_err(io_error)?;
+        }
+        let index = search_index_path(paths, account_id, &message.id)?;
+        if index.exists() {
+            fs::remove_file(index).map_err(io_error)?;
         }
         let raw = raw_message_path(paths, account_id, &message.id)?;
         if raw.exists() {
