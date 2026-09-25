@@ -61,7 +61,7 @@ jobs:
         run: npm run build
 
       - name: Validate Rust
-        run: cargo check --manifest-path src-tauri/Cargo.toml
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Build and publish installers
         uses: tauri-apps/tauri-action@v0
