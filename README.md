@@ -840,10 +840,10 @@ O Seven Mail deverá continuar funcional mesmo sem conexão.
 - [x] Linux
 - [ ] macOS
 - [x] Bandeja do sistema
-- [ ] Badge de mensagens não lidas
+- [x] Badge de mensagens não lidas
 - [x] Notificações nativas
 - [x] Protocolo mailto:
-- [ ] Definir como cliente padrão
+- [x] Definir como cliente padrão
 - [x] Abrir arquivos EML
 - [ ] Abrir arquivos MSG quando suportado
 - [ ] Abrir arquivos OFT quando suportado
