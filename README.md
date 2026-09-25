@@ -298,7 +298,7 @@ O Seven Mail deve ser capaz de funcionar tanto para uso pessoal quanto profissio
 - [x] Não lidas
 - [x] Sinalizadas
 - [x] Com anexos
-- [ ] Mencionando o usuário
+- [x] Mencionando o usuário
 - [x] Por categoria
 - [x] Por período
 - [x] Por remetente
