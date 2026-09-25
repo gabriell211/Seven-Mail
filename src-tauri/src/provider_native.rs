@@ -96,11 +96,12 @@ pub fn sensitivity_rights(account: &AccountProfile, label_id: &str, owner_email:
         "https://graph.microsoft.com/v1.0/security/dataSecurityAndGovernance/sensitivityLabels/{label_id}/rights"
     );
     let client = graph_client(account)?;
-    let mut request = client.get(url).bearer_auth(token);
+    let mut parsed_url = reqwest::Url::parse(&url)
+        .map_err(|error| format!("URL de direitos inválida: {error}"))?;
     if let Some(owner) = owner_email.filter(|value| !value.trim().is_empty()) {
-        request = request.query(&[("ownerEmail", owner)]);
+        parsed_url.query_pairs_mut().append_pair("ownerEmail", owner);
     }
-    request
+    client.get(parsed_url).bearer_auth(token)
         .send()
         .map_err(|error| format!("Falha ao consultar direitos do rótulo: {error}"))?
         .error_for_status()
@@ -191,10 +192,16 @@ pub fn recall_message(paths: &AppPaths, account: &AccountProfile, local_message_
     let filter = format!("internetMessageId eq '{}'", internet_id.replace('\'', "''"));
     let token = bearer(account)?;
     let client = graph_client(account)?;
+    let mut search_url = reqwest::Url::parse(
+        "https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages",
+    ).map_err(|error| format!("URL de busca Graph inválida: {error}"))?;
+    search_url
+        .query_pairs_mut()
+        .append_pair("$filter", &filter)
+        .append_pair("$select", "id,internetMessageId,subject");
     let search = client
-        .get("https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages")
+        .get(search_url)
         .bearer_auth(&token)
-        .query(&[("$filter", filter.as_str()), ("$select", "id,internetMessageId,subject")])
         .send()
         .map_err(|error| format!("Falha ao localizar mensagem enviada: {error}"))?
         .error_for_status()
