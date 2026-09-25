@@ -661,6 +661,10 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
       },
     });
     await bridge.flushOutbox().catch(()=>undefined);
+    if(event.invitationMessageId&&!event.keepInvitationInInbox){
+      await bridge.messageAction(account.id,event.invitationMessageId,"archive").catch(()=>undefined);
+      void bridge.flushMailActions(account.id).catch(()=>undefined);
+    }
     setEditing(updated);
   }
 
@@ -885,6 +889,8 @@ function CalendarEditor({
       <label><span>Lembrete</span><input type="datetime-local" value={value.reminderAt?.slice(0,16) ?? ""} onChange={(event) => onChange({ ...value, reminderAt: event.target.value || undefined, reminderNotifiedAt: undefined })} /></label>
       <label className="inline-check"><input type="checkbox" checked={value.allDay} onChange={(event) => onChange({ ...value, allDay: event.target.checked })} /> Dia inteiro</label>
       <label className="inline-check"><input type="checkbox" checked={Boolean(value.isPrivate)} onChange={(event)=>onChange({...value,isPrivate:event.target.checked})}/> Evento privado</label>
+      {value.organizer&&currentAccount&&value.organizer.toLocaleLowerCase("pt-BR")!==currentAccount.email.toLocaleLowerCase("pt-BR")&&<label className="inline-check"><input type="checkbox" checked={value.keepInvitationInInbox!==false} onChange={(event)=>onChange({...value,keepInvitationInInbox:event.target.checked})}/> Manter convite na caixa de entrada após responder</label>}
+      {Object.keys(value.participantResponses??{}).length>0&&<div className="full attendee-response-panel"><b>Respostas dos participantes</b><div>{Object.entries(value.participantResponses??{}).map(([email,response])=><span key={email}><strong>{email}</strong><em className={`response-${response}`}>{response==="accepted"?"Aceito":response==="tentative"?"Provisório":response==="declined"?"Recusado":"Sem resposta"}</em></span>)}</div></div>}
       <div className="full meeting-actions">
         {value.organizer&&currentAccount&&value.organizer.toLocaleLowerCase("pt-BR")!==currentAccount.email.toLocaleLowerCase("pt-BR")&&onRespondMeeting&&<>
           <button className={value.attendeeResponse==="accepted"?"secondary active":"secondary"} onClick={()=>void onRespondMeeting(value,"accepted")}>Aceitar</button>
