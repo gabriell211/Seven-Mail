@@ -23,6 +23,7 @@ import { VirtualList } from "./components/VirtualList";
 import { BrandLogo } from "./components/BrandLogo";
 import { LaunchScreen } from "./components/LaunchScreen";
 import { AppLockScreen } from "./components/AppLockScreen";
+import { QuickNotificationStack } from "./components/QuickNotificationStack";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
 import { ensureNotificationPermission, notifyCalendarReminder, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
 import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
@@ -1197,6 +1198,7 @@ export default function App() {
   const [accounts,setAccounts] = useState<AccountProfile[]>([]);
   const [activeId,setActiveId] = useState<string|undefined>(launchAccountId);
   const [messages,setMessages] = useState<MailMessage[]>([]);
+  const [quickNotifications,setQuickNotifications] = useState<MailMessage[]>([]);
   const [mailFolders,setMailFolders] = useState<MailFolder[]>(FALLBACK_FOLDERS);
   const [selectedFolder,setSelectedFolder] = useState<MailFolder>(FALLBACK_FOLDERS[0]);
   const [runtime,setRuntime] = useState<RuntimeInfo>();
@@ -2733,7 +2735,7 @@ export default function App() {
             setMessages(after);
           }
           if (fresh.length>0 && settings.notificationsEnabled && !notificationsMutedNow(settings)) {
-            void notifyNewMessages(fresh.filter((message)=>!message.isMuted));
+            surfaceNewMessages(fresh);
           }
           void pushCloudMessages(after).catch(() => undefined);
         } catch {
@@ -2782,7 +2784,7 @@ export default function App() {
               if(activeAccount?.id===account.id) setMessages(after);
               if(unified) setMessages(await bridge.listCachedMessages());
               if(fresh.length>0&&settings.notificationsEnabled&&!notificationsMutedNow(settings)){
-                void notifyNewMessages(fresh.filter((message)=>!message.isMuted));
+                surfaceNewMessages(fresh);
               }
               void pushCloudMessages(after).catch(()=>undefined);
             }else{
@@ -2957,6 +2959,41 @@ export default function App() {
     return actions;
   }
 
+  function dismissQuickNotification(messageId:string) {
+    setQuickNotifications((current)=>current.filter((item)=>item.id!==messageId));
+  }
+
+  function surfaceNewMessages(fresh:MailMessage[]) {
+    const visible=fresh.filter((message)=>!message.isMuted);
+    if(visible.length===0) return;
+    void notifyNewMessages(visible);
+    setQuickNotifications((current)=>{
+      const merged=[...visible,...current.filter((item)=>!visible.some((freshMessage)=>freshMessage.id===item.id))];
+      return merged.slice(0,6);
+    });
+    for(const message of visible) {
+      window.setTimeout(()=>dismissQuickNotification(message.id),12_000);
+    }
+  }
+
+  async function quickNotificationAction(message:MailMessage,action:"read"|"archive") {
+    try{
+      const updated=await bridge.messageAction(message.accountId,message.id,action);
+      setMessages((current)=>current.map((item)=>item.id===updated.id?updated:item));
+      void bridge.flushMailActions(message.accountId).catch(()=>undefined);
+    }finally{
+      dismissQuickNotification(message.id);
+    }
+  }
+
+  function openQuickNotification(message:MailMessage) {
+    setActiveId(message.accountId);
+    setSearch("");
+    setFocusMessageId(message.id);
+    setSection("mail");
+    dismissQuickNotification(message.id);
+  }
+
   async function syncNow() {
     if (profileAccounts.length===0 || syncState==="syncing") return;
     setSyncState("syncing");
@@ -3114,5 +3151,12 @@ export default function App() {
     {composeOpen&&<Composer accounts={profileAccounts} signatures={signatures} initialAccountId={composeAccount?.id} initialDraft={draftToOpen} settings={settings} onClose={closeComposer} onQueued={(info)=>{handleQueuedSend(info);void refreshDrafts();}}/>}
     {undoSend&&<div className="undo-send" role="status"><span><Icon name="send" size={16}/><b>Mensagem na fila</b><small>Envio em instantes</small></span><button onClick={()=>void undoQueuedSend()}>Desfazer</button></div>}
     {accountOpen&&<AddAccountModal onClose={()=>setAccountOpen(false)} onAdded={account=>{setAccounts(v=>[...v,account]);setActiveId(account.id);void pushCloudAccount(account).catch(()=>undefined);}}/>}
+    <QuickNotificationStack
+      messages={quickNotifications}
+      onDismiss={dismissQuickNotification}
+      onOpen={openQuickNotification}
+      onRead={(message)=>void quickNotificationAction(message,"read")}
+      onArchive={(message)=>void quickNotificationAction(message,"archive")}
+    />
   </div></>;
 }
