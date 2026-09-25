@@ -133,7 +133,7 @@ pub fn check() -> Result<UpdateInfo, String> {
 }
 
 fn update_directory() -> Result<PathBuf, String> {
-    let directory = PathBuf::from(AppPaths::resolve()?.data_dir).join("updates");
+    let directory = AppPaths::resolve()?.root.join("updates");
     fs::create_dir_all(&directory)
         .map_err(|error| format!("Não foi possível preparar a pasta de atualizações: {error}"))?;
     Ok(directory)
