@@ -29,6 +29,10 @@ export const bridge = {
   oauthStatus: (accountId: string): Promise<boolean> => command("oauth_status", { accountId }),
   oauthClear: (accountId: string): Promise<void> => command("oauth_clear", { accountId }),
   discoverProvider: (email: string): Promise<ProviderSettings> => command("discover_provider", { email }),
+  providerCapabilities: (accountId: string): Promise<{nativeApi:boolean;recall:boolean;reactions:boolean;reactionPolicy:boolean;sensitivityLabels:boolean;retentionLabels:boolean;usageRights:boolean;push:boolean}> => command("provider_capabilities", { accountId }),
+  providerCorporateCatalog: (accountId: string): Promise<{capabilities:Record<string,boolean>;sensitivityLabels:Array<Record<string,unknown>>;retentionLabels:Array<Record<string,unknown>>;sensitivityError?:string;retentionError?:string}> => command("provider_corporate_catalog", { accountId }),
+  providerSensitivityRights: (accountId: string, labelId: string, ownerEmail?: string): Promise<Record<string,unknown>> => command("provider_sensitivity_rights", { accountId, labelId, ownerEmail: ownerEmail ?? null }),
+  providerRecallMessage: (accountId: string, messageId: string): Promise<string> => command("provider_recall_message", { accountId, messageId }),
   importSmimeIdentity: (accountId: string, path: string, password: string): Promise<{configured:boolean;subject?:string}> =>
     command("import_smime_identity", { accountId, path, password }),
   smimeIdentityStatus: (accountId: string): Promise<{configured:boolean;subject?:string}> =>
