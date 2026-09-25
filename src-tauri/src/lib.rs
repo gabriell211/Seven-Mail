@@ -275,6 +275,20 @@ fn test_imap_connection(account_id: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn wait_for_mail_push(account_id: String, timeout_seconds: Option<u64>) -> Result<bool, String> {
+    let paths = AppPaths::resolve()?;
+    let account = storage::list_accounts(&paths)?
+        .into_iter()
+        .find(|item| item.id == account_id)
+        .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        imap_sync::wait_for_inbox_change(&account, timeout_seconds.unwrap_or(25))
+    })
+    .await
+    .map_err(|error| format!("Falha ao aguardar push IMAP: {error}"))?
+}
+
+#[tauri::command]
 fn sync_inbox(account_id: String, limit: Option<u32>) -> Result<usize, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -855,6 +869,7 @@ pub fn run() {
             delete_dav_contact,
             test_smtp_connection,
             test_imap_connection,
+            wait_for_mail_push,
             sync_inbox,
             list_mail_folders,
             sync_mail_folder,
