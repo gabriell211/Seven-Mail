@@ -180,6 +180,7 @@ fn parse_message(account: &AccountProfile, uid: &str, raw: &[u8]) -> Result<Mail
         is_muted: false,
         is_phishing: false,
         is_important: false,
+        source_format: None,
     })
 }
 
