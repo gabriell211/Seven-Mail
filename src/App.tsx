@@ -11,6 +11,7 @@ import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, Pers
 import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { SignaturesPanel } from "./components/SignaturesPanel";
+import { SmimePanel } from "./components/SmimePanel";
 import { MessageDetailsModal, SenderPoliciesPanel } from "./components/AdvancedMailPanels";
 import { ComposerAssetsPanel } from "./components/ComposerAssetsPanel";
 import { ProfilesPanel } from "./components/ProfilesPanel";
@@ -1132,6 +1133,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
     <ProfilesPanel accounts={accounts} profiles={profiles} activeProfileId={activeProfileId} onActivate={onActivateProfile} onSave={onSaveProfile} onDelete={onDeleteProfile}/>
     <AccountsPanel accounts={accounts} onChange={onAccountsChange}/>
     <SignaturesPanel accounts={accounts} signatures={signatures} onSave={onSaveSignature} onDelete={onDeleteSignature}/>
+    <SmimePanel accounts={accounts}/>
     <ComposerAssetsPanel/>
     <ExtensionsPanel/>
     <CloudPanel/>
