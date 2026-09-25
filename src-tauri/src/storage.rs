@@ -520,7 +520,7 @@ pub fn claim_next_kind(paths: &AppPaths, kind: &str) -> Result<Option<QueueOpera
 pub fn claim_next_send_due(paths: &AppPaths) -> Result<Option<QueueOperation>, String> {
     let now = chrono::Utc::now();
     claim_next_matching(paths, |operation| {
-        if operation.kind != "send" {
+        if operation.kind != "send" && operation.kind != "redirect" {
             return false;
         }
 
