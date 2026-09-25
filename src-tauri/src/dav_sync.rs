@@ -121,3 +121,119 @@ pub fn test(account: &AccountProfile) -> Result<bool, String> {
     let _ = result;
     Ok(true)
 }
+
+
+fn object_url(base: &str, id: &str, extension: &str) -> Result<String, String> {
+    validate_url(base)?;
+    let mut url = base.trim_end_matches('/').to_string();
+    let safe = id
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') { ch } else { '_' })
+        .collect::<String>();
+    if safe.trim_matches('_').is_empty() {
+        return Err("Identificador DAV inválido.".to_string());
+    }
+    url.push('/');
+    url.push_str(&safe);
+    url.push('.');
+    url.push_str(extension);
+    Ok(url)
+}
+
+fn dav_client(account: &AccountProfile) -> Result<(Client, String, String), String> {
+    let password = credentials::load(account.credential_account_id())?;
+    let username = account.username.as_deref().unwrap_or(&account.email).to_string();
+    let timeout = Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300));
+    let client = Client::builder()
+        .timeout(timeout)
+        .build()
+        .map_err(|error| format!("Falha ao preparar cliente DAV: {error}"))?;
+    Ok((client, username, password))
+}
+
+fn put_object(
+    account: &AccountProfile,
+    base_url: &str,
+    id: &str,
+    extension: &str,
+    content_type: &str,
+    content: &str,
+) -> Result<(), String> {
+    let url = object_url(base_url, id, extension)?;
+    let (client, username, password) = dav_client(account)?;
+    client
+        .put(url)
+        .basic_auth(username, Some(password))
+        .header("Content-Type", content_type)
+        .body(content.to_string())
+        .send()
+        .map_err(|error| format!("Falha ao gravar objeto DAV: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("Servidor DAV recusou a gravação: {error}"))?;
+    Ok(())
+}
+
+fn delete_object(account: &AccountProfile, base_url: &str, id: &str, extension: &str) -> Result<(), String> {
+    let url = object_url(base_url, id, extension)?;
+    let (client, username, password) = dav_client(account)?;
+    let response = client
+        .delete(url)
+        .basic_auth(username, Some(password))
+        .send()
+        .map_err(|error| format!("Falha ao excluir objeto DAV: {error}"))?;
+    if response.status().as_u16() == 404 {
+        return Ok(());
+    }
+    response
+        .error_for_status()
+        .map_err(|error| format!("Servidor DAV recusou a exclusão: {error}"))?;
+    Ok(())
+}
+
+pub fn put_calendar(account: &AccountProfile, event_id: &str, ics: &str) -> Result<(), String> {
+    if account.is_shared_mailbox && !account.can("manage-calendar") {
+        return Err("A conta compartilhada não permite editar o calendário.".to_string());
+    }
+    let base = account
+        .caldav_url
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "CalDAV não configurado.".to_string())?;
+    put_object(account, base, event_id, "ics", "text/calendar; charset=utf-8", ics)
+}
+
+pub fn delete_calendar(account: &AccountProfile, event_id: &str) -> Result<(), String> {
+    if account.is_shared_mailbox && !account.can("manage-calendar") {
+        return Err("A conta compartilhada não permite editar o calendário.".to_string());
+    }
+    let base = account
+        .caldav_url
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "CalDAV não configurado.".to_string())?;
+    delete_object(account, base, event_id, "ics")
+}
+
+pub fn put_contact(account: &AccountProfile, contact_id: &str, vcard: &str) -> Result<(), String> {
+    if account.is_shared_mailbox && !account.can("edit") {
+        return Err("A conta compartilhada não permite editar contatos.".to_string());
+    }
+    let base = account
+        .carddav_url
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "CardDAV não configurado.".to_string())?;
+    put_object(account, base, contact_id, "vcf", "text/vcard; charset=utf-8", vcard)
+}
+
+pub fn delete_contact(account: &AccountProfile, contact_id: &str) -> Result<(), String> {
+    if account.is_shared_mailbox && !account.can("edit") {
+        return Err("A conta compartilhada não permite editar contatos.".to_string());
+    }
+    let base = account
+        .carddav_url
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "CardDAV não configurado.".to_string())?;
+    delete_object(account, base, contact_id, "vcf")
+}
