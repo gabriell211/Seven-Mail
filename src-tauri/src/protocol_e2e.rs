@@ -209,3 +209,122 @@ fn external_smtp_smoke() {
 
     println!("Seven Mail external SMTP accepted recipient={recipient} marker={marker}");
 }
+
+
+#[test]
+fn external_receive_smoke() {
+    if std::env::var("SEVEN_MAIL_EXTERNAL_SMOKE").ok().as_deref() != Some("1") {
+        eprintln!("Seven Mail external receive smoke skipped.");
+        return;
+    }
+
+    let required = |name: &str| {
+        std::env::var(name).unwrap_or_else(|_| panic!("missing required environment variable {name}"))
+    };
+
+    let email = required("SEVEN_MAIL_EXTERNAL_EMAIL");
+    let username = std::env::var("SEVEN_MAIL_EXTERNAL_USERNAME").unwrap_or_else(|_| email.clone());
+    let expected_subject = std::env::var("SEVEN_MAIL_EXTERNAL_EXPECTED_SUBJECT")
+        .unwrap_or_else(|_| "Seven Mail inbound receive smoke".to_string());
+
+    let imap_account: AccountProfile = serde_json::from_value(serde_json::json!({
+        "id": "ci-external-imap",
+        "displayName": "Seven Mail External IMAP",
+        "email": email,
+        "provider": "gmail",
+        "color": "#6d5dfc",
+        "isDefault": true,
+        "username": username,
+        "incomingProtocol": "imap",
+        "imapHost": "imap.gmail.com",
+        "imapPort": 993,
+        "imapSecurityMode": "tls",
+        "smtpHost": "smtp.gmail.com",
+        "smtpPort": 465,
+        "smtpSecurityMode": "tls",
+        "securityMode": "tls",
+        "connectionTimeoutSeconds": 20
+    }))
+    .expect("external IMAP account must deserialize");
+
+    let pop3_account: AccountProfile = serde_json::from_value(serde_json::json!({
+        "id": "ci-external-pop3",
+        "displayName": "Seven Mail External POP3",
+        "email": imap_account.email,
+        "provider": "gmail",
+        "color": "#6d5dfc",
+        "isDefault": false,
+        "username": imap_account.username,
+        "incomingProtocol": "pop3",
+        "pop3Host": "pop.gmail.com",
+        "pop3Port": 995,
+        "pop3SecurityMode": "tls",
+        "smtpHost": "smtp.gmail.com",
+        "smtpPort": 465,
+        "smtpSecurityMode": "tls",
+        "securityMode": "tls",
+        "connectionTimeoutSeconds": 20
+    }))
+    .expect("external POP3 account must deserialize");
+
+    assert!(
+        imap_sync::test(&imap_account).expect("external Gmail IMAP connection/authentication failed"),
+        "external Gmail IMAP connection did not pass"
+    );
+
+    let paths = AppPaths::resolve().expect("Seven Mail app paths must resolve in external CI");
+    storage::clear_cache(&paths).expect("external receive cache must be clean");
+
+    let mut imap_found = false;
+    let mut imap_error = None;
+    for _ in 0..12 {
+        match imap_sync::sync_latest(&paths, &imap_account, 50) {
+            Ok(_) => {
+                let messages = storage::list_cached_messages(&paths, Some(&imap_account.id))
+                    .expect("external IMAP cache must be readable");
+                if messages.iter().any(|message| message.subject.contains(&expected_subject)) {
+                    imap_found = true;
+                    break;
+                }
+            }
+            Err(error) => imap_error = Some(error),
+        }
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+
+    assert!(
+        imap_found,
+        "Seven Mail authenticated with Gmail IMAP but did not observe the inbound message. Last error: {}",
+        imap_error.unwrap_or_else(|| "none".to_string())
+    );
+
+    assert!(
+        pop3_sync::test(&pop3_account).expect("external Gmail POP3 connection/authentication failed"),
+        "external Gmail POP3 connection did not pass"
+    );
+
+    let mut pop3_found = false;
+    let mut pop3_error = None;
+    for _ in 0..12 {
+        match pop3_sync::sync_latest(&paths, &pop3_account, 50) {
+            Ok(_) => {
+                let messages = storage::list_cached_messages(&paths, Some(&pop3_account.id))
+                    .expect("external POP3 cache must be readable");
+                if messages.iter().any(|message| message.subject.contains(&expected_subject)) {
+                    pop3_found = true;
+                    break;
+                }
+            }
+            Err(error) => pop3_error = Some(error),
+        }
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+
+    assert!(
+        pop3_found,
+        "Seven Mail authenticated with Gmail POP3 but did not observe the inbound message. Last error: {}",
+        pop3_error.unwrap_or_else(|| "none".to_string())
+    );
+
+    println!("Seven Mail external receive confirmed via IMAP and POP3 subject={expected_subject}");
+}
