@@ -136,3 +136,76 @@ fn smtp_imap_pop3_roundtrip() {
         pop3_error.unwrap_or_else(|| "none".to_string())
     );
 }
+
+
+#[test]
+fn external_smtp_smoke() {
+    if std::env::var("SEVEN_MAIL_EXTERNAL_SMOKE").ok().as_deref() != Some("1") {
+        eprintln!("Seven Mail external SMTP smoke skipped.");
+        return;
+    }
+
+    let required = |name: &str| {
+        std::env::var(name).unwrap_or_else(|_| panic!("missing required environment variable {name}"))
+    };
+
+    let email = required("SEVEN_MAIL_EXTERNAL_EMAIL");
+    let username = std::env::var("SEVEN_MAIL_EXTERNAL_USERNAME").unwrap_or_else(|_| email.clone());
+    let smtp_host = required("SEVEN_MAIL_EXTERNAL_SMTP_HOST");
+    let smtp_port = required("SEVEN_MAIL_EXTERNAL_SMTP_PORT")
+        .parse::<u16>()
+        .expect("SEVEN_MAIL_EXTERNAL_SMTP_PORT must be a valid port");
+    let smtp_security = std::env::var("SEVEN_MAIL_EXTERNAL_SMTP_SECURITY")
+        .unwrap_or_else(|_| "starttls".to_string());
+    let recipient = std::env::var("SEVEN_MAIL_EXTERNAL_RECIPIENT")
+        .unwrap_or_else(|_| "roval90075@hiredify.com".to_string());
+
+    let account: AccountProfile = serde_json::from_value(serde_json::json!({
+        "id": "ci-external-smtp",
+        "displayName": "Seven Mail External CI",
+        "email": email,
+        "provider": "imap",
+        "color": "#6d5dfc",
+        "isDefault": true,
+        "username": username,
+        "incomingProtocol": "imap",
+        "smtpHost": smtp_host,
+        "smtpPort": smtp_port,
+        "smtpSecurityMode": smtp_security,
+        "securityMode": smtp_security,
+        "connectionTimeoutSeconds": 20
+    }))
+    .expect("external SMTP account must deserialize");
+
+    assert!(
+        providers::test_smtp(&account).expect("external SMTP connection/authentication failed"),
+        "external SMTP connection did not pass"
+    );
+
+    let marker = uuid::Uuid::new_v4().to_string();
+    let operation = QueueOperation {
+        id: uuid::Uuid::new_v4().to_string(),
+        kind: "send".to_string(),
+        account_id: account.id.clone(),
+        created_at: chrono::Utc::now().to_rfc3339(),
+        attempts: 0,
+        payload: serde_json::json!({
+            "fromAddress": account.email,
+            "to": recipient,
+            "cc": "",
+            "bcc": "",
+            "subject": format!("Seven Mail external smoke {marker}"),
+            "bodyText": format!("Mensagem enviada pelo backend real do Seven Mail no CI. Marker: {marker}"),
+            "bodyHtml": "",
+            "attachments": [],
+            "priority": "normal",
+            "requestReadReceipt": false,
+            "requestDeliveryReceipt": false
+        }),
+    };
+
+    providers::send_queued(&account, &operation)
+        .expect("external SMTP server did not accept the Seven Mail message");
+
+    println!("Seven Mail external SMTP accepted recipient={recipient} marker={marker}");
+}
