@@ -260,6 +260,27 @@ fn folder_identity(path: &str, attributes: &[NameAttribute<'_>]) -> (String, Str
         return ("Sinalizadas".into(), "flagged".into());
     }
 
+    // Some IMAP servers do not advertise RFC 6154 SPECIAL-USE flags.
+    // Infer common folder names so Sent/Drafts/etc. remain functional.
+    let leaf = path
+        .rsplit(['/', '.'])
+        .next()
+        .unwrap_or(path)
+        .trim()
+        .to_ascii_lowercase();
+    if matches!(leaf.as_str(), "sent" | "sent mail" | "sent messages" | "sent items" | "enviados") {
+        return ("Enviados".into(), "sent".into());
+    }
+    if matches!(leaf.as_str(), "drafts" | "draft" | "rascunhos") {
+        return ("Rascunhos".into(), "drafts".into());
+    }
+    if matches!(leaf.as_str(), "junk" | "spam" | "lixo eletrônico" | "lixo eletronico") {
+        return ("Spam".into(), "spam".into());
+    }
+    if matches!(leaf.as_str(), "trash" | "deleted items" | "lixeira") {
+        return ("Lixeira".into(), "trash".into());
+    }
+
     (path.to_owned(), "custom".into())
 }
 
