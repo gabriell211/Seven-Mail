@@ -39,3 +39,55 @@ jobs:
           workspaces: "./src-tauri -> target"
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+  mail-protocol-e2e:
+    runs-on: ubuntu-22.04
+    services:
+      greenmail:
+        image: greenmail/standalone:2.1.14
+        env:
+          GREENMAIL_OPTS: >-
+            -Dgreenmail.setup.test.all
+            -Dgreenmail.hostname=0.0.0.0
+            -Dgreenmail.users=seven:sevenpass@test.local
+        ports:
+          - 3025:3025
+          - 3993:3993
+          - 3995:3995
+    env:
+      SEVEN_MAIL_PROTOCOL_E2E: "1"
+      SEVEN_MAIL_TEST_SECRET: "sevenpass"
+      XDG_DATA_HOME: ${{ runner.temp }}/seven-mail-e2e
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tauri dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential curl wget file libssl-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - name: Wait for SMTP, IMAPS and POP3S
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import socket, time
+          ports = (3025, 3993, 3995)
+          deadline = time.time() + 30
+          pending = set(ports)
+          while pending and time.time() < deadline:
+              for port in tuple(pending):
+                  try:
+                      with socket.create_connection(("127.0.0.1", port), timeout=1):
+                          pending.remove(port)
+                  except OSError:
+                      pass
+              if pending:
+                  time.sleep(0.5)
+          if pending:
+              raise SystemExit(f"GreenMail ports not ready: {sorted(pending)}")
+          print("GreenMail ready:", ports)
+          PY
+      - name: Seven Mail SMTP -> IMAP + POP3 round trip
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml protocol_e2e::smtp_imap_pop3_roundtrip -- --nocapture
