@@ -3,8 +3,12 @@ name: Desktop Release
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - "v*"
+    paths:
+      - ".github/release-trigger"
 
 permissions:
   contents: write
@@ -71,7 +75,16 @@ jobs:
           tagName: v__VERSION__
           releaseName: "Seven Mail v__VERSION__"
           releaseBody: |
-            Instaladores oficiais do Seven Mail.
+            Seven Mail v__VERSION__
+
+            Principais mudanças:
+            - IMAP IDLE contínuo para novos e-mails sem a antiga janela de espera.
+            - INBOX monitorada continuamente mesmo enquanto outra pasta está aberta.
+            - Pasta ativa atualizada em tempo real quando o servidor suporta IMAP IDLE.
+            - POP3 com polling curto e estado real exibido na interface.
+            - Enviados atualizado logo após o SMTP aceitar a mensagem.
+            - Reconciliação com Gmail/Exchange e fallback IMAP APPEND para servidores genéricos.
+            - Interface mostra estados reais de sincronização, SMTP e erros.
 
             Windows:
             - MSI
