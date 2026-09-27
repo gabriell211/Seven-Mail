@@ -251,7 +251,7 @@ fn attachment_mime(name: &str) -> &'static str {
     }
 }
 
-fn redirect_queued(account: &AccountProfile, operation: &QueueOperation) -> Result<(), String> {
+fn redirect_queued(account: &AccountProfile, operation: &QueueOperation) -> Result<Vec<u8>, String> {
     if !account.can("send") {
         return Err("A conta não possui permissão de envio.".to_string());
     }
@@ -284,10 +284,10 @@ fn redirect_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
     smtp_transport(account)?
         .send_raw(&envelope, &raw)
         .map_err(|error| format!("Falha ao redirecionar mensagem: {error}"))?;
-    Ok(())
+    Ok(raw)
 }
 
-pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Result<(), String> {
+pub fn send_queued_raw(account: &AccountProfile, operation: &QueueOperation) -> Result<Vec<u8>, String> {
     if operation.kind == "redirect" {
         return redirect_queued(account, operation);
     }
@@ -384,7 +384,13 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
         .map_err(|error| format!("Remetente inválido: {error}"))?;
     let from = Mailbox::new(Some(account.display_name.clone()), from_address);
 
-    let mut builder = Message::builder().from(from).subject(subject);
+    let raw_header = |name: &'static str, value: String| {
+        HeaderValue::new(HeaderName::new_from_ascii_str(name), value)
+    };
+    let mut builder = Message::builder()
+        .from(from)
+        .subject(subject)
+        .raw_header(raw_header("X-Seven-Mail-Operation-ID", operation.id.clone()));
     if account.is_shared_mailbox && account.send_mode.as_deref() == Some("on-behalf") {
         let owner_email = account
             .shared_owner_email
@@ -395,9 +401,6 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
             .map_err(|error| format!("Remetente delegante inválido: {error}"))?;
         builder = builder.sender(Mailbox::new(None, sender_address));
     }
-    let raw_header = |name: &'static str, value: String| {
-        HeaderValue::new(HeaderName::new_from_ascii_str(name), value)
-    };
     match priority {
         "high" => {
             builder = builder
@@ -478,27 +481,30 @@ pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
         .unwrap_or(false);
 
     let transport = smtp_transport(account)?;
-    if smime_sign || smime_encrypt {
-        let raw = message.formatted();
+    let raw = if smime_sign || smime_encrypt {
+        let original = message.formatted();
         let recipients = recipient_emails(&[to, cc, bcc]);
-        let protected = smime::protect_message(
+        smime::protect_message(
             &AppPaths::resolve()?,
             account,
             &recipients,
-            &raw,
+            &original,
             smime_sign,
             smime_encrypt,
-        )?;
-        transport
-            .send_raw(message.envelope(), &protected)
-            .map_err(|error| error.to_string())?;
+        )?
     } else {
-        transport
-            .send(&message)
-            .map_err(|error| error.to_string())?;
-    }
+        message.formatted()
+    };
 
-    Ok(())
+    transport
+        .send_raw(message.envelope(), &raw)
+        .map_err(|error| error.to_string())?;
+
+    Ok(raw)
+}
+
+pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Result<(), String> {
+    send_queued_raw(account, operation).map(|_| ())
 }
 
 
