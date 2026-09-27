@@ -15,16 +15,16 @@ export function AccountsPanel({
   const [editing, setEditing] = useState<AccountProfile | null>(null);
   const [secret, setSecret] = useState("");
   const [busyId, setBusyId] = useState<string>();
-  const [status, setStatus] = useState<Record<string, string>>({});
+  const [status, setStatus] = useState<Record<string,{text:string;kind:"unknown"|"testing"|"ok"|"error"}>>({});
   const [oauthStatus,setOauthStatus] = useState<Record<string,boolean>>({});
 
   async function authorizeOAuth(account:AccountProfile) {
     setBusyId(account.id);
     try {
       await startOAuthAuthorization(account);
-      setStatus((current)=>({...current,[account.id]:"Aguardando autorização no navegador..."}));
+      setStatus((current)=>({...current,[account.id]:{text:"Aguardando autorização OAuth no navegador...",kind:"testing"}}));
     } catch (reason) {
-      setStatus((current)=>({...current,[account.id]:reason instanceof Error?reason.message:String(reason)}));
+      setStatus((current)=>({...current,[account.id]:{text:reason instanceof Error?reason.message:String(reason),kind:"error"}}));
     } finally {
       setBusyId(undefined);
     }
@@ -33,7 +33,7 @@ export function AccountsPanel({
   async function revokeOAuth(account:AccountProfile) {
     await bridge.oauthClear(account.id);
     setOauthStatus((current)=>({...current,[account.id]:false}));
-    setStatus((current)=>({...current,[account.id]:"Autorização OAuth removida"}));
+    setStatus((current)=>({...current,[account.id]:{text:"OAuth removido · conexão precisa ser validada novamente",kind:"unknown"}}));
   }
 
   async function refreshOAuthStatus(account:AccountProfile) {
@@ -103,17 +103,40 @@ export function AccountsPanel({
 
   async function test(account: AccountProfile) {
     setBusyId(account.id);
-    setStatus((current) => ({ ...current, [account.id]: `Testando ${account.incomingProtocol==="pop3"?"POP3":"IMAP"} e SMTP...` }));
+    const incomingLabel=account.incomingProtocol==="pop3"?"POP3":"IMAP";
+    setStatus((current) => ({ ...current, [account.id]: {text:`Testando ${incomingLabel}, SMTP e integrações configuradas...`,kind:"testing"} }));
     try {
-      await bridge.testImapConnection(account.id);
-      await bridge.testSmtpConnection(account.id);
-      if(account.caldavUrl?.trim()||account.carddavUrl?.trim()) await bridge.testDavConnection(account.id);
-      if(account.ldapUrl?.trim()) await bridge.testLdapConnection(account.id);
-      setStatus((current) => ({ ...current, [account.id]: `${account.incomingProtocol==="pop3"?"POP3":"IMAP"} e SMTP conectados${account.caldavUrl?.trim()||account.carddavUrl?.trim()?" · DAV conectado":""}` }));
-    } catch (reason) {
-      setStatus((current) => ({
+      const [incoming,smtp,dav,ldap]=await Promise.allSettled([
+        bridge.testImapConnection(account.id),
+        bridge.testSmtpConnection(account.id),
+        account.caldavUrl?.trim()||account.carddavUrl?.trim()?bridge.testDavConnection(account.id):Promise.resolve(true),
+        account.ldapUrl?.trim()?bridge.testLdapConnection(account.id):Promise.resolve(true),
+      ]);
+      const parts:string[]=[];
+      const errors:string[]=[];
+
+      const describe=(label:string,result:PromiseSettledResult<boolean>,configured=true)=>{
+        if(!configured) return;
+        if(result.status==="fulfilled"&&result.value){
+          parts.push(`${label}: conectado`);
+        }else if(result.status==="fulfilled"){
+          errors.push(`${label}: servidor não confirmou a conexão`);
+        }else{
+          errors.push(`${label}: ${result.reason instanceof Error?result.reason.message:String(result.reason)}`);
+        }
+      };
+
+      describe(incomingLabel,incoming);
+      describe("SMTP",smtp);
+      describe("DAV",dav,Boolean(account.caldavUrl?.trim()||account.carddavUrl?.trim()));
+      describe("LDAP",ldap,Boolean(account.ldapUrl?.trim()));
+
+      setStatus((current)=>({
         ...current,
-        [account.id]: reason instanceof Error ? reason.message : String(reason),
+        [account.id]:{
+          text:[...parts,...errors].join(" · "),
+          kind:errors.length?"error":"ok",
+        },
       }));
     } finally {
       setBusyId(undefined);
@@ -129,6 +152,7 @@ export function AccountsPanel({
       const next = accounts.map((account) => account.id === editing.id ? editing : account);
       onChange(next);
       void pushCloudAccount(editing).catch(() => undefined);
+      setStatus((current)=>({...current,[editing.id]:{text:"Configuração alterada · conexão ainda não validada",kind:"unknown"}}));
       setEditing(null);
       setSecret("");
     } finally {
@@ -152,7 +176,11 @@ export function AccountsPanel({
               <div className="account-settings-copy">
                 <b>{account.displayName}</b>
                 <span>{account.email}</span>
-                <small>{status[account.id] || (account.muted ? "Conta silenciada" : account.isSharedMailbox ? `Compartilhada · ${account.sendMode==="on-behalf"?"em nome de":"enviar como"}` : account.isDefault ? "Conta padrão" : account.provider)}</small>
+                <small>{account.muted ? "Conta silenciada" : account.isSharedMailbox ? `Compartilhada · ${account.sendMode==="on-behalf"?"em nome de":"enviar como"}` : account.isDefault ? `Conta padrão · ${account.provider}` : account.provider}</small>
+                <em className={"account-health "+(status[account.id]?.kind??"unknown")}>
+                  <i aria-hidden="true"/>
+                  {status[account.id]?.text??`${account.incomingProtocol==="pop3"?"POP3":"IMAP"}: não verificado · SMTP: não verificado`}
+                </em>
               </div>
               <div className="account-settings-actions">
                 {!account.isDefault && <button className="ghost" disabled={busyId === account.id} onClick={() => void setDefault(account.id)}>Tornar padrão</button>}
@@ -185,9 +213,15 @@ export function AccountsPanel({
                 <label><span>Servidor POP3</span><input value={editing.pop3Host ?? ""} onChange={(event) => setEditing({ ...editing, pop3Host: event.target.value })} /></label>
                 <label><span>Porta POP</span><input type="number" value={editing.pop3Port ?? 995} onChange={(event) => setEditing({ ...editing, pop3Port: Number(event.target.value) })} /></label>
               </>}
+              {(editing.incomingProtocol??"imap")==="imap"
+                ? <label><span>Segurança IMAP</span><select value={editing.imapSecurityMode ?? (editing.imapPort===993?"tls":editing.securityMode??"tls")} onChange={(event) => setEditing({ ...editing, imapSecurityMode: event.target.value as AccountProfile["imapSecurityMode"] })}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
+                : <label><span>Segurança POP3</span><select value={editing.pop3SecurityMode ?? (editing.pop3Port===995?"tls":editing.securityMode??"tls")} onChange={(event) => setEditing({ ...editing, pop3SecurityMode: event.target.value as AccountProfile["pop3SecurityMode"] })}><option value="tls">TLS direto</option><option value="starttls">STARTTLS (STLS)</option></select></label>}
               <label><span>Servidor SMTP</span><input value={editing.smtpHost ?? ""} onChange={(event) => setEditing({ ...editing, smtpHost: event.target.value })} /></label>
               <label><span>Porta SMTP</span><input type="number" value={editing.smtpPort ?? 465} onChange={(event) => setEditing({ ...editing, smtpPort: Number(event.target.value) })} /></label>
-              <label><span>Segurança</span><select value={editing.securityMode ?? "tls"} onChange={(event) => setEditing({ ...editing, securityMode: event.target.value as AccountProfile["securityMode"] })}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
+              <label><span>Segurança SMTP</span><select value={editing.smtpSecurityMode ?? editing.securityMode ?? "tls"} onChange={(event) => {
+                const value=event.target.value as "tls"|"starttls";
+                setEditing({ ...editing, smtpSecurityMode:value, securityMode:value });
+              }}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
               <label><span>Timeout</span><select value={editing.connectionTimeoutSeconds ?? 30} onChange={(event) => setEditing({ ...editing, connectionTimeoutSeconds: Number(event.target.value) as AccountProfile["connectionTimeoutSeconds"] })}><option value={10}>10 s</option><option value={20}>20 s</option><option value={30}>30 s</option><option value={60}>60 s</option><option value={120}>120 s</option></select></label>
               <label><span>Cor</span><input type="color" value={editing.color} onChange={(event) => setEditing({ ...editing, color: event.target.value })} /></label>
               <label className="inline-check"><input type="checkbox" checked={Boolean(editing.muted)} onChange={(event) => setEditing({ ...editing, muted: event.target.checked })} /> Silenciar sincronização e notificações desta conta</label>
