@@ -2,6 +2,7 @@ use crate::{
     credentials,
     models::{AccountProfile, MailAddress, MailMessage},
     oauth,
+    providers,
     storage::{self, AppPaths},
 };
 use async_native_tls::{TlsConnector, TlsStream};
@@ -15,11 +16,14 @@ use std::{collections::HashSet, hash::{Hash, Hasher}, time::Duration};
 
 type PopStream = BufReader<TlsStream<TcpStream>>;
 
-fn pop3_host(account: &AccountProfile) -> String {
-    account.pop3_host.clone().unwrap_or_else(|| {
-        let domain = account.email.rsplit_once('@').map(|(_, domain)| domain).unwrap_or("");
-        format!("pop.{domain}")
-    })
+fn pop3_settings(account: &AccountProfile) -> Result<(String, u16, String), String> {
+    let settings = providers::settings_for(account);
+    let host = settings.pop3_host
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("O provedor {} não oferece POP3. Use IMAP.", account.provider))?;
+    let port = settings.pop3_port.unwrap_or(995);
+    let mode = settings.pop3_security_mode.unwrap_or_else(|| "tls".to_string());
+    Ok((host, port, mode))
 }
 
 fn message_id(account_id: &str, uidl: &str) -> String {
@@ -66,8 +70,7 @@ async fn multiline(stream: &mut PopStream) -> Result<Vec<Vec<u8>>, String> {
 }
 
 async fn connect(account: &AccountProfile) -> Result<PopStream, String> {
-    let host = pop3_host(account);
-    let port = account.pop3_port.unwrap_or(995);
+    let (host, port, mode) = pop3_settings(account)?;
     let address = format!("{host}:{port}");
     let timeout = Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300));
     let tcp = async_std::future::timeout(timeout, TcpStream::connect(&address))
@@ -75,13 +78,48 @@ async fn connect(account: &AccountProfile) -> Result<PopStream, String> {
         .map_err(|_| format!("Tempo limite de conexão POP3 excedido ({:?}).", timeout))?
         .map_err(|error| format!("Falha ao conectar ao POP3 {address}: {error}"))?;
 
-    let tls = TlsConnector::new()
-        .use_sni(true)
-        .connect(&host, tcp)
-        .await
-        .map_err(|error| format!("TLS POP3 falhou: {error}"))?;
+    let connector = TlsConnector::new().use_sni(true);
+    #[cfg(test)]
+    let connector = if std::env::var("SEVEN_MAIL_PROTOCOL_E2E").ok().as_deref() == Some("1") {
+        // GreenMail uses an ephemeral self-signed certificate in CI.
+        // This relaxation is compiled only into tests.
+        connector
+            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_hostnames(true)
+    } else {
+        connector
+    };
+
+    let tls = if mode.eq_ignore_ascii_case("starttls") {
+        let mut plain = BufReader::new(tcp);
+        let mut greeting = String::new();
+        plain.read_line(&mut greeting).await.map_err(|error| error.to_string())?;
+        if !greeting.starts_with("+OK") {
+            return Err(format!("Servidor POP3 recusou a conexão: {}", greeting.trim()));
+        }
+        plain.get_mut().write_all(b"STLS\r\n").await.map_err(|error| error.to_string())?;
+        plain.get_mut().flush().await.map_err(|error| error.to_string())?;
+        let mut response = String::new();
+        plain.read_line(&mut response).await.map_err(|error| error.to_string())?;
+        if !response.starts_with("+OK") {
+            return Err(format!("STARTTLS POP3 recusado: {}", response.trim()));
+        }
+        connector
+            .connect(&host, plain.into_inner())
+            .await
+            .map_err(|error| format!("TLS POP3 após STLS falhou: {error}"))?
+    } else if mode.eq_ignore_ascii_case("tls") {
+        connector
+            .connect(&host, tcp)
+            .await
+            .map_err(|error| format!("TLS POP3 falhou: {error}"))?
+    } else {
+        return Err("POP3 sem TLS não é permitido. Use TLS direto ou STARTTLS.".to_string());
+    };
     let mut stream = BufReader::new(tls);
-    read_status(&mut stream).await?;
+    if !mode.eq_ignore_ascii_case("starttls") {
+        read_status(&mut stream).await?;
+    }
 
     if !account.can("read") {
         return Err("A conta compartilhada não possui permissão de leitura.".to_string());

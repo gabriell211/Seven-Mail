@@ -14,6 +14,9 @@ mod storage;
 mod updater;
 mod workspace;
 
+#[cfg(test)]
+mod protocol_e2e;
+
 use models::{AccountProfile, DavSyncResult, DirectoryContact, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
 use storage::AppPaths;
 use std::sync::Mutex;

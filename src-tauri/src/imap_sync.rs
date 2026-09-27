@@ -23,8 +23,18 @@ async fn connect(account: &AccountProfile) -> Result<SecureClient, String> {
         .map_err(|error| format!("Falha ao conectar ao IMAP {address}: {error}"))?;
 
     let connector = TlsConnector::new().use_sni(true);
+    #[cfg(test)]
+    let connector = if std::env::var("SEVEN_MAIL_PROTOCOL_E2E").ok().as_deref() == Some("1") {
+        // GreenMail uses an ephemeral self-signed certificate in CI.
+        // This code is not present in production builds.
+        connector
+            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_hostnames(true)
+    } else {
+        connector
+    };
 
-    if settings.security_mode.eq_ignore_ascii_case("starttls") {
+    if settings.imap_security_mode.eq_ignore_ascii_case("starttls") {
         let mut client = Client::new(tcp);
         client
             .read_response()

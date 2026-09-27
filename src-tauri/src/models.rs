@@ -33,6 +33,8 @@ pub struct AccountProfile {
     #[serde(default)]
     pub pop3_port: Option<u16>,
     #[serde(default)]
+    pub pop3_security_mode: Option<String>,
+    #[serde(default)]
     pub caldav_url: Option<String>,
     #[serde(default)]
     pub carddav_url: Option<String>,
@@ -58,6 +60,10 @@ pub struct AccountProfile {
     pub smtp_host: Option<String>,
     #[serde(default)]
     pub smtp_port: Option<u16>,
+    #[serde(default)]
+    pub imap_security_mode: Option<String>,
+    #[serde(default)]
+    pub smtp_security_mode: Option<String>,
     #[serde(default)]
     pub security_mode: Option<String>,
     #[serde(default)]
@@ -134,9 +140,18 @@ pub struct DirectoryContact {
 pub struct ProviderSettings {
     pub imap_host: String,
     pub imap_port: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pop3_host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pop3_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pop3_security_mode: Option<String>,
     pub smtp_host: String,
     pub smtp_port: u16,
+    /// Legacy compatibility value. New code must use the protocol-specific modes.
     pub security_mode: String,
+    pub imap_security_mode: String,
+    pub smtp_security_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -276,6 +291,7 @@ mod tests {
             imap_port: None,
             pop3_host: None,
             pop3_port: None,
+            pop3_security_mode: None,
             caldav_url: None,
             carddav_url: None,
             ldap_url: None,
@@ -289,6 +305,8 @@ mod tests {
             oauth_redirect_uri: None,
             smtp_host: None,
             smtp_port: None,
+            imap_security_mode: None,
+            smtp_security_mode: None,
             security_mode: None,
             aliases: Vec::new(),
             is_shared_mailbox: true,

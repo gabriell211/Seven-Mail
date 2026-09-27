@@ -23,6 +23,7 @@ export interface AccountProfile {
   imapPort?: number;
   pop3Host?: string;
   pop3Port?: number;
+  pop3SecurityMode?: "tls" | "starttls";
   caldavUrl?: string;
   carddavUrl?: string;
   ldapUrl?: string;
@@ -36,6 +37,8 @@ export interface AccountProfile {
   oauthRedirectUri?: string;
   smtpHost?: string;
   smtpPort?: number;
+  imapSecurityMode?: "tls" | "starttls";
+  smtpSecurityMode?: "tls" | "starttls" | "plain";
   securityMode?: "tls" | "starttls";
   aliases?: string[];
   isSharedMailbox?: boolean;
@@ -56,9 +59,15 @@ export interface AccountProfile {
 export interface ProviderSettings {
   imapHost: string;
   imapPort: number;
+  pop3Host?: string;
+  pop3Port?: number;
+  pop3SecurityMode?: "tls" | "starttls";
   smtpHost: string;
   smtpPort: number;
+  /** Legacy compatibility; protocol-specific fields are authoritative. */
   securityMode: "tls" | "starttls";
+  imapSecurityMode?: "tls" | "starttls";
+  smtpSecurityMode?: "tls" | "starttls" | "plain";
 }
 
 export interface MailAddress { name?: string; email: string; }

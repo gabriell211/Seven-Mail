@@ -29,6 +29,15 @@ pub fn store(account_id: &str, secret: &str) -> Result<(), String> {
 }
 
 pub fn load(account_id: &str) -> Result<String, String> {
+    #[cfg(test)]
+    if std::env::var("SEVEN_MAIL_PROTOCOL_E2E").ok().as_deref() == Some("1") {
+        if let Ok(secret) = std::env::var("SEVEN_MAIL_TEST_SECRET") {
+            if !secret.is_empty() {
+                return Ok(secret);
+            }
+        }
+    }
+
     entry(account_id)?
         .get_password()
         .map_err(|error| error.to_string())
@@ -108,6 +117,12 @@ pub fn clear_app_lock() -> Result<(), String> {
 
 
 pub fn load_local_storage_key() -> Result<Option<String>, String> {
+    #[cfg(test)]
+    if std::env::var("SEVEN_MAIL_PROTOCOL_E2E").ok().as_deref() == Some("1") {
+        // Fixed 32-byte key used only by the isolated CI protocol test.
+        return Ok(Some("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=".to_string()));
+    }
+
     match entry(LOCAL_STORAGE_KEY_ID)?.get_password() {
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
@@ -116,6 +131,11 @@ pub fn load_local_storage_key() -> Result<Option<String>, String> {
 }
 
 pub fn store_local_storage_key(value: &str) -> Result<(), String> {
+    #[cfg(test)]
+    if std::env::var("SEVEN_MAIL_PROTOCOL_E2E").ok().as_deref() == Some("1") {
+        return Ok(());
+    }
+
     if value.trim().is_empty() {
         return Err("Chave de armazenamento local inválida.".to_string());
     }
