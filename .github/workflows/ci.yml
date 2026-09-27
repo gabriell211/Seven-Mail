@@ -57,7 +57,7 @@ jobs:
     env:
       SEVEN_MAIL_PROTOCOL_E2E: "1"
       SEVEN_MAIL_TEST_SECRET: "sevenpass"
-      XDG_DATA_HOME: ${{ runner.temp }}/seven-mail-e2e
+      XDG_DATA_HOME: /tmp/seven-mail-e2e
     steps:
       - uses: actions/checkout@v4
       - name: Install Tauri dependencies
