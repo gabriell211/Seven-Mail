@@ -110,6 +110,12 @@ export interface QueueOperation {
   payload: Record<string, unknown>;
 }
 
+export interface OutboxFlushResult {
+  sent: number;
+  sentAccountIds: string[];
+  sentCopyWarnings: string[];
+}
+
 export interface ConditionalMailRule {
   id: string;
   field: "from" | "subject" | "category" | "priority";
