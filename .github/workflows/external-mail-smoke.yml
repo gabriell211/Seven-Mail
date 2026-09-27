@@ -1,0 +1,80 @@
+name: External Mail Smoke
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/external-mail-smoke.yml"
+
+jobs:
+  external-smtp:
+    runs-on: ubuntu-22.04
+    env:
+      SEVEN_MAIL_EXTERNAL_EMAIL: ${{ secrets.SEVEN_MAIL_EXTERNAL_EMAIL || secrets.SEVEN_TEST_EMAIL }}
+      SEVEN_MAIL_EXTERNAL_USERNAME: ${{ secrets.SEVEN_MAIL_EXTERNAL_USERNAME }}
+      SEVEN_MAIL_EXTERNAL_SMTP_HOST: ${{ secrets.SEVEN_MAIL_EXTERNAL_SMTP_HOST }}
+      SEVEN_MAIL_EXTERNAL_SMTP_PORT: ${{ secrets.SEVEN_MAIL_EXTERNAL_SMTP_PORT }}
+      SEVEN_MAIL_EXTERNAL_SMTP_SECURITY: ${{ secrets.SEVEN_MAIL_EXTERNAL_SMTP_SECURITY }}
+      SEVEN_MAIL_TEST_SECRET: ${{ secrets.SEVEN_MAIL_EXTERNAL_PASSWORD || secrets.SEVEN_TEST_PASSWORD }}
+      SEVEN_MAIL_EXTERNAL_RECIPIENT: roval90075@hiredify.com
+      SEVEN_MAIL_PROTOCOL_E2E: "1"
+      XDG_DATA_HOME: /tmp/seven-mail-external-smoke
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check external mail credentials
+        id: credentials
+        shell: bash
+        run: |
+          missing=0
+          for name in             SEVEN_MAIL_EXTERNAL_EMAIL             SEVEN_MAIL_EXTERNAL_SMTP_HOST             SEVEN_MAIL_EXTERNAL_SMTP_PORT             SEVEN_MAIL_TEST_SECRET
+          do
+            if [ -z "${!name}" ]; then
+              echo "::notice title=Seven Mail external smoke::Missing GitHub Actions secret: $name"
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -eq 1 ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Seven Mail external smoke::External SMTP test was not executed because credentials are not configured."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Tauri dependencies
+        if: steps.credentials.outputs.configured == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential curl wget file libssl-dev
+
+      - uses: actions/setup-node@v4
+        if: steps.credentials.outputs.configured == 'true'
+        with:
+          node-version: 24
+
+      - name: Install frontend dependencies
+        if: steps.credentials.outputs.configured == 'true'
+        run: npm ci
+
+      - name: Generate Tauri assets
+        if: steps.credentials.outputs.configured == 'true'
+        run: npm run icons
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.credentials.outputs.configured == 'true'
+
+      - uses: swatinem/rust-cache@v2
+        if: steps.credentials.outputs.configured == 'true'
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Send Seven Mail internet smoke message
+        if: steps.credentials.outputs.configured == 'true'
+        env:
+          SEVEN_MAIL_EXTERNAL_SMOKE: "1"
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml protocol_e2e::external_smtp_smoke -- --nocapture
