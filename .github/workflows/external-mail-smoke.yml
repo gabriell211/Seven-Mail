@@ -10,6 +10,9 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/external-mail-smoke.yml"
+      - "src-tauri/src/protocol_e2e.rs"
+      - "src-tauri/src/imap_sync.rs"
+      - "src-tauri/src/pop3_sync.rs"
 
 jobs:
   external-smtp:
