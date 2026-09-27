@@ -84,6 +84,12 @@ jobs:
           SEVEN_MAIL_EXTERNAL_SMOKE: "1"
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml protocol_e2e::external_smtp_smoke -- --nocapture
 
+      - name: Confirm Seven Mail queue and Gmail Sent
+        if: steps.credentials.outputs.configured == 'true'
+        env:
+          SEVEN_MAIL_EXTERNAL_SMOKE: "1"
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml protocol_e2e::external_outbox_sent_smoke -- --nocapture
+
       - name: Receive with Seven Mail over Gmail IMAP + POP3
         if: steps.credentials.outputs.configured == 'true'
         env:
