@@ -115,7 +115,13 @@ pub fn settings_for(account: &AccountProfile) -> ProviderSettings {
     let pop3_host = account.pop3_host.clone().or_else(|| discovered.pop3_host.clone());
     let pop3_port = account.pop3_port.or(discovered.pop3_port);
     let pop3_security_mode = account.pop3_security_mode.clone().or_else(|| {
-        account.security_mode.clone().or_else(|| discovered.pop3_security_mode.clone())
+        match (pop3_port, account.security_mode.as_deref()) {
+            // Same migration rule as IMAP: old profiles sometimes inherited
+            // SMTP STARTTLS even though POP3S on 995 is implicit TLS.
+            (Some(995), Some(mode)) if mode.eq_ignore_ascii_case("starttls") => Some("tls".to_string()),
+            (_, Some(mode)) => Some(mode.to_string()),
+            _ => discovered.pop3_security_mode.clone(),
+        }
     });
 
     ProviderSettings {
