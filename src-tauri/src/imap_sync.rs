@@ -204,6 +204,31 @@ pub fn test(account: &AccountProfile) -> Result<bool, String> {
     })
 }
 
+#[cfg(test)]
+pub fn test_find_subject(
+    account: &AccountProfile,
+    mailbox: &str,
+    subject: &str,
+) -> Result<bool, String> {
+    async_std::task::block_on(async {
+        let mut session = login(account).await?;
+        session
+            .select(mailbox)
+            .await
+            .map_err(|error| format!("Não foi possível abrir {mailbox}: {error}"))?;
+
+        let safe_subject = subject.replace('\\', "\\\\").replace('"', "\\\"");
+        let query = format!("SUBJECT \"{safe_subject}\"");
+        let matches = session
+            .uid_search(query)
+            .await
+            .map_err(|error| format!("Falha ao procurar assunto em {mailbox}: {error}"))?;
+
+        session.logout().await.map_err(|error| error.to_string())?;
+        Ok(!matches.is_empty())
+    })
+}
+
 fn mailbox_key(path: &str) -> String {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
