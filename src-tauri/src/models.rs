@@ -33,6 +33,8 @@ pub struct AccountProfile {
     #[serde(default)]
     pub pop3_port: Option<u16>,
     #[serde(default)]
+    pub pop3_security_mode: Option<String>,
+    #[serde(default)]
     pub caldav_url: Option<String>,
     #[serde(default)]
     pub carddav_url: Option<String>,
@@ -138,6 +140,12 @@ pub struct DirectoryContact {
 pub struct ProviderSettings {
     pub imap_host: String,
     pub imap_port: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pop3_host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pop3_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pop3_security_mode: Option<String>,
     pub smtp_host: String,
     pub smtp_port: u16,
     /// Legacy compatibility value. New code must use the protocol-specific modes.
