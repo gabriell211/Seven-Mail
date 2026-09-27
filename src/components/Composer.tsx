@@ -20,6 +20,7 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 export interface QueuedSendInfo {
   id: string;
+  accountId: string;
   sendAt: string;
   canUndo: boolean;
 }
@@ -758,6 +759,7 @@ export function Composer({
 
       onQueued({
         id: draft.id,
+        accountId: account.id,
         sendAt: effectiveSendAt.toISOString(),
         canUndo: !isExplicitlyScheduled && settings.sendDelaySeconds > 0,
       });

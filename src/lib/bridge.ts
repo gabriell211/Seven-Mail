@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AccountProfile, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument, WorkspaceKind } from "../types";
+import type { AccountProfile, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, OutboxFlushResult, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument, WorkspaceKind } from "../types";
 
 const hasTauri = () => "__TAURI_INTERNALS__" in window;
 
@@ -63,7 +63,7 @@ export const bridge = {
   testSmtpConnection: (accountId: string): Promise<boolean> => command("test_smtp_connection", { accountId }),
   testImapConnection: (accountId: string): Promise<boolean> => command("test_imap_connection", { accountId }),
   syncInbox: (accountId: string, limit = 50): Promise<number> => command("sync_inbox", { accountId, limit }),
-  waitForMailPush: (accountId: string, timeoutSeconds = 25): Promise<boolean> => command("wait_for_mail_push", { accountId, timeoutSeconds }),
+  waitForMailPush: (accountId: string, folderPath = "INBOX", timeoutSeconds = 55): Promise<boolean> => command("wait_for_mail_push", { accountId, folderPath, timeoutSeconds }),
   listFolders: (accountId: string): Promise<MailFolder[]> => command("list_mail_folders", { accountId }),
   syncFolder: (accountId: string, path: string, label: string, limit = 50): Promise<number> => command("sync_mail_folder", { accountId, path, label, limit }),
   createFolder: (accountId: string, name: string): Promise<void> => command("create_mail_folder", { accountId, name }),
@@ -79,7 +79,7 @@ export const bridge = {
     command("stage_message_as_eml", { operationId, accountId, messageId, suggestedName }),
   cancelOperation: (operationId: string): Promise<boolean> => command("cancel_operation", { operationId }),
   listQueue: (): Promise<QueueOperation[]> => command("list_queue"),
-  flushOutbox: (): Promise<number> => command("flush_outbox"),
+  flushOutbox: (): Promise<OutboxFlushResult> => command("flush_outbox"),
   messageAction: (accountId: string, messageId: string, action: "read" | "unread" | "flag" | "unflag" | "pin" | "unpin" | "archive" | "delete" | "spam" | "inbox"): Promise<MailMessage> =>
     command("message_action", { accountId, messageId, action }),
   moveMessageToFolder: (accountId: string, messageId: string, targetPath: string, targetLabel: string): Promise<MailMessage> =>

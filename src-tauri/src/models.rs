@@ -214,6 +214,15 @@ pub struct QueueOperation {
     pub payload: Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutboxFlushResult {
+    pub sent: usize,
+    pub sent_account_ids: Vec<String>,
+    #[serde(default)]
+    pub sent_copy_warnings: Vec<String>,
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

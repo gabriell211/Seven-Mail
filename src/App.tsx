@@ -2766,13 +2766,27 @@ export default function App() {
   useEffect(()=>{
     const flush = () => {
       if (!navigator.onLine) return;
-      void bridge.flushOutbox().catch((reason)=>{
-        setSendFeedback({
-          state:"error",
-          title:"Falha na caixa de saída",
-          detail:reason instanceof Error?reason.message:String(reason),
+      void bridge.flushOutbox()
+        .then(async(result)=>{
+          if(result.sent>0){
+            const refreshed=await bridge.listCachedMessages(unified?undefined:activeAccount?.id).catch(()=>null);
+            if(refreshed) setMessages(refreshed);
+          }
+          if(result.sentCopyWarnings.length>0){
+            setSendFeedback({
+              state:"accepted",
+              title:"Enviado · cópia pendente",
+              detail:`SMTP aceitou a mensagem, mas Enviados ainda não confirmou: ${result.sentCopyWarnings.join(" · ")}`,
+            });
+          }
+        })
+        .catch((reason)=>{
+          setSendFeedback({
+            state:"error",
+            title:"Falha na caixa de saída",
+            detail:reason instanceof Error?reason.message:String(reason),
+          });
         });
-      });
       for (const account of profileAccounts) {
         if (account.muted) continue;
         void bridge.flushMailActions(account.id).catch((reason)=>{
@@ -2789,7 +2803,7 @@ export default function App() {
       window.clearInterval(timer);
       window.removeEventListener("online", flush);
     };
-  },[profileAccounts]);
+  },[profileAccounts,activeAccount?.id,unified]);
 
   useEffect(()=>{
     if (profileAccounts.length===0){
@@ -2901,39 +2915,42 @@ export default function App() {
     const sleep=(ms:number)=>new Promise<void>((resolve)=>window.setTimeout(resolve,ms));
 
     for(const account of profileAccounts){
-      if(account.incomingProtocol==="pop3") continue;
+      if(account.incomingProtocol==="pop3"||account.muted) continue;
       void (async()=>{
+        let failures=0;
         while(!disposed){
           try{
-            const changed=await bridge.waitForMailPush(account.id,25);
+            // INBOX stays under IDLE regardless of which folder is open.
+            const changed=await bridge.waitForMailPush(account.id,"INBOX",55);
             if(disposed) return;
-            if(changed){
-              const before=await bridge.listCachedMessages(account.id).catch(()=>[] as MailMessage[]);
-              const known=new Set(before.map((message)=>message.id));
-              await bridge.syncInbox(account.id,settings.memorySaverEnabled?25:(settings.mailPageSize??50));
-              const after=await bridge.listCachedMessages(account.id);
-              const fresh=after.filter((message)=>message.folder==="Caixa de entrada"&&!known.has(message.id));
-              await applySenderPolicies(fresh);
-              await executeRules(fresh);
-              await applyFreshAutomations(fresh,account);
-              if(activeAccount?.id===account.id) setMessages(after);
-              if(unified) setMessages(await bridge.listCachedMessages());
-              if(fresh.length>0&&settings.notificationsEnabled&&!notificationsMutedNow(settings)){
-                surfaceNewMessages(fresh);
-              }
-              void pushCloudMessages(after).catch(()=>undefined);
-              setLastSyncAt(Date.now());
-              setSyncError(undefined);
-              setSyncState("synced");
-            }else{
-              await sleep(60_000);
+            failures=0;
+            if(!changed) continue;
+
+            const before=await bridge.listCachedMessages(account.id).catch(()=>[] as MailMessage[]);
+            const known=new Set(before.map((message)=>message.id));
+            await bridge.syncInbox(account.id,settings.memorySaverEnabled?25:(settings.mailPageSize??50));
+            const after=await bridge.listCachedMessages(account.id);
+            const fresh=after.filter((message)=>message.folder==="Caixa de entrada"&&!known.has(message.id));
+            await applySenderPolicies(fresh);
+            await executeRules(fresh);
+            await applyFreshAutomations(fresh,account);
+            if(activeAccount?.id===account.id) setMessages(after);
+            if(unified) setMessages(await bridge.listCachedMessages());
+            if(fresh.length>0&&settings.notificationsEnabled&&!notificationsMutedNow(settings)){
+              surfaceNewMessages(fresh);
             }
+            void pushCloudMessages(after).catch(()=>undefined);
+            setLastSyncAt(Date.now());
+            setSyncError(undefined);
+            setSyncState("synced");
           }catch(reason){
+            failures+=1;
             if(!disposed){
               setSyncError(`${account.email}: ${reason instanceof Error?reason.message:String(reason)}`);
               setSyncState(navigator.onLine?"error":"offline");
             }
-            await sleep(60_000);
+            // Fast reconnect first, then bounded backoff on repeated network/auth errors.
+            await sleep(Math.min(30_000,Math.max(1500,failures*2500)));
           }
         }
       })();
@@ -2948,6 +2965,105 @@ export default function App() {
     settings.notificationsEnabled,
     settings.memorySaverEnabled,
     settings.mailPageSize,
+  ]);
+
+  useEffect(()=>{
+    if(!bootReady||!activeAccount||unified||activeAccount.incomingProtocol==="pop3"||activeAccount.muted) return;
+    if(selectedFolder.path.toLocaleUpperCase("en-US")==="INBOX") return;
+
+    let disposed=false;
+    const sleep=(ms:number)=>new Promise<void>((resolve)=>window.setTimeout(resolve,ms));
+    void (async()=>{
+      let failures=0;
+      while(!disposed){
+        try{
+          const changed=await bridge.waitForMailPush(activeAccount.id,selectedFolder.path,55);
+          if(disposed) return;
+          failures=0;
+          if(!changed) continue;
+
+          await bridge.syncFolder(
+            activeAccount.id,
+            selectedFolder.path,
+            selectedFolder.name,
+            settings.memorySaverEnabled?25:(settings.mailPageSize??50),
+          );
+          const after=await bridge.listCachedMessages(activeAccount.id);
+          if(!disposed) setMessages(after);
+          void pushCloudMessages(after).catch(()=>undefined);
+          setLastSyncAt(Date.now());
+          setSyncError(undefined);
+          setSyncState("synced");
+        }catch(reason){
+          failures+=1;
+          if(!disposed){
+            setSyncError(`${activeAccount.email} · ${selectedFolder.name}: ${reason instanceof Error?reason.message:String(reason)}`);
+            setSyncState(navigator.onLine?"error":"offline");
+          }
+          await sleep(Math.min(30_000,Math.max(1500,failures*2500)));
+        }
+      }
+    })();
+
+    return ()=>{disposed=true;};
+  },[
+    bootReady,
+    activeAccount?.id,
+    activeAccount?.incomingProtocol,
+    activeAccount?.muted,
+    unified,
+    selectedFolder.path,
+    selectedFolder.name,
+    settings.memorySaverEnabled,
+    settings.mailPageSize,
+  ]);
+
+  useEffect(()=>{
+    if(!bootReady) return;
+    const accounts=profileAccounts.filter((account)=>account.incomingProtocol==="pop3"&&!account.muted);
+    if(accounts.length===0) return;
+    let disposed=false;
+
+    const poll=async()=>{
+      if(disposed||!navigator.onLine) return;
+      for(const account of accounts){
+        if(disposed) return;
+        try{
+          const before=await bridge.listCachedMessages(account.id).catch(()=>[] as MailMessage[]);
+          const known=new Set(before.map((message)=>message.id));
+          await bridge.syncInbox(account.id,settings.memorySaverEnabled?25:(settings.mailPageSize??50));
+          const after=await bridge.listCachedMessages(account.id);
+          const fresh=after.filter((message)=>message.folder==="Caixa de entrada"&&!known.has(message.id));
+          if(activeAccount?.id===account.id) setMessages(after);
+          if(unified) setMessages(await bridge.listCachedMessages());
+          if(fresh.length>0&&settings.notificationsEnabled&&!notificationsMutedNow(settings)){
+            surfaceNewMessages(fresh);
+          }
+          setLastSyncAt(Date.now());
+          setSyncError(undefined);
+          setSyncState("synced");
+        }catch(reason){
+          setSyncError(`${account.email} (POP3): ${reason instanceof Error?reason.message:String(reason)}`);
+          setSyncState(navigator.onLine?"error":"offline");
+        }
+      }
+    };
+
+    void poll();
+    const interval=window.setInterval(()=>void poll(),settings.batterySaverEnabled?60_000:30_000);
+    return ()=>{
+      disposed=true;
+      window.clearInterval(interval);
+    };
+  },[
+    bootReady,
+    profileAccounts,
+    activeAccount?.id,
+    unified,
+    settings.notificationsEnabled,
+    settings.memorySaverEnabled,
+    settings.mailPageSize,
+    settings.batterySaverEnabled,
   ]);
 
   useEffect(()=>{
@@ -3211,7 +3327,7 @@ export default function App() {
         setUndoSend((current) => current?.id === info.id ? null : current);
         setSendFeedback({state:"sending",title:"Enviando",detail:"Conectando ao servidor SMTP...",id:info.id});
         void bridge.flushOutbox()
-          .then(async(sent)=>{
+          .then(async(result)=>{
             const queue=await bridge.listQueue().catch(()=>[]);
             const pending=queue.find((operation)=>operation.id===info.id);
             if(pending){
@@ -3223,8 +3339,18 @@ export default function App() {
                   : "A mensagem continua aguardando na fila.",
                 id:info.id,
               });
-            }else if(sent>0){
-              setSendFeedback({state:"accepted",title:"Aceito pelo SMTP",detail:"O servidor aceitou a mensagem para entrega. Isso não confirma leitura nem entrega final.",id:info.id});
+            }else if(result.sent>0){
+              const refreshed=await bridge.listCachedMessages(unified?undefined:activeAccount?.id).catch(()=>null);
+              if(refreshed) setMessages(refreshed);
+              const warning=result.sentCopyWarnings.find((value)=>value.includes(info.accountId))??result.sentCopyWarnings[0];
+              setSendFeedback({
+                state:"accepted",
+                title:warning?"Aceito pelo SMTP · Enviados pendente":"Aceito pelo SMTP",
+                detail:warning
+                  ? `O envio foi aceito, mas a pasta Enviados ainda não confirmou a cópia: ${warning}`
+                  : "O servidor aceitou a mensagem e o Seven Mail atualizou a cópia em Enviados. Isso não confirma leitura nem entrega final.",
+                id:info.id,
+              });
             }else{
               setSendFeedback({state:"accepted",title:"Saiu da fila",detail:"A mensagem não está mais pendente. O Seven Mail não a marca como entregue sem confirmação do servidor.",id:info.id});
             }

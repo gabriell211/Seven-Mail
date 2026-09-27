@@ -17,7 +17,7 @@ mod workspace;
 #[cfg(test)]
 mod protocol_e2e;
 
-use models::{AccountProfile, DavSyncResult, DirectoryContact, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
+use models::{AccountProfile, DavSyncResult, DirectoryContact, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, OutboxFlushResult, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
 use storage::AppPaths;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
@@ -431,14 +431,19 @@ fn test_imap_connection(account_id: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-async fn wait_for_mail_push(account_id: String, timeout_seconds: Option<u64>) -> Result<bool, String> {
+async fn wait_for_mail_push(
+    account_id: String,
+    folder_path: Option<String>,
+    timeout_seconds: Option<u64>,
+) -> Result<bool, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
+    let folder = folder_path.unwrap_or_else(|| "INBOX".to_string());
     tauri::async_runtime::spawn_blocking(move || {
-        imap_sync::wait_for_inbox_change(&account, timeout_seconds.unwrap_or(25))
+        imap_sync::wait_for_folder_change(&account, &folder, timeout_seconds.unwrap_or(55))
     })
     .await
     .map_err(|error| format!("Falha ao aguardar push IMAP: {error}"))?
@@ -619,10 +624,12 @@ fn list_queue() -> Result<Vec<QueueOperation>, String> {
 }
 
 #[tauri::command]
-fn flush_outbox() -> Result<usize, String> {
+fn flush_outbox() -> Result<OutboxFlushResult, String> {
     let paths = AppPaths::resolve()?;
     let accounts = storage::list_accounts(&paths)?;
     let mut sent = 0usize;
+    let mut sent_account_ids = Vec::new();
+    let mut sent_copy_warnings = Vec::new();
 
     loop {
         let Some(operation) = storage::claim_next_send_due(&paths)? else {
@@ -634,10 +641,27 @@ fn flush_outbox() -> Result<usize, String> {
             continue;
         };
 
-        match providers::send_queued(account, &operation) {
-            Ok(()) => {
+        match providers::send_queued_raw(account, &operation) {
+            Ok(raw) => {
+                // SMTP success is final for the queue item. A failure to mirror
+                // the copy into IMAP Sent must never trigger a duplicate resend.
                 storage::complete(&paths, &operation.id)?;
                 sent += 1;
+                if !sent_account_ids.iter().any(|value| value == &account.id) {
+                    sent_account_ids.push(account.id.clone());
+                }
+
+                if operation.kind == "send" && !account.incoming_protocol.eq_ignore_ascii_case("pop3") {
+                    if let Err(error) = imap_sync::ensure_sent_copy(
+                        &paths,
+                        account,
+                        &operation.id,
+                        &raw,
+                        100,
+                    ) {
+                        sent_copy_warnings.push(format!("{}: {error}", account.email));
+                    }
+                }
             }
             Err(error) => {
                 storage::retry_later(&paths, &operation.id)?;
@@ -649,7 +673,11 @@ fn flush_outbox() -> Result<usize, String> {
         }
     }
 
-    Ok(sent)
+    Ok(OutboxFlushResult {
+        sent,
+        sent_account_ids,
+        sent_copy_warnings,
+    })
 }
 
 #[tauri::command]
