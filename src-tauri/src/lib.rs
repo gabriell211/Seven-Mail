@@ -466,11 +466,10 @@ fn list_mail_folders(account_id: String) -> Result<Vec<MailFolder>, String> {
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
     if account.incoming_protocol.eq_ignore_ascii_case("pop3") {
+        // POP3 does not expose remote folders. Showing Archive/Spam/Trash here
+        // would make the UI claim capabilities the protocol does not have.
         Ok(vec![
             MailFolder { name: "Caixa de entrada".into(), path: "INBOX".into(), role: "inbox".into() },
-            MailFolder { name: "Arquivados".into(), path: "Archive".into(), role: "archive".into() },
-            MailFolder { name: "Spam".into(), path: "Junk".into(), role: "spam".into() },
-            MailFolder { name: "Lixeira".into(), path: "Trash".into(), role: "trash".into() },
         ])
     } else {
         imap_sync::list_folders(&account)
@@ -493,7 +492,7 @@ fn sync_mail_folder(
         if path.eq_ignore_ascii_case("INBOX") {
             pop3_sync::sync_latest(&paths, &account, limit.unwrap_or(50))
         } else {
-            Ok(0)
+            Err("POP3 não oferece sincronização de pastas remotas. Use a Caixa de entrada.".to_string())
         }
     } else {
         imap_sync::sync_folder(&paths, &account, &path, &label, limit.unwrap_or(50))
