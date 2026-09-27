@@ -59,6 +59,10 @@ pub struct AccountProfile {
     #[serde(default)]
     pub smtp_port: Option<u16>,
     #[serde(default)]
+    pub imap_security_mode: Option<String>,
+    #[serde(default)]
+    pub smtp_security_mode: Option<String>,
+    #[serde(default)]
     pub security_mode: Option<String>,
     #[serde(default)]
     pub aliases: Vec<String>,
@@ -136,7 +140,10 @@ pub struct ProviderSettings {
     pub imap_port: u16,
     pub smtp_host: String,
     pub smtp_port: u16,
+    /// Legacy compatibility value. New code must use the protocol-specific modes.
     pub security_mode: String,
+    pub imap_security_mode: String,
+    pub smtp_security_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
