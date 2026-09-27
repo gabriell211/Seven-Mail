@@ -297,9 +297,14 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
   const [server,setServer] = useState<ProviderSettings>({
     imapHost:"",
     imapPort:993,
+    pop3Host:"",
+    pop3Port:995,
+    pop3SecurityMode:"tls",
     smtpHost:"",
     smtpPort:465,
-    securityMode:"tls"
+    securityMode:"tls",
+    imapSecurityMode:"tls",
+    smtpSecurityMode:"tls"
   });
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState("");
@@ -310,9 +315,14 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
     return {
       imapHost: server.imapHost.trim() || discovered.imapHost,
       imapPort: server.imapPort || discovered.imapPort,
+      pop3Host: pop3Host.trim() || server.pop3Host?.trim() || discovered.pop3Host,
+      pop3Port: pop3Port || server.pop3Port || discovered.pop3Port,
+      pop3SecurityMode: server.pop3SecurityMode ?? discovered.pop3SecurityMode ?? "tls",
       smtpHost: server.smtpHost.trim() || discovered.smtpHost,
       smtpPort: server.smtpPort || discovered.smtpPort,
-      securityMode: server.securityMode
+      securityMode: server.securityMode,
+      imapSecurityMode: server.imapSecurityMode ?? discovered.imapSecurityMode ?? "tls",
+      smtpSecurityMode: server.smtpSecurityMode ?? server.securityMode
     };
   }
 
@@ -329,13 +339,17 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
         username: email.trim(),
         provider,
         incomingProtocol,
-        pop3Host: incomingProtocol==="pop3" ? (pop3Host.trim() || `pop.${email.trim().split("@")[1]??""}`) : undefined,
-        pop3Port: incomingProtocol==="pop3" ? (pop3Port || 995) : undefined,
         connectionTimeoutSeconds:30,
         color: COLORS[Math.floor(Math.random()*COLORS.length)],
         isDefault: false,
-        ...settings
+        ...settings,
+        pop3Host: incomingProtocol==="pop3" ? (pop3Host.trim() || settings.pop3Host) : undefined,
+        pop3Port: incomingProtocol==="pop3" ? (pop3Port || settings.pop3Port || 995) : undefined,
+        pop3SecurityMode: incomingProtocol==="pop3" ? (settings.pop3SecurityMode ?? "tls") : undefined
       };
+      if (incomingProtocol==="pop3" && !account.pop3Host) {
+        throw new Error("Este provedor não oferece POP3. Use IMAP.");
+      }
       await bridge.saveAccount(account);
       if (secret.trim()) await bridge.storeSecret(account.id, secret);
       onAdded(account);
@@ -371,13 +385,15 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
         {incomingProtocol==="imap"?<>
           <label><span>IMAP</span><input value={server.imapHost} onChange={e=>setServer(v=>({...v,imapHost:e.target.value}))} placeholder="imap.dominio.com"/></label>
           <label><span>Porta IMAP</span><input type="number" value={server.imapPort} onChange={e=>setServer(v=>({...v,imapPort:Number(e.target.value)}))}/></label>
+          <label className="full"><span>Segurança IMAP</span><select value={server.imapSecurityMode??"tls"} onChange={e=>setServer(v=>({...v,imapSecurityMode:e.target.value as "tls"|"starttls"}))}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
         </>:<>
           <label><span>POP3</span><input value={pop3Host} onChange={e=>setPop3Host(e.target.value)} placeholder="pop.dominio.com"/></label>
           <label><span>Porta POP</span><input type="number" value={pop3Port} onChange={e=>setPop3Port(Number(e.target.value))}/></label>
+          <label className="full"><span>Segurança POP3</span><select value={server.pop3SecurityMode??"tls"} onChange={e=>setServer(v=>({...v,pop3SecurityMode:e.target.value as "tls"|"starttls"}))}><option value="tls">TLS direto</option><option value="starttls">STARTTLS (STLS)</option></select></label>
         </>}
         <label><span>SMTP</span><input value={server.smtpHost} onChange={e=>setServer(v=>({...v,smtpHost:e.target.value}))} placeholder="smtp.dominio.com"/></label>
         <label><span>Porta SMTP</span><input type="number" value={server.smtpPort} onChange={e=>setServer(v=>({...v,smtpPort:Number(e.target.value)}))}/></label>
-        <label className="full"><span>Segurança SMTP</span><select value={server.securityMode} onChange={e=>setServer(v=>({...v,securityMode:e.target.value as "tls"|"starttls"}))}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
+        <label className="full"><span>Segurança SMTP</span><select value={server.smtpSecurityMode??server.securityMode} onChange={e=>setServer(v=>({...v,smtpSecurityMode:e.target.value as "tls"|"starttls",securityMode:e.target.value as "tls"|"starttls"}))}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
       </div>}
       <div className="secure-note"><Icon name="lock" size={16}/><span>A credencial nunca é gravada no cache. A fila offline contém somente a operação e o conteúdo necessário para reenvio.</span></div>
       {error&&<div className="form-error">{error}</div>}
