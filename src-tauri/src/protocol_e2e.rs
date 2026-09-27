@@ -267,64 +267,84 @@ fn external_receive_smoke() {
     }))
     .expect("external POP3 account must deserialize");
 
-    assert!(
-        imap_sync::test(&imap_account).expect("external Gmail IMAP connection/authentication failed"),
-        "external Gmail IMAP connection did not pass"
-    );
-
     let paths = AppPaths::resolve().expect("Seven Mail app paths must resolve in external CI");
     storage::clear_cache(&paths).expect("external receive cache must be clean");
 
-    let mut imap_found = false;
+    let mut imap_location = None;
     let mut imap_error = None;
-    for _ in 0..12 {
-        match imap_sync::sync_latest(&paths, &imap_account, 50) {
+    match imap_sync::test(&imap_account) {
+        Ok(true) => {
+            let mut folders = imap_sync::list_folders(&imap_account)
+                .unwrap_or_else(|error| {
+                    imap_error = Some(error);
+                    Vec::new()
+                });
+            folders.sort_by_key(|folder| match folder.role.as_str() {
+                "inbox" => 0,
+                "archive" => 1,
+                "spam" => 2,
+                _ => 10,
+            });
+
+            for folder in folders {
+                if matches!(folder.role.as_str(), "sent" | "drafts" | "trash") {
+                    continue;
+                }
+                match imap_sync::test_find_subject(&imap_account, &folder.path, &expected_subject) {
+                    Ok(true) => {
+                        imap_location = Some(folder.path);
+                        break;
+                    }
+                    Ok(false) => {}
+                    Err(error) => imap_error = Some(error),
+                }
+            }
+        }
+        Ok(false) => imap_error = Some("IMAP connection test returned false".to_string()),
+        Err(error) => imap_error = Some(error),
+    }
+
+    let mut imap_found = false;
+    if let Some(folder) = imap_location.as_deref() {
+        match imap_sync::sync_folder(&paths, &imap_account, folder, "Teste externo", 100) {
             Ok(_) => {
                 let messages = storage::list_cached_messages(&paths, Some(&imap_account.id))
                     .expect("external IMAP cache must be readable");
-                if messages.iter().any(|message| message.subject.contains(&expected_subject)) {
-                    imap_found = true;
-                    break;
-                }
+                imap_found = messages.iter().any(|message| message.subject.contains(&expected_subject));
             }
             Err(error) => imap_error = Some(error),
         }
-        std::thread::sleep(std::time::Duration::from_secs(2));
     }
-
-    assert!(
-        imap_found,
-        "Seven Mail authenticated with Gmail IMAP but did not observe the inbound message. Last error: {}",
-        imap_error.unwrap_or_else(|| "none".to_string())
-    );
-
-    assert!(
-        pop3_sync::test(&pop3_account).expect("external Gmail POP3 connection/authentication failed"),
-        "external Gmail POP3 connection did not pass"
-    );
 
     let mut pop3_found = false;
     let mut pop3_error = None;
-    for _ in 0..12 {
-        match pop3_sync::sync_latest(&paths, &pop3_account, 50) {
+    match pop3_sync::test(&pop3_account) {
+        Ok(true) => match pop3_sync::sync_latest(&paths, &pop3_account, 100) {
             Ok(_) => {
                 let messages = storage::list_cached_messages(&paths, Some(&pop3_account.id))
                     .expect("external POP3 cache must be readable");
-                if messages.iter().any(|message| message.subject.contains(&expected_subject)) {
-                    pop3_found = true;
-                    break;
-                }
+                pop3_found = messages.iter().any(|message| message.subject.contains(&expected_subject));
             }
             Err(error) => pop3_error = Some(error),
-        }
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        },
+        Ok(false) => pop3_error = Some("POP3 connection test returned false".to_string()),
+        Err(error) => pop3_error = Some(error),
     }
 
-    assert!(
-        pop3_found,
-        "Seven Mail authenticated with Gmail POP3 but did not observe the inbound message. Last error: {}",
-        pop3_error.unwrap_or_else(|| "none".to_string())
+    println!(
+        "Seven Mail Gmail receive: imap_location={:?} imap_found={} pop3_found={}",
+        imap_location, imap_found, pop3_found
     );
 
-    println!("Seven Mail external receive confirmed via IMAP and POP3 subject={expected_subject}");
+    assert!(
+        imap_found,
+        "Seven Mail IMAP did not retrieve the inbound Gmail message. location={:?}; last_error={}",
+        imap_location,
+        imap_error.unwrap_or_else(|| "none".to_string())
+    );
+    assert!(
+        pop3_found,
+        "Seven Mail POP3 did not retrieve the inbound Gmail message. last_error={}",
+        pop3_error.unwrap_or_else(|| "none".to_string())
+    );
 }
