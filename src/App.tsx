@@ -307,6 +307,7 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
     smtpSecurityMode:"tls"
   });
   const [busy,setBusy] = useState(false);
+  const [connectionStep,setConnectionStep] = useState("");
   const [error,setError] = useState("");
 
   async function resolveServer(): Promise<ProviderSettings> {
@@ -330,6 +331,8 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
     if (!email.trim() || busy) return;
     setBusy(true);
     setError("");
+    setConnectionStep("Preparando configuração...");
+    let stagedAccountId:string|undefined;
     try {
       const settings = await resolveServer();
       const account: AccountProfile = {
@@ -350,13 +353,45 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
       if (incomingProtocol==="pop3" && !account.pop3Host) {
         throw new Error("Este provedor não oferece POP3. Use IMAP.");
       }
+
+      // Os comandos nativos de teste carregam a conta pelo armazenamento local.
+      // Ela só é promovida à UI depois que entrada, SMTP e a primeira sincronização passam.
       await bridge.saveAccount(account);
-      if (secret.trim()) await bridge.storeSecret(account.id, secret);
+      stagedAccountId=account.id;
+      if (secret.trim()) await bridge.storeSecret(account.id, secret.trim());
+
+      const incomingLabel=account.incomingProtocol==="pop3"?"POP3":"IMAP";
+      setConnectionStep(`Validando ${incomingLabel} e SMTP...`);
+      const [incomingResult,smtpResult]=await Promise.allSettled([
+        bridge.testImapConnection(account.id),
+        bridge.testSmtpConnection(account.id),
+      ]);
+      const failures:string[]=[];
+      if(incomingResult.status==="rejected"){
+        failures.push(`${incomingLabel}: ${incomingResult.reason instanceof Error?incomingResult.reason.message:String(incomingResult.reason)}`);
+      }else if(!incomingResult.value){
+        failures.push(`${incomingLabel}: o servidor não confirmou a conexão.`);
+      }
+      if(smtpResult.status==="rejected"){
+        failures.push(`SMTP: ${smtpResult.reason instanceof Error?smtpResult.reason.message:String(smtpResult.reason)}`);
+      }else if(!smtpResult.value){
+        failures.push("SMTP: o servidor não confirmou a conexão.");
+      }
+      if(failures.length) throw new Error(failures.join(" · "));
+
+      setConnectionStep("Conexões validadas. Fazendo a primeira sincronização...");
+      await bridge.syncInbox(account.id,50);
+
       onAdded(account);
+      stagedAccountId=undefined;
       onClose();
     } catch (reason) {
+      if(stagedAccountId){
+        await bridge.deleteAccount(stagedAccountId).catch(()=>undefined);
+      }
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      setConnectionStep("");
       setBusy(false);
     }
   }
@@ -395,7 +430,8 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
         <label><span>Porta SMTP</span><input type="number" value={server.smtpPort} onChange={e=>setServer(v=>({...v,smtpPort:Number(e.target.value)}))}/></label>
         <label className="full"><span>Segurança SMTP</span><select value={server.smtpSecurityMode??server.securityMode} onChange={e=>setServer(v=>({...v,smtpSecurityMode:e.target.value as "tls"|"starttls",securityMode:e.target.value as "tls"|"starttls"}))}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
       </div>}
-      <div className="secure-note"><Icon name="lock" size={16}/><span>A credencial nunca é gravada no cache. A fila offline contém somente a operação e o conteúdo necessário para reenvio.</span></div>
+      <div className="secure-note"><Icon name="lock" size={16}/><span>A credencial nunca é gravada no cache. A conta só aparece como conectada depois que entrada e SMTP forem validados.</span></div>
+      {connectionStep&&<div className="connection-progress" role="status"><Icon name="refresh" size={14}/><span>{connectionStep}</span></div>}
       {error&&<div className="form-error">{error}</div>}
       <footer className="modal-footer"><button className="secondary" onClick={onClose}>Cancelar</button><button className="primary" disabled={!email.trim()||busy} onClick={connect}>{busy?"Conectando...":"Conectar"}</button></footer>
     </section>
@@ -1256,7 +1292,10 @@ export default function App() {
   const [signatures,setSignatures] = useState<SignatureItem[]>([]);
   const [profiles,setProfiles] = useState<ProfileItem[]>([]);
   const [activeProfileId,setActiveProfileId] = useState<string|undefined>(()=>localStorage.getItem("seven-mail:active-profile")||undefined);
-  const [syncState,setSyncState] = useState<"idle"|"syncing"|"error">("idle");
+  const [syncState,setSyncState] = useState<"unknown"|"syncing"|"synced"|"error"|"offline">("unknown");
+  const [lastSyncAt,setLastSyncAt] = useState<number>();
+  const [syncError,setSyncError] = useState<string>();
+  const [sendFeedback,setSendFeedback] = useState<{state:"queued"|"sending"|"accepted"|"error";title:string;detail:string;id?:string}|null>(null);
   const externalOpenInitialized = useRef(false);
   const [bootState,setBootState] = useState({
     runtime: false,
@@ -2727,10 +2766,19 @@ export default function App() {
   useEffect(()=>{
     const flush = () => {
       if (!navigator.onLine) return;
-      void bridge.flushOutbox().catch(() => undefined);
+      void bridge.flushOutbox().catch((reason)=>{
+        setSendFeedback({
+          state:"error",
+          title:"Falha na caixa de saída",
+          detail:reason instanceof Error?reason.message:String(reason),
+        });
+      });
       for (const account of profileAccounts) {
         if (account.muted) continue;
-        void bridge.flushMailActions(account.id).catch(() => undefined);
+        void bridge.flushMailActions(account.id).catch((reason)=>{
+          setSyncError(reason instanceof Error?reason.message:String(reason));
+          setSyncState("error");
+        });
       }
     };
 
@@ -2744,13 +2792,31 @@ export default function App() {
   },[profileAccounts]);
 
   useEffect(()=>{
-    if (profileAccounts.length===0) return;
+    if (profileAccounts.length===0){
+      setSyncState("unknown");
+      setSyncError(undefined);
+      return;
+    }
 
     let disposed = false;
     const run = async () => {
-      if (!navigator.onLine || disposed) return;
+      if(disposed) return;
+      if(!navigator.onLine){
+        setSyncState("offline");
+        setSyncError("Sem conexão com a internet.");
+        return;
+      }
 
       const targets=profileAccounts.filter((account)=>!account.muted);
+      if(targets.length===0){
+        setSyncState("unknown");
+        setSyncError("Todas as contas estão com sincronização silenciada.");
+        return;
+      }
+
+      setSyncState("syncing");
+      setSyncError(undefined);
+      const errors:string[]=[];
       await forEachConcurrent(targets,settings.maxConcurrentSyncs??2,async(account)=>{
         if(disposed) return;
         try {
@@ -2780,8 +2846,8 @@ export default function App() {
             surfaceNewMessages(fresh);
           }
           void pushCloudMessages(after).catch(() => undefined);
-        } catch {
-          // A conta pode estar offline, sem credencial ou exigir nova autenticação.
+        } catch (reason) {
+          errors.push(`${account.email}: ${reason instanceof Error?reason.message:String(reason)}`);
         }
       });
 
@@ -2789,16 +2855,32 @@ export default function App() {
         const unifiedMessages = await bridge.listCachedMessages().catch(() => [] as MailMessage[]);
         if (!disposed) setMessages(unifiedMessages);
       }
+      if(disposed) return;
+      if(errors.length){
+        setSyncError(errors.join(" · "));
+        setSyncState("error");
+      }else{
+        setLastSyncAt(Date.now());
+        setSyncError(undefined);
+        setSyncState("synced");
+      }
     };
 
     const intervalMs = settings.syncIntervalMinutes * 60_000 * (settings.batterySaverEnabled ? 2 : 1);
+    void run();
     const timer = window.setInterval(()=>void run(),intervalMs);
     const online = () => void run();
+    const offline = () => {
+      setSyncState("offline");
+      setSyncError("Sem conexão com a internet.");
+    };
     window.addEventListener("online",online);
+    window.addEventListener("offline",offline);
     return ()=>{
       disposed=true;
       window.clearInterval(timer);
       window.removeEventListener("online",online);
+      window.removeEventListener("offline",offline);
     };
   },[profileAccounts,activeAccount?.id,unified,settings.notificationsEnabled,settings.syncIntervalMinutes,settings.batterySaverEnabled,settings.memorySaverEnabled,settings.maxConcurrentSyncs]);
 
@@ -2840,10 +2922,17 @@ export default function App() {
                 surfaceNewMessages(fresh);
               }
               void pushCloudMessages(after).catch(()=>undefined);
+              setLastSyncAt(Date.now());
+              setSyncError(undefined);
+              setSyncState("synced");
             }else{
               await sleep(60_000);
             }
-          }catch{
+          }catch(reason){
+            if(!disposed){
+              setSyncError(`${account.email}: ${reason instanceof Error?reason.message:String(reason)}`);
+              setSyncState(navigator.onLine?"error":"offline");
+            }
             await sleep(60_000);
           }
         }
@@ -3049,9 +3138,20 @@ export default function App() {
 
   async function syncNow() {
     if (profileAccounts.length===0 || syncState==="syncing") return;
+    if(!navigator.onLine){
+      setSyncState("offline");
+      setSyncError("Sem conexão com a internet.");
+      return;
+    }
     setSyncState("syncing");
+    setSyncError(undefined);
     try {
       const targets = (unified ? profileAccounts : (activeAccount ? [activeAccount] : [])).filter((account)=>!account.muted);
+      if(targets.length===0){
+        setSyncState("unknown");
+        setSyncError("Nenhuma conta ativa para sincronizar.");
+        return;
+      }
       await forEachConcurrent(targets,settings.maxConcurrentSyncs??2,async(account)=>{
         await bridge.flushMailActions(account.id).catch(() => 0);
         const path = unified ? "INBOX" : selectedFolder.path;
@@ -3069,9 +3169,12 @@ export default function App() {
       const refreshed = await bridge.listCachedMessages(unified ? undefined : activeAccount?.id);
       setMessages(refreshed);
       void pushCloudMessages(refreshed).catch(() => undefined);
-      setSyncState("idle");
+      setLastSyncAt(Date.now());
+      setSyncError(undefined);
+      setSyncState("synced");
     } catch (reason) {
       console.error(reason);
+      setSyncError(reason instanceof Error?reason.message:String(reason));
       setSyncState("error");
     }
   }
@@ -3092,6 +3195,12 @@ export default function App() {
 
   function handleQueuedSend(info: QueuedSendInfo) {
     const dueAt = new Date(info.sendAt).getTime();
+    setSendFeedback({
+      state:"queued",
+      title:"Mensagem na fila",
+      detail:dueAt>Date.now()+1500?`Agendada para ${new Date(dueAt).toLocaleString()}.`:"Aguardando o momento de envio.",
+      id:info.id,
+    });
     if (info.canUndo) {
       setUndoSend({ id: info.id, expiresAt: dueAt });
     }
@@ -3100,7 +3209,34 @@ export default function App() {
     if (wait <= 60_000) {
       window.setTimeout(() => {
         setUndoSend((current) => current?.id === info.id ? null : current);
-        void bridge.flushOutbox().catch(() => undefined);
+        setSendFeedback({state:"sending",title:"Enviando",detail:"Conectando ao servidor SMTP...",id:info.id});
+        void bridge.flushOutbox()
+          .then(async(sent)=>{
+            const queue=await bridge.listQueue().catch(()=>[]);
+            const pending=queue.find((operation)=>operation.id===info.id);
+            if(pending){
+              setSendFeedback({
+                state:pending.attempts>0?"error":"queued",
+                title:pending.attempts>0?"Envio não aceito":"Mensagem na fila",
+                detail:pending.attempts>0
+                  ? `O SMTP não aceitou o envio. Nova tentativa agendada · tentativa ${pending.attempts}.`
+                  : "A mensagem continua aguardando na fila.",
+                id:info.id,
+              });
+            }else if(sent>0){
+              setSendFeedback({state:"accepted",title:"Aceito pelo SMTP",detail:"O servidor aceitou a mensagem para entrega. Isso não confirma leitura nem entrega final.",id:info.id});
+            }else{
+              setSendFeedback({state:"accepted",title:"Saiu da fila",detail:"A mensagem não está mais pendente. O Seven Mail não a marca como entregue sem confirmação do servidor.",id:info.id});
+            }
+          })
+          .catch((reason)=>{
+            setSendFeedback({
+              state:"error",
+              title:"Falha no envio",
+              detail:reason instanceof Error?reason.message:String(reason),
+              id:info.id,
+            });
+          });
       }, wait);
     }
   }
@@ -3109,7 +3245,10 @@ export default function App() {
     if (!undoSend) return;
     const current = undoSend;
     setUndoSend(null);
-    await bridge.cancelOperation(current.id).catch(() => false);
+    const cancelled=await bridge.cancelOperation(current.id).catch(() => false);
+    if(cancelled){
+      setSendFeedback({state:"queued",title:"Envio cancelado",detail:"A mensagem foi removida da fila local.",id:current.id});
+    }
   }
 
   async function unlockApp(pin:string):Promise<boolean>{
@@ -3183,7 +3322,7 @@ export default function App() {
         <div className="product"><strong>Seven Mail</strong><span>{NAV.find(n=>n.id===section)?.label}</span></div>
         {section==="mail"&&profileAccounts.length>0&&<select className="account-switcher" value={unified?"__all__":(activeAccount?.id??"")} onChange={e=>setActiveId(e.target.value)} aria-label="Selecionar conta"><option value="__all__">Todas as contas</option>{profileAccounts.map(account=><option key={account.id} value={account.id}>{account.email}</option>)}</select>}
         <label className="search"><Icon name="search" size={17}/><input list="seven-mail-search-suggestions" value={search} onFocus={()=>setGlobalSearchOpen(true)} onChange={e=>{setSearch(e.target.value);setGlobalSearchOpen(true);}} onKeyDown={e=>{if(e.key==="Enter"){commitSearchHistory();setGlobalSearchOpen(true);}else if(e.key==="Escape"){setGlobalSearchOpen(false);}}} placeholder="Pesquisar em todo o Seven Mail..."/><kbd>Ctrl K</kbd></label><datalist id="seven-mail-search-suggestions">{searchSuggestions.map((value)=><option value={value} key={value}/>)}</datalist>{section==="mail"&&search.trim()&&<button className="icon-button save-search-button" title="Salvar pesquisa" aria-label="Salvar pesquisa" onClick={()=>void saveCurrentSearch()}><Icon name="star" size={17}/></button>}
-        <div className="top-actions">{lockConfigured&&<button className="icon-button" title="Bloquear agora" onClick={()=>setAppLocked(true)}><Icon name="lock" size={17}/></button>}<span className={"sync "+syncState} role="status" aria-live="polite" aria-atomic="true"><i aria-hidden="true"/> {syncState==="syncing"?"Sincronizando":syncState==="error"?"Erro de sincronização":"Sincronizado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
+        <div className="top-actions">{lockConfigured&&<button className="icon-button" title="Bloquear agora" onClick={()=>setAppLocked(true)}><Icon name="lock" size={17}/></button>}<span className={"sync "+syncState} role="status" aria-live="polite" aria-atomic="true" title={syncError??(lastSyncAt?`Última sincronização confirmada: ${new Date(lastSyncAt).toLocaleString()}`:"Nenhuma sincronização confirmada nesta sessão")}><i aria-hidden="true"/> {profileAccounts.length===0?"Sem conta":syncState==="syncing"?"Sincronizando":syncState==="error"?"Falha na sincronização":syncState==="offline"?"Offline":syncState==="synced"?(lastSyncAt?`Sincronizado ${new Date(lastSyncAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}`:"Sincronizado"):"Não verificado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
         {globalSearchOpen&&search.trim()&&<div className="global-search-popover">
           <header><span><Icon name="search" size={15}/><b>Pesquisa global</b></span><button onClick={()=>setGlobalSearchOpen(false)}><Icon name="x" size={13}/></button></header>
           <div className="global-search-group"><small>E-MAILS</small>{filtered.slice(0,6).map((message)=><button key={message.id} onClick={()=>{setActiveId(message.accountId);setFocusMessageId(message.id);setSection("mail");setGlobalSearchOpen(false);commitSearchHistory();}}><Icon name="mail" size={14}/><span><b>{message.subject||"(sem assunto)"}</b><small>{message.from.name||message.from.email}</small></span></button>)}{filtered.length===0&&<em>Nenhum e-mail encontrado.</em>}</div>
@@ -3192,7 +3331,7 @@ export default function App() {
         </div>}
       </header>
       <div className="content" role="region" aria-label={NAV.find((item)=>item.id===section)?.label??"Conteúdo"}>
-        {section==="mail"&&<MailView accounts={profileAccounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onForwardAsAttachment={(message)=>void forwardAsAttachment(message)} onComposeWithAttachments={(message)=>void composeWithAttachments(message)} onResendMessage={(message)=>void resendMessage(message)} onRedirectMessage={(message)=>void redirectMessage(message)} onRecallMessage={(message)=>void recallMessage(message)} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onCreateSubfolder={activeAccount?(folder)=>void createCustomFolder(folder):undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onMoveToAccount={(message,targetAccountId)=>void moveMessageAcrossAccounts(message,targetAccountId)} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onIgnoreConversation={(message)=>void ignoreConversation(message)} onSetSenderCleanup={setSenderCleanup} onAllowRemoteContent={(sender)=>setSettings((current)=>({...current,remoteContentAllowedSenders:[...new Set([...(current.remoteContentAllowedSenders??[]),sender.toLocaleLowerCase("pt-BR")])]}))} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then(setMessages).catch(()=>undefined));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={{...settings,mailPageSize:settings.memorySaverEnabled?25:(settings.mailPageSize??50)}}/>} 
+        {section==="mail"&&<MailView accounts={profileAccounts} messages={filtered} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onForwardAsAttachment={(message)=>void forwardAsAttachment(message)} onComposeWithAttachments={(message)=>void composeWithAttachments(message)} onResendMessage={(message)=>void resendMessage(message)} onRedirectMessage={(message)=>void redirectMessage(message)} onRecallMessage={(message)=>void recallMessage(message)} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onCreateSubfolder={activeAccount?(folder)=>void createCustomFolder(folder):undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onMoveToAccount={(message,targetAccountId)=>void moveMessageAcrossAccounts(message,targetAccountId)} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onIgnoreConversation={(message)=>void ignoreConversation(message)} onSetSenderCleanup={setSenderCleanup} onAllowRemoteContent={(sender)=>setSettings((current)=>({...current,remoteContentAllowedSenders:[...new Set([...(current.remoteContentAllowedSenders??[]),sender.toLocaleLowerCase("pt-BR")])]}))} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={(next)=>{setSelectedFolder(next);if(activeAccount){queueMicrotask(()=>void bridge.syncFolder(activeAccount.id,next.path,next.name,50).then(()=>bridge.listCachedMessages(activeAccount.id)).then((nextMessages)=>{setMessages(nextMessages);setLastSyncAt(Date.now());setSyncError(undefined);setSyncState("synced");}).catch((reason)=>{setSyncError(reason instanceof Error?reason.message:String(reason));setSyncState(navigator.onLine?"error":"offline");}));}}} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={{...settings,mailPageSize:settings.memorySaverEnabled?25:(settings.mailPageSize??50)}}/>} 
         {section==="calendar"&&<PersistentCalendarView accounts={profileAccounts} settings={settings}/>} 
         {section==="people"&&<PersistentPeopleView query={search} accounts={profileAccounts}/>}
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
@@ -3203,6 +3342,7 @@ export default function App() {
     </main>
     {composeOpen&&<Composer accounts={profileAccounts} signatures={signatures} initialAccountId={composeAccount?.id} initialDraft={draftToOpen} settings={settings} onClose={closeComposer} onQueued={(info)=>{handleQueuedSend(info);void refreshDrafts();}}/>}
     {undoSend&&<div className="undo-send" role="status"><span><Icon name="send" size={16}/><b>Mensagem na fila</b><small>Envio em instantes</small></span><button onClick={()=>void undoQueuedSend()}>Desfazer</button></div>}
+    {sendFeedback&&!undoSend&&<div className={"send-feedback "+sendFeedback.state} role="status" aria-live="polite"><span><Icon name={sendFeedback.state==="error"?"x":"send"} size={16}/><b>{sendFeedback.title}</b><small>{sendFeedback.detail}</small></span><button className="icon-button" aria-label="Fechar status de envio" onClick={()=>setSendFeedback(null)}><Icon name="x" size={13}/></button></div>}
     {accountOpen&&<AddAccountModal onClose={()=>setAccountOpen(false)} onAdded={account=>{setAccounts(v=>[...v,account]);setActiveId(account.id);void pushCloudAccount(account).catch(()=>undefined);}}/>}
     <QuickNotificationStack
       messages={quickNotifications}
