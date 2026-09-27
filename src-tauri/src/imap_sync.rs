@@ -263,17 +263,25 @@ fn folder_identity(path: &str, attributes: &[NameAttribute<'_>]) -> (String, Str
     (path.to_owned(), "custom".into())
 }
 
-pub fn wait_for_inbox_change(account: &AccountProfile, timeout_seconds: u64) -> Result<bool, String> {
+pub fn wait_for_folder_change(
+    account: &AccountProfile,
+    mailbox: &str,
+    timeout_seconds: u64,
+) -> Result<bool, String> {
     if account.incoming_protocol.eq_ignore_ascii_case("pop3") {
         return Ok(false);
     }
+    if mailbox.trim().is_empty() {
+        return Err("Pasta IMAP inválida para monitoramento.".to_string());
+    }
 
     async_std::task::block_on(async {
+        let timeout = std::time::Duration::from_secs(timeout_seconds.clamp(5, 60));
         let mut session = login(account).await?;
         session
-            .select("INBOX")
+            .select(mailbox)
             .await
-            .map_err(|error| format!("Não foi possível abrir a caixa de entrada para IDLE: {error}"))?;
+            .map_err(|error| format!("Não foi possível abrir {mailbox} para IDLE: {error}"))?;
 
         let capabilities = session
             .capabilities()
@@ -281,24 +289,104 @@ pub fn wait_for_inbox_change(account: &AccountProfile, timeout_seconds: u64) -> 
             .map_err(|error| format!("Falha ao consultar recursos IMAP: {error}"))?;
         if !capabilities.has_str("IDLE") {
             session.logout().await.map_err(|error| error.to_string())?;
+            // Preserve a bounded polling cadence on servers without IDLE
+            // instead of reconnecting in a tight loop.
+            async_std::task::sleep(timeout).await;
             return Ok(false);
         }
 
         let mut idle = session.idle();
         idle.init()
             .await
-            .map_err(|error| format!("Servidor recusou IMAP IDLE: {error}"))?;
-        let (wait, _interrupt) = idle.wait_with_timeout(std::time::Duration::from_secs(timeout_seconds.clamp(5, 60)));
+            .map_err(|error| format!("Servidor recusou IMAP IDLE em {mailbox}: {error}"))?;
+        let (wait, _interrupt) = idle.wait_with_timeout(timeout);
         let outcome = wait
             .await
-            .map_err(|error| format!("IMAP IDLE falhou: {error}"))?;
+            .map_err(|error| format!("IMAP IDLE falhou em {mailbox}: {error}"))?;
         let changed = matches!(outcome, IdleResponse::NewData(_));
         let mut session = idle.done()
             .await
-            .map_err(|error| format!("Falha ao encerrar IMAP IDLE: {error}"))?;
+            .map_err(|error| format!("Falha ao encerrar IMAP IDLE em {mailbox}: {error}"))?;
         session.logout().await.map_err(|error| error.to_string())?;
         Ok(changed)
     })
+}
+
+pub fn wait_for_inbox_change(account: &AccountProfile, timeout_seconds: u64) -> Result<bool, String> {
+    wait_for_folder_change(account, "INBOX", timeout_seconds)
+}
+
+fn provider_saves_sent_automatically(account: &AccountProfile) -> bool {
+    matches!(account.provider.to_ascii_lowercase().as_str(), "gmail" | "microsoft")
+}
+
+fn header_search_value(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+pub fn ensure_sent_copy(
+    paths: &AppPaths,
+    account: &AccountProfile,
+    operation_id: &str,
+    raw: &[u8],
+    limit: u32,
+) -> Result<Option<MailFolder>, String> {
+    if account.incoming_protocol.eq_ignore_ascii_case("pop3") {
+        return Ok(None);
+    }
+
+    let folders = list_folders(account)?;
+    let Some(sent_folder) = folders.into_iter().find(|folder| folder.role == "sent") else {
+        return Err("O servidor IMAP não informou uma pasta de Enviados.".to_string());
+    };
+    let sent_path = sent_folder.path.clone();
+    let operation_value = header_search_value(operation_id);
+
+    let found = async_std::task::block_on(async {
+        let mut session = login(account).await?;
+        session
+            .select(&sent_path)
+            .await
+            .map_err(|error| format!("Não foi possível abrir Enviados ({sent_path}): {error}"))?;
+
+        let attempts = if provider_saves_sent_automatically(account) { 8 } else { 2 };
+        let mut present = false;
+        for attempt in 0..attempts {
+            let query = format!("HEADER X-Seven-Mail-Operation-ID \"{operation_value}\"");
+            let matches = session
+                .uid_search(query)
+                .await
+                .map_err(|error| format!("Falha ao confirmar cópia em Enviados: {error}"))?;
+            if !matches.is_empty() {
+                present = true;
+                break;
+            }
+            if attempt + 1 < attempts {
+                async_std::task::sleep(std::time::Duration::from_millis(500)).await;
+            }
+        }
+
+        if !present && !provider_saves_sent_automatically(account) {
+            session
+                .append(&sent_path, None, None, raw)
+                .await
+                .map_err(|error| format!("SMTP aceitou a mensagem, mas não foi possível salvar a cópia em Enviados: {error}"))?;
+            present = true;
+        }
+
+        session.logout().await.map_err(|error| error.to_string())?;
+        Ok::<bool, String>(present)
+    })?;
+
+    // Even for providers that save the sent copy themselves, always refresh
+    // the authoritative remote folder immediately after SMTP acceptance.
+    let _ = sync_folder(paths, account, &sent_folder.path, &sent_folder.name, limit.clamp(1, 200))?;
+
+    if !found && provider_saves_sent_automatically(account) {
+        return Err("SMTP aceitou a mensagem, mas a cópia ainda não apareceu na pasta Enviados do provedor.".to_string());
+    }
+
+    Ok(Some(sent_folder))
 }
 
 pub fn append_raw_message(account: &AccountProfile, mailbox: &str, raw: &[u8]) -> Result<(), String> {
