@@ -81,10 +81,24 @@ fn smtp_imap_pop3_roundtrip() {
         }),
     };
 
-    providers::send_queued(&imap_account, &operation).expect("Seven Mail SMTP send failed");
-
     let paths = AppPaths::resolve().expect("Seven Mail app paths must resolve in CI");
     storage::clear_cache(&paths).expect("CI cache must be clean");
+
+    // GreenMail does not auto-create/save Sent for a generic SMTP client.
+    // Create it so Seven Mail's IMAP APPEND fallback is exercised.
+    imap_sync::create_folder(&imap_account, "Sent").expect("create generic Sent folder");
+    let raw = providers::send_queued_raw(&imap_account, &operation).expect("Seven Mail SMTP send failed");
+    let sent_folder = imap_sync::ensure_sent_copy(&paths, &imap_account, &operation.id, &raw, 25)
+        .expect("Seven Mail must reconcile a Sent copy")
+        .expect("IMAP account must expose a Sent folder");
+    assert_eq!(sent_folder.role, "sent");
+
+    let sent_messages = storage::list_cached_messages(&paths, Some(&imap_account.id))
+        .expect("Sent cache must be readable");
+    assert!(
+        sent_messages.iter().any(|message| message.folder == "Enviados" && message.subject == subject),
+        "Seven Mail did not cache the generic IMAP Sent copy"
+    );
 
     let mut imap_ok = false;
     let mut imap_error = None;
@@ -210,6 +224,101 @@ fn external_smtp_smoke() {
     println!("Seven Mail external SMTP accepted recipient={recipient} marker={marker}");
 }
 
+
+
+#[test]
+fn external_outbox_sent_smoke() {
+    if std::env::var("SEVEN_MAIL_EXTERNAL_SMOKE").ok().as_deref() != Some("1") {
+        eprintln!("Seven Mail external outbox/Sent smoke skipped.");
+        return;
+    }
+
+    let required = |name: &str| {
+        std::env::var(name).unwrap_or_else(|_| panic!("missing required environment variable {name}"))
+    };
+
+    let email = required("SEVEN_MAIL_EXTERNAL_EMAIL");
+    let username = std::env::var("SEVEN_MAIL_EXTERNAL_USERNAME").unwrap_or_else(|_| email.clone());
+    let smtp_host = required("SEVEN_MAIL_EXTERNAL_SMTP_HOST");
+    let smtp_port = required("SEVEN_MAIL_EXTERNAL_SMTP_PORT")
+        .parse::<u16>()
+        .expect("SEVEN_MAIL_EXTERNAL_SMTP_PORT must be a valid port");
+    let smtp_security = std::env::var("SEVEN_MAIL_EXTERNAL_SMTP_SECURITY")
+        .unwrap_or_else(|_| "tls".to_string());
+    let recipient = std::env::var("SEVEN_MAIL_EXTERNAL_RECIPIENT")
+        .unwrap_or_else(|_| "roval90075@hiredify.com".to_string());
+
+    let account_id = format!("ci-external-sent-{}", uuid::Uuid::new_v4());
+    let account: AccountProfile = serde_json::from_value(serde_json::json!({
+        "id": account_id,
+        "displayName": "Seven Mail External Sent",
+        "email": email,
+        "provider": "gmail",
+        "color": "#6d5dfc",
+        "isDefault": false,
+        "username": username,
+        "incomingProtocol": "imap",
+        "imapHost": "imap.gmail.com",
+        "imapPort": 993,
+        "imapSecurityMode": "tls",
+        "smtpHost": smtp_host,
+        "smtpPort": smtp_port,
+        "smtpSecurityMode": smtp_security,
+        "securityMode": smtp_security,
+        "connectionTimeoutSeconds": 20
+    }))
+    .expect("external Gmail account must deserialize");
+
+    let paths = AppPaths::resolve().expect("Seven Mail app paths must resolve in external CI");
+    storage::save_account(&paths, account.clone()).expect("save external test account");
+
+    let marker = uuid::Uuid::new_v4().to_string();
+    let subject = format!("Seven Mail live Sent smoke {marker}");
+    let operation = QueueOperation {
+        id: uuid::Uuid::new_v4().to_string(),
+        kind: "send".to_string(),
+        account_id: account.id.clone(),
+        created_at: chrono::Utc::now().to_rfc3339(),
+        attempts: 0,
+        payload: serde_json::json!({
+            "fromAddress": account.email,
+            "to": recipient,
+            "cc": "",
+            "bcc": "",
+            "subject": subject,
+            "bodyText": format!("Seven Mail queue -> SMTP -> Gmail Sent marker: {marker}"),
+            "bodyHtml": "",
+            "attachments": [],
+            "priority": "normal",
+            "requestReadReceipt": false,
+            "requestDeliveryReceipt": false,
+            "sendAt": chrono::Utc::now().to_rfc3339()
+        }),
+    };
+    storage::queue_operation(&paths, &operation).expect("queue external Sent smoke");
+
+    let result = crate::flush_outbox().expect("Seven Mail outbox flush must succeed");
+    assert!(result.sent >= 1, "outbox did not report a sent message");
+    assert!(
+        result.sent_account_ids.iter().any(|value| value == &account.id),
+        "outbox result did not include the sending account"
+    );
+    assert!(
+        result.sent_copy_warnings.is_empty(),
+        "Gmail accepted SMTP but Sent reconciliation warned: {:?}",
+        result.sent_copy_warnings
+    );
+
+    let messages = storage::list_cached_messages(&paths, Some(&account.id))
+        .expect("read external Sent cache");
+    assert!(
+        messages.iter().any(|message| message.folder == "Enviados" && message.subject == subject),
+        "Gmail Sent copy was not synchronized into Seven Mail"
+    );
+
+    let _ = storage::delete_account(&paths, &account.id);
+    println!("Seven Mail Gmail outbox/Sent confirmed recipient={recipient} marker={marker}");
+}
 
 #[test]
 fn external_receive_smoke() {
