@@ -33,7 +33,7 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .main{min-width:0;display:grid;grid-template-rows:66px minmax(0,1fr)}.topbar{display:flex;align-items:center;gap:14px;padding:10px 20px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--surface) 76%,transparent);backdrop-filter:blur(24px)}
 .product{display:flex;flex:0 0 190px;flex-direction:column}.product strong{font-size:13px}.product span{font-size:10px;color:var(--muted);margin-top:2px}.account-switcher{height:40px;max-width:220px;min-width:150px;border:1px solid var(--line);background:var(--solid);color:var(--text);border-radius:12px;padding:0 34px 0 11px;font-size:11px;font-weight:700;outline:none}.account-switcher:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}.search{height:40px;min-width:280px;max-width:620px;flex:1;border:1px solid var(--line);background:var(--solid);border-radius:13px;display:flex;align-items:center;padding:0 12px;gap:9px;box-shadow:0 4px 16px rgba(45,40,80,.04)}
 .search svg{color:var(--muted)}.search input{border:0;outline:0;background:transparent;color:var(--text);flex:1;min-width:0;font-size:12px}.search input::placeholder{color:var(--muted2)}kbd{font-size:9px;color:var(--muted);background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:3px 5px}
-.top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px}.sync{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:7px}.sync i{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px rgba(52,183,132,.12)}
+.top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px}.sync{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:7px;max-width:260px;white-space:nowrap}.sync i{width:7px;height:7px;border-radius:50%;background:var(--muted2);box-shadow:0 0 0 4px color-mix(in srgb,var(--muted2) 12%,transparent)}.sync.synced i{background:var(--green);box-shadow:0 0 0 4px rgba(52,183,132,.12)}.sync.syncing i{background:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 13%,transparent);animation:pulse 1s ease-in-out infinite}.sync.error{color:#d95656}.sync.error i{background:#d95656;box-shadow:0 0 0 4px rgba(217,86,86,.12)}.sync.offline{color:var(--muted)}.sync.offline i{background:#d69b43;box-shadow:0 0 0 4px rgba(214,155,67,.12)}.sync.unknown i{background:var(--muted2)}
 .icon-button{width:35px;height:35px;border-radius:10px;background:transparent;color:var(--muted);display:grid;place-items:center}.icon-button:hover{background:var(--soft);color:var(--text)}.content{min-width:0;min-height:0}
 .mail-layout{height:100%;display:grid;grid-template-columns:218px minmax(310px,380px) minmax(390px,1fr)}.folder-pane{border-right:1px solid var(--line);background:color-mix(in srgb,var(--surface) 66%,transparent);padding:17px 12px;overflow:auto}.compose-button,.primary,.secondary,.ghost{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:10px;font-size:11px;font-weight:750;transition:.16s}
 .compose-button{width:100%;height:41px;background:linear-gradient(135deg,var(--accent2),var(--accent));color:#fff;box-shadow:0 11px 24px rgba(103,87,230,.2)}.compose-button:hover,.primary:hover{transform:translateY(-1px);filter:brightness(1.03)}
@@ -161,6 +161,13 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .account-settings-copy b,.account-settings-copy span,.account-settings-copy small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .account-settings-copy span{font-size:12px;color:var(--muted);margin-top:2px}
 .account-settings-copy small{font-size:10px;color:var(--accent);margin-top:4px}
+.account-health{display:flex;align-items:flex-start;gap:6px;margin-top:5px;font-size:9px;font-style:normal;line-height:1.35;white-space:normal;color:var(--muted)}
+.account-health i{width:6px;height:6px;border-radius:50%;background:var(--muted2);flex:none;margin-top:3px}
+.account-health.testing i{background:var(--accent)}
+.account-health.ok{color:#2b9b72}.account-health.ok i{background:#2b9b72}
+.account-health.error{color:#d95656}.account-health.error i{background:#d95656}
+.connection-progress{margin:0 24px 12px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--accent) 25%,var(--line));border-radius:10px;background:var(--accent-soft);display:flex;align-items:center;gap:8px;font-size:10px;color:var(--text)}
+.connection-progress svg{color:var(--accent);animation:spin .9s linear infinite}
 .account-settings-actions{display:flex;align-items:center;gap:4px}
 .danger-icon{color:#d65a5a}
 .account-edit-modal{width:min(720px,calc(100vw - 32px))}
@@ -211,12 +218,19 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .undo-send b{font-size:11px}
 .undo-send small{font-size:9px;color:var(--muted);margin-top:2px}
 .undo-send button{border:0;border-radius:9px;background:var(--accent);color:#fff;font-size:10px;font-weight:800;padding:8px 13px;cursor:pointer}
+.send-feedback{position:fixed;left:50%;bottom:22px;z-index:119;transform:translateX(-50%);display:flex;align-items:center;gap:14px;min-width:360px;max-width:min(620px,calc(100vw - 28px));padding:12px 13px 12px 15px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--surface) 96%,transparent);box-shadow:0 20px 60px rgba(15,18,40,.20);backdrop-filter:blur(18px)}
+.send-feedback>span{display:grid;grid-template-columns:auto 1fr;column-gap:9px;align-items:center;flex:1;min-width:0}
+.send-feedback>span svg{grid-row:1/3;color:var(--accent)}
+.send-feedback b{font-size:11px}.send-feedback small{font-size:9px;color:var(--muted);margin-top:2px;white-space:normal;line-height:1.35}
+.send-feedback.accepted{border-color:color-mix(in srgb,var(--green) 35%,var(--line))}.send-feedback.accepted>span svg{color:var(--green)}
+.send-feedback.error{border-color:rgba(217,86,86,.35)}.send-feedback.error>span svg{color:#d95656}
+.send-feedback.sending>span svg{animation:pulse 1s ease-in-out infinite}
 @media(max-width:720px){
   .composer-pro{width:100vw;height:100vh;max-height:none;border-radius:0}
   .composer-header-actions .draft-state{display:none}
   .composer-footer{align-items:flex-end;flex-direction:column}
   .composer-footer>div{width:100%;justify-content:flex-end;flex-wrap:wrap}
-  .undo-send{left:14px;right:14px;bottom:14px;min-width:0;transform:none}
+  .undo-send,.send-feedback{left:14px;right:14px;bottom:14px;min-width:0;transform:none}
 }
 
 
