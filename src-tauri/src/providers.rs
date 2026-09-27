@@ -24,6 +24,9 @@ pub fn discover(email: &str) -> ProviderSettings {
         "gmail.com" | "googlemail.com" => ProviderSettings {
             imap_host: "imap.gmail.com".into(),
             imap_port: 993,
+            pop3_host: Some("pop.gmail.com".into()),
+            pop3_port: Some(995),
+            pop3_security_mode: Some("tls".into()),
             smtp_host: "smtp.gmail.com".into(),
             smtp_port: 465,
             security_mode: "tls".into(),
@@ -33,6 +36,9 @@ pub fn discover(email: &str) -> ProviderSettings {
         "outlook.com" | "hotmail.com" | "live.com" | "office365.com" => ProviderSettings {
             imap_host: "outlook.office365.com".into(),
             imap_port: 993,
+            pop3_host: Some("outlook.office365.com".into()),
+            pop3_port: Some(995),
+            pop3_security_mode: Some("tls".into()),
             smtp_host: "smtp.office365.com".into(),
             smtp_port: 587,
             security_mode: "starttls".into(),
@@ -42,6 +48,9 @@ pub fn discover(email: &str) -> ProviderSettings {
         "yahoo.com" | "yahoo.com.br" => ProviderSettings {
             imap_host: "imap.mail.yahoo.com".into(),
             imap_port: 993,
+            pop3_host: Some("pop.mail.yahoo.com".into()),
+            pop3_port: Some(995),
+            pop3_security_mode: Some("tls".into()),
             smtp_host: "smtp.mail.yahoo.com".into(),
             smtp_port: 465,
             security_mode: "tls".into(),
@@ -51,6 +60,9 @@ pub fn discover(email: &str) -> ProviderSettings {
         "icloud.com" | "me.com" | "mac.com" => ProviderSettings {
             imap_host: "imap.mail.me.com".into(),
             imap_port: 993,
+            pop3_host: None,
+            pop3_port: None,
+            pop3_security_mode: None,
             smtp_host: "smtp.mail.me.com".into(),
             smtp_port: 587,
             security_mode: "starttls".into(),
@@ -60,6 +72,9 @@ pub fn discover(email: &str) -> ProviderSettings {
         _ => ProviderSettings {
             imap_host: format!("imap.{domain}"),
             imap_port: 993,
+            pop3_host: Some(format!("pop.{domain}")),
+            pop3_port: Some(995),
+            pop3_security_mode: Some("tls".into()),
             smtp_host: format!("smtp.{domain}"),
             smtp_port: 465,
             security_mode: "tls".into(),
@@ -97,9 +112,18 @@ pub fn settings_for(account: &AccountProfile) -> ProviderSettings {
         .clone()
         .unwrap_or_else(|| smtp_security_mode.clone());
 
+    let pop3_host = account.pop3_host.clone().or_else(|| discovered.pop3_host.clone());
+    let pop3_port = account.pop3_port.or(discovered.pop3_port);
+    let pop3_security_mode = account.pop3_security_mode.clone().or_else(|| {
+        account.security_mode.clone().or_else(|| discovered.pop3_security_mode.clone())
+    });
+
     ProviderSettings {
         imap_host,
         imap_port,
+        pop3_host,
+        pop3_port,
+        pop3_security_mode,
         smtp_host,
         smtp_port,
         security_mode,
@@ -536,6 +560,13 @@ mod protocol_security_tests {
             assert_eq!(settings.imap_security_mode, "tls");
             assert_eq!(settings.smtp_port, 587);
             assert_eq!(settings.smtp_security_mode, "starttls");
+            if email.ends_with("@outlook.com") {
+                assert_eq!(settings.pop3_host.as_deref(), Some("outlook.office365.com"));
+                assert_eq!(settings.pop3_port, Some(995));
+                assert_eq!(settings.pop3_security_mode.as_deref(), Some("tls"));
+            } else {
+                assert!(settings.pop3_host.is_none(), "iCloud não oferece POP3");
+            }
         }
     }
 
