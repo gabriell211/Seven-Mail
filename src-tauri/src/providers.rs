@@ -27,6 +27,8 @@ pub fn discover(email: &str) -> ProviderSettings {
             smtp_host: "smtp.gmail.com".into(),
             smtp_port: 465,
             security_mode: "tls".into(),
+            imap_security_mode: "tls".into(),
+            smtp_security_mode: "tls".into(),
         },
         "outlook.com" | "hotmail.com" | "live.com" | "office365.com" => ProviderSettings {
             imap_host: "outlook.office365.com".into(),
@@ -34,6 +36,8 @@ pub fn discover(email: &str) -> ProviderSettings {
             smtp_host: "smtp.office365.com".into(),
             smtp_port: 587,
             security_mode: "starttls".into(),
+            imap_security_mode: "tls".into(),
+            smtp_security_mode: "starttls".into(),
         },
         "yahoo.com" | "yahoo.com.br" => ProviderSettings {
             imap_host: "imap.mail.yahoo.com".into(),
@@ -41,6 +45,8 @@ pub fn discover(email: &str) -> ProviderSettings {
             smtp_host: "smtp.mail.yahoo.com".into(),
             smtp_port: 465,
             security_mode: "tls".into(),
+            imap_security_mode: "tls".into(),
+            smtp_security_mode: "tls".into(),
         },
         "icloud.com" | "me.com" | "mac.com" => ProviderSettings {
             imap_host: "imap.mail.me.com".into(),
@@ -48,6 +54,8 @@ pub fn discover(email: &str) -> ProviderSettings {
             smtp_host: "smtp.mail.me.com".into(),
             smtp_port: 587,
             security_mode: "starttls".into(),
+            imap_security_mode: "tls".into(),
+            smtp_security_mode: "starttls".into(),
         },
         _ => ProviderSettings {
             imap_host: format!("imap.{domain}"),
@@ -55,18 +63,48 @@ pub fn discover(email: &str) -> ProviderSettings {
             smtp_host: format!("smtp.{domain}"),
             smtp_port: 465,
             security_mode: "tls".into(),
+            imap_security_mode: "tls".into(),
+            smtp_security_mode: "tls".into(),
         },
     }
 }
 
 pub fn settings_for(account: &AccountProfile) -> ProviderSettings {
     let discovered = discover(&account.email);
+    let imap_host = account.imap_host.clone().unwrap_or_else(|| discovered.imap_host.clone());
+    let imap_port = account.imap_port.unwrap_or(discovered.imap_port);
+    let smtp_host = account.smtp_host.clone().unwrap_or_else(|| discovered.smtp_host.clone());
+    let smtp_port = account.smtp_port.unwrap_or(discovered.smtp_port);
+
+    // Migrate legacy accounts safely. Older Seven Mail builds stored a single
+    // security mode for both protocols. IMAP 993 is implicit TLS even when
+    // SMTP 587 for the same provider requires STARTTLS.
+    let imap_security_mode = account.imap_security_mode.clone().unwrap_or_else(|| {
+        match account.security_mode.as_deref() {
+            Some(mode) if imap_port == 993 && mode.eq_ignore_ascii_case("starttls") => "tls".to_string(),
+            Some(mode) => mode.to_string(),
+            None => discovered.imap_security_mode.clone(),
+        }
+    });
+    let smtp_security_mode = account.smtp_security_mode.clone().unwrap_or_else(|| {
+        account
+            .security_mode
+            .clone()
+            .unwrap_or_else(|| discovered.smtp_security_mode.clone())
+    });
+    let security_mode = account
+        .security_mode
+        .clone()
+        .unwrap_or_else(|| smtp_security_mode.clone());
+
     ProviderSettings {
-        imap_host: account.imap_host.clone().unwrap_or(discovered.imap_host),
-        imap_port: account.imap_port.unwrap_or(discovered.imap_port),
-        smtp_host: account.smtp_host.clone().unwrap_or(discovered.smtp_host),
-        smtp_port: account.smtp_port.unwrap_or(discovered.smtp_port),
-        security_mode: account.security_mode.clone().unwrap_or(discovered.security_mode),
+        imap_host,
+        imap_port,
+        smtp_host,
+        smtp_port,
+        security_mode,
+        imap_security_mode,
+        smtp_security_mode,
     }
 }
 
@@ -83,12 +121,20 @@ fn smtp_transport(account: &AccountProfile) -> Result<SmtpTransport, String> {
     };
     let credentials = Credentials::new(username, secret);
 
-    let builder = if settings.security_mode.eq_ignore_ascii_case("starttls") {
+    let mode = settings.smtp_security_mode.to_ascii_lowercase();
+    let builder = if mode == "plain" {
+        let host = settings.smtp_host.trim().to_ascii_lowercase();
+        if !matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1" | "[::1]") {
+            return Err("SMTP sem TLS só é permitido para relay local.".to_string());
+        }
+        SmtpTransport::builder_dangerous(&settings.smtp_host)
+    } else if mode == "starttls" {
         SmtpTransport::starttls_relay(&settings.smtp_host)
+            .map_err(|error| error.to_string())?
     } else {
         SmtpTransport::relay(&settings.smtp_host)
+            .map_err(|error| error.to_string())?
     }
-    .map_err(|error| error.to_string())?
     .port(settings.smtp_port)
     .credentials(credentials)
     .authentication(if account.oauth_enabled { vec![Mechanism::Xoauth2] } else { vec![Mechanism::Plain, Mechanism::Login] })
@@ -474,4 +520,42 @@ pub fn send_email_reaction(
         .send(&message)
         .map_err(|error| format!("Falha ao enviar reação: {error}"))?;
     Ok(())
+}
+
+
+#[cfg(test)]
+mod protocol_security_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn microsoft_and_icloud_use_tls_for_imap_and_starttls_for_smtp() {
+        for email in ["test@outlook.com", "test@icloud.com"] {
+            let settings = discover(email);
+            assert_eq!(settings.imap_port, 993);
+            assert_eq!(settings.imap_security_mode, "tls");
+            assert_eq!(settings.smtp_port, 587);
+            assert_eq!(settings.smtp_security_mode, "starttls");
+        }
+    }
+
+    #[test]
+    fn legacy_starttls_account_on_imap_993_is_migrated_to_implicit_tls() {
+        let account: AccountProfile = serde_json::from_value(json!({
+            "id": "legacy",
+            "displayName": "Legacy",
+            "email": "test@outlook.com",
+            "provider": "microsoft",
+            "color": "#000000",
+            "isDefault": true,
+            "securityMode": "starttls",
+            "imapPort": 993,
+            "smtpPort": 587
+        }))
+        .expect("valid account");
+
+        let settings = settings_for(&account);
+        assert_eq!(settings.imap_security_mode, "tls");
+        assert_eq!(settings.smtp_security_mode, "starttls");
+    }
 }
