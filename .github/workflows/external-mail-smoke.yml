@@ -14,12 +14,12 @@ jobs:
   external-smtp:
     runs-on: ubuntu-22.04
     env:
-      SEVEN_MAIL_EXTERNAL_EMAIL: ${{ secrets.SEVEN_MAIL_EXTERNAL_EMAIL || secrets.SEVEN_TEST_EMAIL }}
-      SEVEN_MAIL_EXTERNAL_USERNAME: ${{ secrets.SEVEN_MAIL_EXTERNAL_USERNAME }}
-      SEVEN_MAIL_EXTERNAL_SMTP_HOST: ${{ secrets.SEVEN_MAIL_EXTERNAL_SMTP_HOST }}
-      SEVEN_MAIL_EXTERNAL_SMTP_PORT: ${{ secrets.SEVEN_MAIL_EXTERNAL_SMTP_PORT }}
-      SEVEN_MAIL_EXTERNAL_SMTP_SECURITY: ${{ secrets.SEVEN_MAIL_EXTERNAL_SMTP_SECURITY }}
-      SEVEN_MAIL_TEST_SECRET: ${{ secrets.SEVEN_MAIL_EXTERNAL_PASSWORD || secrets.SEVEN_TEST_PASSWORD }}
+      SEVEN_MAIL_EXTERNAL_EMAIL: ${{ secrets.SEVEN_MAIL_EXTERNAL_EMAIL }}
+      SEVEN_MAIL_EXTERNAL_USERNAME: ${{ secrets.SEVEN_MAIL_EXTERNAL_EMAIL }}
+      SEVEN_MAIL_EXTERNAL_SMTP_HOST: smtp.gmail.com
+      SEVEN_MAIL_EXTERNAL_SMTP_PORT: "465"
+      SEVEN_MAIL_EXTERNAL_SMTP_SECURITY: tls
+      SEVEN_MAIL_TEST_SECRET: ${{ secrets.SEVEN_MAIL_GMAIL_APP_PASSWORD }}
       SEVEN_MAIL_EXTERNAL_RECIPIENT: roval90075@hiredify.com
       SEVEN_MAIL_PROTOCOL_E2E: "1"
       XDG_DATA_HOME: /tmp/seven-mail-external-smoke
@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           missing=0
-          for name in             SEVEN_MAIL_EXTERNAL_EMAIL             SEVEN_MAIL_EXTERNAL_SMTP_HOST             SEVEN_MAIL_EXTERNAL_SMTP_PORT             SEVEN_MAIL_TEST_SECRET
+          for name in SEVEN_MAIL_EXTERNAL_EMAIL SEVEN_MAIL_TEST_SECRET
           do
             if [ -z "${!name}" ]; then
               echo "::notice title=Seven Mail external smoke::Missing GitHub Actions secret: $name"
