@@ -1,12 +1,9 @@
 name: Neon SDK dependency validation
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/neon-sdk-validation.yml'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'src/lib/neon.ts'
-      - 'vite.config.ts'
+  # This workflow rewrites package.json and resolves an uncommitted candidate.
+  # It is not a test of the PR's committed dependencies. Run it explicitly
+  # before promoting any SDK upgrade; failures must block that promotion.
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -77,6 +74,15 @@ jobs:
             throw new Error('API key peer metadata does not match the SDK family');
           }
           pkg.dependencies['@better-auth/api-key'] = '1.7.6';
+          // Resolve the compatible exact core within each dependent subtree.
+          // The peer range ^1.7.6 permits 1.7.6; a later 1.7.27 requires a
+          // different better-call release. Keep strict peer validation enabled.
+          pkg.overrides = {
+            ...(pkg.overrides ?? {}),
+            '@better-auth/passkey@1.7.6': {'@better-auth/core':'1.7.6'},
+            '@better-auth/api-key@1.7.6': {'@better-auth/core':'1.7.6'},
+            '@daveyplate/better-auth-ui@3.4.0': {'@better-auth/api-key':'1.7.6'}
+          };
           fs.writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\n');
           JS
           rm package-lock.json
