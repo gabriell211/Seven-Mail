@@ -35,13 +35,46 @@ function Replace-ExactlyOnce([string] $Path, [string] $Before, [string] $After) 
 
 # /Z7 puts debug information into each object instead of a compiler PDB.
 Replace-ExactlyOnce $config '/Zi /Fdossl_static.pdb' '/Z7'
-# Static-library installation must no longer require that external PDB.
-$old = @'
+# Cargo's published source may already omit the PDB installation recipe.
+# Match the recipe by its commands, not by indentation or CRLF/LF formatting.
+function Remove-StaticPdbInstall([string] $Source) {
+    $pattern = '(?im)^[ \t]*@?if[ \t]+"\$\(SHLIBS\)"[ \t]*==[ \t]*""[ \t]*\\[ \t]*\r?\n[ \t]*"?\$\(PERL\)"?[ \t]+"?\$\(SRCDIR\)[\\/]util[\\/]copy\.pl"?[ \t]+"?ossl_static\.pdb"?[ \t]+"?\$\(libdir\)"?[ \t]*(?:\r?\n|$)'
+    $matches = [regex]::Matches($Source, $pattern)
+    if ($matches.Count -gt 1) { throw 'Multiple OpenSSL static PDB install recipes' }
+    $result = [regex]::Replace($Source, $pattern, '')
+    # Cleanup references are harmless. An unrecognized installation command
+    # must not be silently left behind.
+    $remaining = @($result -split '\r?\n' | Where-Object {
+        $_ -match '(?i)ossl_static\.pdb' -and $_ -notmatch '^\s*[-@]*\s*del\b'
+    })
+    if ($remaining.Count -ne 0) {
+        throw ("Unexpected OpenSSL PDB references: " + ($remaining -join ' | '))
+    }
+    return $result
+}
+
+# Test both newline conventions, flexible recipe indentation and an upstream
+# template that has already removed the installation command.
+$recipe = @'
 	@if "$(SHLIBS)"=="" \
-	 "$(PERL)" "$(SRCDIR)\util\copy.pl" ossl_static.pdb "$(libdir)"
+	  "$(PERL)" "$(SRCDIR)\util\copy.pl" ossl_static.pdb "$(libdir)"
 '@
-# Include its trailing newline, otherwise the make recipe has a blank line.
-Replace-ExactlyOnce $template ($old + "`n") ''
+$lf = $recipe.Replace("`r`n", "`n") + "`n"
+$crlf = $lf.Replace("`n", "`r`n")
+foreach ($fixture in @($lf, $crlf, $lf.Replace("`t", '    '))) {
+    if ((Remove-StaticPdbInstall $fixture) -ne '') { throw 'Static PDB recipe self-test failed' }
+}
+$cleanup = '	-del /Q /F $(LIBS) libcrypto.* libssl.* ossl_static.pdb'
+if ((Remove-StaticPdbInstall $cleanup) -ne $cleanup) { throw 'Static PDB cleanup self-test failed' }
+
+$templateSource = [IO.File]::ReadAllText($template)
+$templatePatched = Remove-StaticPdbInstall $templateSource
+if ($templatePatched -ne $templateSource) {
+    [IO.File]::WriteAllText($template, $templatePatched, [Text.UTF8Encoding]::new($false))
+    Write-Host 'Removed external static PDB install recipe.'
+} else {
+    Write-Host 'Published OpenSSL template already has no external static PDB install recipe.'
+}
 # Force a rebuild from the prepared source; no stale compiled PDB references.
 cargo clean --locked
 if ($LASTEXITCODE -ne 0) { throw 'Cargo clean failed' }
