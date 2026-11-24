@@ -1,5 +1,5 @@
 use aes_gcm::{aead::{Aead, KeyInit, OsRng, rand_core::RngCore}, Aes256Gcm, Nonce};
-use seven_mail_sqlite_store::{legacy::{migrate_snapshot, create_snapshot, migrate_completed_snapshot}, Store};
+use seven_mail_sqlite_store::{legacy::{migrate_snapshot, create_snapshot, migrate_completed_snapshot, verify_completed_snapshot}, Store};
 use std::{fs, path::{Path,PathBuf}, sync::atomic::{AtomicU64,Ordering}};
 static NEXT: AtomicU64=AtomicU64::new(0);
 const MAGIC:&[u8]=b"SEVENMAIL-ENC-1\0";
@@ -143,4 +143,20 @@ fn snapshot_cannot_be_created_inside_source(){
     let t=Temp::new();
     assert!(create_snapshot(&t.source(),&t.source().join("backup")).is_err());
     assert!(!t.source().join("backup").exists());
+}
+
+#[test]
+fn verification_rejects_content_changes_even_when_record_count_matches() {
+    let t=Temp::new();
+    let mut db=t.store();
+    write_fixture(&t.source(),"a","1",&payload("a","1"));
+    let destination=t.0.join("backup");
+    let report=create_snapshot(&t.source(),&destination).unwrap();
+    migrate_completed_snapshot(&mut db,&destination,decrypt).unwrap();
+    assert_eq!(verify_completed_snapshot(&db,&destination,decrypt).unwrap(),report);
+    let mut altered=db.get("a","1").unwrap().unwrap();
+    altered.subject="Alterado".into();
+    db.upsert(&altered).unwrap();
+    assert!(verify_completed_snapshot(&db,&destination,decrypt).is_err());
+    assert_eq!(db.get("a","1").unwrap(),Some(altered));
 }
