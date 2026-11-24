@@ -1,46 +1,52 @@
 import { bridge } from "./bridge";
-import { pullCloudDocuments, pushCloudDocument } from "./neon";
+import { getAuthorizedCloudOwner, pullCloudDocuments, pushCloudDocument, reportCloudSyncError } from "./neon";
+import { reconcileDocuments } from "./cloud-reconciliation";
 import type { WorkspaceDocument, WorkspaceKind } from "../types";
 
+const pending = new Map<WorkspaceKind, Promise<unknown>>();
+
 export async function syncWorkspaceCollection<T>(kind: WorkspaceKind): Promise<Array<WorkspaceDocument<T>>> {
-  const local = await bridge.listWorkspaceForSync<T>(kind);
-  const merged = new Map(local.map((document) => [document.id, document]));
-
+  const previous = pending.get(kind);
+  const task = (previous?.catch(() => undefined) ?? Promise.resolve()).then(() => syncCollection<T>(kind));
+  pending.set(kind, task);
   try {
-    const cloud = await pullCloudDocuments<T>(kind);
-    const cloudIds = new Set(cloud.map((document) => document.id));
-
-    for (const remote of cloud) {
-      const current = merged.get(remote.id);
-      const timeDifference = current
-        ? Date.parse(remote.updatedAt) - Date.parse(current.updatedAt)
-        : 1;
-      const remoteWins = !current
-        || timeDifference > 0
-        || (timeDifference === 0 && Boolean(remote.deletedAt) && !current.deletedAt);
-      const localWins = current && (
-        timeDifference < 0
-        || (timeDifference === 0 && Boolean(current.deletedAt) && !remote.deletedAt)
-      );
-
-      if (remoteWins) {
-        await bridge.upsertWorkspace(remote);
-        merged.set(remote.id, remote);
-      } else if (localWins) {
-        void pushCloudDocument(current).catch(() => undefined);
-      }
-    }
-
-    for (const document of local) {
-      if (!cloudIds.has(document.id)) {
-        void pushCloudDocument(document).catch(() => undefined);
-      }
-    }
-  } catch {
-    // Local documents and tombstones remain available for the next sync.
+    return await task;
+  } finally {
+    if (pending.get(kind) === task) pending.delete(kind);
   }
+}
 
-  return [...merged.values()]
+async function syncCollection<T>(kind: WorkspaceKind): Promise<Array<WorkspaceDocument<T>>> {
+  try {
+    const owner = await getAuthorizedCloudOwner();
+    if (owner) {
+      const cloud = await pullCloudDocuments<T>(kind);
+      if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada durante sincronização.");
+      const local = await bridge.listWorkspaceForSync<T>(kind);
+      const localById = new Map(local.map((document) => [document.id, document]));
+      const remoteById = new Map(cloud.map((document) => [document.id, document]));
+      for (const remote of cloud) {
+        if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada durante sincronização.");
+        const current = localById.get(remote.id);
+        const decision = current ? reconcileDocuments(current, remote) : "remote";
+        if (decision === "remote") {
+          await bridge.upsertWorkspace(remote);
+        } else if (decision === "local" && current) {
+          await pushCloudDocument(current, owner);
+        } else if (decision === "conflict") {
+          reportCloudSyncError(new Error("Versões divergentes com a mesma data; documento local preservado."), kind);
+        }
+      }
+      for (const document of local) {
+        if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada durante sincronização.");
+        if (!remoteById.has(document.id)) await pushCloudDocument(document, owner);
+      }
+    }
+  } catch (error) {
+    reportCloudSyncError(error, kind);
+  }
+  // Re-read the native store; never return a stale snapshot after concurrent edits.
+  return (await bridge.listWorkspaceForSync<T>(kind))
     .filter((document) => !document.deletedAt)
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }
