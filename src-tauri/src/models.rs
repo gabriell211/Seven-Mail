@@ -119,8 +119,8 @@ fn default_incoming_protocol() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DavSyncResult {
-    pub calendar_objects: Vec<String>,
-    pub contact_objects: Vec<String>,
+    pub calendar_objects: Vec<crate::dav_xml::DavObject>,
+    pub contact_objects: Vec<crate::dav_xml::DavObject>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
