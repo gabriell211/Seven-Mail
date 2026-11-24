@@ -1,6 +1,7 @@
 import { BetterAuthVanillaAdapter, createClient } from "@neondatabase/neon-js";
 import type { AccountProfile, MailMessage, WorkspaceDocument, WorkspaceKind } from "../types";
 import { bridge } from "./bridge";
+import { sameProjection } from "./cloud-reconciliation";
 
 const authUrl = import.meta.env.VITE_NEON_AUTH_URL?.trim();
 const dataApiUrl = import.meta.env.VITE_NEON_DATA_API_URL?.trim();
@@ -220,10 +221,7 @@ async function updateMailRow(table: MailTable, owner: string, row: Record<string
   rememberVersions(owner, table, rows);
 }
 
-function sameProjection(local: Record<string, unknown>, remote: object): boolean {
-  const row = remote as Record<string, unknown>;
-  return Object.entries(local).every(([key, value]) => key === "owner_id" || JSON.stringify(value) === JSON.stringify(row[key]));
-}
+
 
 interface CloudAccountRow {
   id: string;
