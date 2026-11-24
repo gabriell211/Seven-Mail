@@ -1,0 +1,38 @@
+name: Neon SDK dependency validation
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/neon-sdk-validation.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/lib/neon.ts'
+permissions:
+  contents: read
+jobs:
+  dependency-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Resolve supported Neon SDK candidate without suppressing peers
+        shell: bash
+        run: |
+          npm pkg set 'dependencies.@neondatabase/neon-js=0.9.0-beta'
+          npm install --package-lock-only --strict-peer-deps
+          npm ci --strict-peer-deps 2>&1 | tee /tmp/npm-install.log
+          if grep -E 'npm warn (ERESOLVE|deprecated)' /tmp/npm-install.log; then
+            echo 'Dependency warnings still present; do not promote candidate.'
+            exit 1
+          fi
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v6
+        with:
+          name: neon-sdk-validated-lock
+          path: |
+            package.json
+            package-lock.json
+          if-no-files-found: error
