@@ -85,11 +85,38 @@ fn report(account: &AccountProfile, url: &str, body: &str, tag: &str) -> Result<
     Ok(objects)
 }
 
+// RFC 3986 unreserved percent encodings identify the same resource.
+// Keep the original validated href for requests, but canonicalize the
+// identity used to detect duplicate resources.
+fn canonical_resource_identity(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(a), Some(b)) = ((bytes[i + 1] as char).to_digit(16), (bytes[i + 2] as char).to_digit(16)) {
+                let decoded = (a * 16 + b) as u8;
+                if decoded.is_ascii_alphanumeric() || matches!(decoded, b'-' | b'.' | b'_' | b'~') {
+                    output.push(decoded);
+                } else {
+                    output.extend_from_slice(&[b'%', bytes[i + 1].to_ascii_uppercase(), bytes[i + 2].to_ascii_uppercase()]);
+                }
+                i += 3;
+                continue;
+            }
+        }
+        output.push(bytes[i]);
+        i += 1;
+    }
+    // All transformations preserve UTF-8.
+    String::from_utf8(output).expect("canonical URL is valid UTF-8")
+}
+
 fn normalize_report_resources(base: &str, objects: &mut [DavObject]) -> Result<(), String> {
     let mut seen = std::collections::HashSet::new();
     for object in objects {
         let href = resource_url(base, &object.resource.href)?.to_string();
-        if !seen.insert(href.clone()) {
+        if !seen.insert(canonical_resource_identity(&href)) {
             return Err("Identidade DAV duplicada após normalização.".into());
         }
         object.resource.href = href;
@@ -297,6 +324,12 @@ mod tests {
         };
         let mut objects = vec![object("/book/a.vcf"), object("https://mail.example/book/a.vcf")];
         assert!(normalize_report_resources("https://mail.example/book", &mut objects).is_err());
+        let mut encoded = vec![object("/book/a.vcf"), object("/book/%61.vcf")];
+        assert!(normalize_report_resources("https://mail.example/book", &mut encoded).is_err());
+        let mut hex_case = vec![object("/book/%C3%A9.vcf"), object("/book/%c3%a9.vcf")];
+        assert!(normalize_report_resources("https://mail.example/book", &mut hex_case).is_err());
+        let mut distinct = vec![object("/book/a.vcf"), object("/book/b.vcf")];
+        assert!(normalize_report_resources("https://mail.example/book", &mut distinct).is_ok());
         for status in [200, 201, 204] {
             assert!(validate_mutation_status(status).is_ok());
         }
