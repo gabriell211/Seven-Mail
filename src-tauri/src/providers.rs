@@ -334,6 +334,7 @@ fn redirect_queued(
     Ok(raw)
 }
 
+#[cfg(test)]
 pub fn send_queued_raw(account: &AccountProfile, operation: &QueueOperation) -> Result<Vec<u8>, String> {
     send_queued_raw_with_checkpoint(account, operation, || Ok(()))
 }
@@ -560,6 +561,7 @@ pub fn send_queued_raw_with_checkpoint(
     Ok(raw)
 }
 
+#[cfg(test)]
 pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Result<(), String> {
     send_queued_raw(account, operation).map(|_| ())
 }
