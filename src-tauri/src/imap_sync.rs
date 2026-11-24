@@ -356,10 +356,6 @@ pub fn wait_for_folder_change(
     })
 }
 
-pub fn wait_for_inbox_change(account: &AccountProfile, timeout_seconds: u64) -> Result<bool, String> {
-    wait_for_folder_change(account, "INBOX", timeout_seconds)
-}
-
 fn provider_saves_sent_automatically(account: &AccountProfile) -> bool {
     matches!(account.provider.to_ascii_lowercase().as_str(), "gmail" | "microsoft")
 }
