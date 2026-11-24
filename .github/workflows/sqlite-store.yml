@@ -48,5 +48,13 @@ jobs:
       - name: Install Windows OpenSSL build prerequisites
         if: runner.os == 'Windows'
         run: choco install strawberryperl nasm -y --no-progress
-      - run: cargo test --locked --all-features
-      - run: cargo check --locked --all-features
+      - name: Test and check without native linker warnings
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --all-features --color never 2>&1 | tee cargo-test.log
+          cargo check --locked --all-features --color never 2>&1 | tee cargo-check.log
+          if grep -Ei '(^|[[:space:]])warning:|warning LNK[0-9]+' cargo-test.log cargo-check.log; then
+            echo 'Compiler or linker warning detected.'
+            exit 1
+          fi
