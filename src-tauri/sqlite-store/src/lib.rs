@@ -72,6 +72,22 @@ const COLUMNS: &str = "account_id,message_id,received_ms,folder,subject,sender,r
 const INSERT: &str = "INSERT INTO messages(account_id,message_id,received_ms,folder,subject,sender,recipients,body,categories,payload)
 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)";
 
+fn authenticate(conn: &Connection, key: &[u8; 32]) -> Result<()> {
+    let mut raw_key = String::with_capacity(67);
+    raw_key.push_str("x'");
+    for byte in key { write!(&mut raw_key, "{byte:02x}").map_err(|_| "Chave inválida.".to_string())?; }
+    raw_key.push('\'');
+    conn.pragma_update(None, "key", &raw_key).map_err(|_| "Não foi possível configurar chave SQLCipher.".to_string())?;
+    drop(raw_key);
+    let version: String = conn.pragma_query_value(None, "cipher_version", |row| row.get(0))
+        .map_err(|_| "SQLCipher indisponível; banco não autorizado.".to_string())?;
+    if version.is_empty() { return Err("SQLCipher indisponível.".into()); }
+    // Authentication is required before any schema changes.
+    conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0))
+        .map_err(|_| "Banco inválido ou chave incorreta.".to_string())?;
+    Ok(())
+}
+
 impl Store {
     /// Caller supplies a dedicated 256-bit database key from the OS keyring.
     /// Never fall back to an unencrypted database or overwrite an existing file.
@@ -80,18 +96,7 @@ impl Store {
         let mut conn = Connection::open_with_flags(path,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE)
             .map_err(db_error)?;
-        let mut raw_key = String::with_capacity(67);
-        raw_key.push_str("x'");
-        for byte in key { write!(&mut raw_key, "{byte:02x}").map_err(|_| "Chave inválida.".to_string())?; }
-        raw_key.push('\'');
-        conn.pragma_update(None, "key", &raw_key).map_err(|_| "Não foi possível configurar chave SQLCipher.".to_string())?;
-        drop(raw_key);
-        let version: String = conn.pragma_query_value(None, "cipher_version", |row| row.get(0))
-            .map_err(|_| "SQLCipher indisponível; banco não autorizado.".to_string())?;
-        if version.is_empty() { return Err("SQLCipher indisponível.".into()); }
-        // Authentication is required before any schema changes.
-        conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0))
-            .map_err(|_| "Banco inválido ou chave incorreta.".to_string())?;
+        authenticate(&conn, key)?;
         conn.busy_timeout(Duration::from_secs(5)).map_err(db_error)?;
         conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA temp_store=MEMORY;
             PRAGMA secure_delete=ON; PRAGMA synchronous=FULL;").map_err(db_error)?;
@@ -111,6 +116,25 @@ impl Store {
             _ => return Err("Versão do armazenamento incompatível.".into()),
         }
         tx.commit().map_err(db_error)?;
+        Ok(Self { conn })
+    }
+
+    /// Inspect an existing encrypted database without creating or migrating it.
+    pub fn open_read_only(path: &Path, key: &[u8; 32]) -> Result<Self> {
+        let metadata = std::fs::symlink_metadata(path).map_err(|_| "Banco inexistente.".to_string())?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() == 0 {
+            return Err("Banco de leitura inválido.".into());
+        }
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(db_error)?;
+        authenticate(&conn, key)?;
+        conn.busy_timeout(Duration::from_secs(5)).map_err(db_error)?;
+        conn.execute_batch("PRAGMA query_only=ON; PRAGMA temp_store=MEMORY;").map_err(db_error)?;
+        let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0)).map_err(db_error)?;
+        let app_id: i64 = conn.pragma_query_value(None, "application_id", |row| row.get(0)).map_err(db_error)?;
+        if (version, app_id) != (1, APPLICATION_ID) {
+            return Err("Versão do armazenamento incompatível.".into());
+        }
         Ok(Self { conn })
     }
 
