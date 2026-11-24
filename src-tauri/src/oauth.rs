@@ -1,7 +1,7 @@
 use crate::{credentials, models::AccountProfile};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::time::Duration;
+use std::{io::Read, time::Duration};
 
 const TOKEN_SCOPE: &str = "oauth";
 const PROVIDER_TOKEN_SCOPE: &str = "oauth-provider";
@@ -94,6 +94,33 @@ fn load(token_scope: &str, account_id: &str) -> Result<Option<OAuthTokenState>, 
         .map_err(|error| format!("Token OAuth armazenado inválido: {error}"))
 }
 
+const MAX_TOKEN_RESPONSE_BYTES: u64 = 256 * 1024;
+
+fn decode_token_response(response: reqwest::blocking::Response) -> Result<Value, String> {
+    if !response.status().is_success() {
+        return Err(format!("O provedor recusou OAuth: HTTP {}.", response.status().as_u16()));
+    }
+    let mut bytes = Vec::new();
+    response.take(MAX_TOKEN_RESPONSE_BYTES + 1).read_to_end(&mut bytes)
+        .map_err(|_| "Não foi possível ler a resposta OAuth.".to_string())?;
+    if bytes.len() as u64 > MAX_TOKEN_RESPONSE_BYTES {
+        return Err("Resposta OAuth acima do limite.".into());
+    }
+    serde_json::from_slice(&bytes).map_err(|_| "Resposta OAuth inválida.".into())
+}
+
+fn token_expiration(response: &Value, now: i64) -> Result<Option<i64>, String> {
+    match response.get("expires_in") {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => {
+            let seconds = value.as_i64().filter(|value| *value > 0)
+                .ok_or_else(|| "Validade OAuth inválida.".to_string())?;
+            now.checked_add(seconds).map(Some)
+                .ok_or_else(|| "Validade OAuth fora do intervalo.".to_string())
+        }
+    }
+}
+
 fn parse_token_response(
     account: &AccountProfile,
     token_scope: &str,
@@ -110,13 +137,11 @@ fn parse_token_response(
     let refresh_token = response
         .get("refresh_token")
         .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
         .map(ToOwned::to_owned)
         .or(previous_refresh);
 
-    let expires_at = response
-        .get("expires_in")
-        .and_then(Value::as_i64)
-        .map(|seconds| chrono::Utc::now().timestamp() + seconds.max(60));
+    let expires_at = token_expiration(&response, chrono::Utc::now().timestamp())?;
 
     let state = OAuthTokenState {
         access_token,
@@ -160,13 +185,9 @@ fn exchange_code_for_scope(
             ("redirect_uri", redirect_uri(account, supplied_redirect_uri)),
         ])
         .send()
-        .map_err(|error| format!("Falha ao trocar código OAuth: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("O provedor recusou a troca OAuth: {error}"))?
-        .json::<Value>()
-        .map_err(|error| format!("Resposta OAuth inválida: {error}"))?;
+        .map_err(|_| "Falha ao trocar código OAuth.".to_string())?;
 
-    parse_token_response(account, token_scope, response, None)
+    parse_token_response(account, token_scope, decode_token_response(response)?, None)
 }
 
 fn refresh_for_scope(account: &AccountProfile, token_scope: &str) -> Result<OAuthTokenState, String> {
@@ -185,13 +206,9 @@ fn refresh_for_scope(account: &AccountProfile, token_scope: &str) -> Result<OAut
             ("refresh_token", refresh_token.as_str()),
         ])
         .send()
-        .map_err(|error| format!("Falha ao renovar OAuth: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("O provedor recusou a renovação OAuth: {error}"))?
-        .json::<Value>()
-        .map_err(|error| format!("Resposta OAuth inválida: {error}"))?;
+        .map_err(|_| "Falha ao renovar OAuth.".to_string())?;
 
-    parse_token_response(account, token_scope, response, Some(refresh_token))
+    parse_token_response(account, token_scope, decode_token_response(response)?, Some(refresh_token))
 }
 
 fn access_token_for_scope(account: &AccountProfile, token_scope: &str) -> Result<String, String> {
@@ -205,6 +222,9 @@ fn access_token_for_scope(account: &AccountProfile, token_scope: &str) -> Result
 
     if expires_soon && state.refresh_token.is_some() {
         return Ok(refresh_for_scope(account, token_scope)?.access_token);
+    }
+    if state.expires_at.is_some_and(|expiration| expiration <= chrono::Utc::now().timestamp()) {
+        return Err("Token OAuth expirado. Autorize a conta novamente.".into());
     }
     Ok(state.access_token)
 }
@@ -281,6 +301,15 @@ mod endpoint_tests {
 #[cfg(test)]
 mod ipc_security_tests {
     use super::*;
+
+    #[test]
+    fn expiration_never_extends_short_tokens_or_overflows() {
+        assert_eq!(token_expiration(&serde_json::json!({"expires_in": 5}), 100).unwrap(), Some(105));
+        assert_eq!(token_expiration(&serde_json::json!({}), 100).unwrap(), None);
+        for invalid in [serde_json::json!(0), serde_json::json!(-1), serde_json::json!(i64::MAX), serde_json::json!("bad")] {
+            assert!(token_expiration(&serde_json::json!({"expires_in": invalid}), 100).is_err());
+        }
+    }
 
     #[test]
     fn authorization_response_contains_no_credentials() {
