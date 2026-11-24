@@ -71,11 +71,14 @@ fn create_private_directory(path:&Path)->Result<()> {
     let parent=path.parent().ok_or_else(||"Destino inválido.".to_string())?;
     let meta=fs::symlink_metadata(parent).map_err(|_|"Diretório de staging indisponível.".to_string())?;
     if !meta.is_dir() || meta.file_type().is_symlink(){return Err("Diretório de staging inválido.".into());}
-    let mut builder=fs::DirBuilder::new();
-    #[cfg(unix)] {
+    let builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    let builder = {
         use std::os::unix::fs::DirBuilderExt;
+        let mut builder = builder;
         builder.mode(0o700);
-    }
+        builder
+    };
     builder.create(path).map_err(|_|"Destino já existe ou não pôde ser criado.".into())
 }
 
