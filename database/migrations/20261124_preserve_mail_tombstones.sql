@@ -11,6 +11,11 @@ BEGIN
   IF NEW.owner_id IS DISTINCT FROM OLD.owner_id OR NEW.id IS DISTINCT FROM OLD.id THEN
     RAISE EXCEPTION 'Mail identity conflict' USING ERRCODE = '23514';
   END IF;
+  IF TG_TABLE_NAME = 'desktop_mail_messages' THEN
+    IF NEW.account_id IS DISTINCT FROM OLD.account_id THEN
+      RAISE EXCEPTION 'Mail account identity conflict' USING ERRCODE = '23514';
+    END IF;
+  END IF;
   IF OLD.deleted_at IS NOT NULL THEN
     RAISE EXCEPTION 'Mail record is deleted' USING ERRCODE = '23514';
   END IF;
@@ -39,12 +44,13 @@ CREATE OR REPLACE FUNCTION public.seven_mail_guard_workspace_version()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
-AS $
+AS $$
 DECLARE
   old_version timestamptz := GREATEST(OLD.updated_at, OLD.deleted_at);
   new_version timestamptz := GREATEST(NEW.updated_at, NEW.deleted_at);
 BEGIN
   IF NEW.owner_id IS DISTINCT FROM OLD.owner_id
+     OR NEW.id IS DISTINCT FROM OLD.id
      OR NEW.kind IS DISTINCT FROM OLD.kind THEN
     RAISE EXCEPTION 'Workspace identity conflict' USING ERRCODE = '23514';
   END IF;
@@ -60,7 +66,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS seven_mail_guard_workspace_version ON public.workspace_documents;
 CREATE TRIGGER seven_mail_guard_workspace_version
@@ -72,7 +78,7 @@ CREATE OR REPLACE FUNCTION public.seven_mail_cascade_account_tombstone()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
-AS $
+AS $$
 BEGIN
   IF OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL THEN
     UPDATE public.desktop_mail_messages
@@ -81,7 +87,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS seven_mail_cascade_account_tombstone ON public.desktop_mail_accounts;
 CREATE TRIGGER seven_mail_cascade_account_tombstone
@@ -92,7 +98,7 @@ CREATE OR REPLACE FUNCTION public.seven_mail_guard_message_account()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
-AS $
+AS $$
 DECLARE
   account_deleted timestamptz;
 BEGIN
@@ -103,12 +109,16 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS seven_mail_guard_message_account ON public.desktop_mail_messages;
 CREATE TRIGGER seven_mail_guard_message_account
 BEFORE INSERT ON public.desktop_mail_messages
 FOR EACH ROW EXECUTE FUNCTION public.seven_mail_guard_message_account();
+
+-- Desktop clients use explicit tombstones, never physical deletion.
+REVOKE DELETE ON public.desktop_mail_accounts, public.desktop_mail_messages,
+  public.workspace_documents FROM authenticated, PUBLIC;
 
 -- Published only when all synchronization guards have been installed.
 CREATE OR REPLACE VIEW public.seven_mail_sync_capabilities AS
