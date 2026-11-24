@@ -23,6 +23,8 @@ jobs:
 
   rust:
     runs-on: ubuntu-22.04
+    env:
+      RUSTFLAGS: '-D warnings'
     steps:
       - uses: actions/checkout@v6
       - name: Install Tauri dependencies
@@ -56,6 +58,7 @@ jobs:
           - 3993:3993
           - 3995:3995
     env:
+      RUSTFLAGS: '-D warnings'
       SEVEN_MAIL_PROTOCOL_E2E: "1"
       SEVEN_MAIL_TEST_SECRET: "sevenpass"
       XDG_DATA_HOME: /tmp/seven-mail-e2e
