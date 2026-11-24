@@ -63,47 +63,41 @@ fn is_newer(candidate: &str, current: &str) -> bool {
     version_tuple(candidate) > version_tuple(current)
 }
 
-fn select_asset(assets: &[ReleaseAsset]) -> Option<&ReleaseAsset> {
-    #[cfg(target_os = "windows")]
-    {
-        let arch = std::env::consts::ARCH;
-        if arch == "aarch64" {
-            return assets.iter().find(|asset| {
-                let name = asset.name.to_ascii_lowercase();
-                name.contains("aarch64") && name.ends_with("-setup.exe")
-            }).or_else(|| assets.iter().find(|asset| asset.name.to_ascii_lowercase().ends_with("-setup.exe")));
+fn matches_arch(name: &str, arch: &str, allow_universal: bool) -> bool {
+    let name = name.to_ascii_lowercase();
+    let markers = name.split(|character: char| !character.is_ascii_alphanumeric()).collect::<Vec<_>>();
+    let x64 = markers.iter().any(|marker| ["x64", "amd64", "x8664"].contains(marker))
+        || name.contains("x86_64");
+    let arm64 = markers.iter().any(|marker| ["arm64", "aarch64"].contains(marker));
+    let universal = allow_universal && markers.contains(&"universal") && !x64 && !arm64;
+    match arch {
+        "x86_64" => (x64 && !arm64) || universal,
+        "aarch64" => (arm64 && !x64) || universal,
+        _ => false,
+    }
+}
+
+fn select_asset_for<'a>(assets: &'a [ReleaseAsset], platform: &str, arch: &str, appimage: bool) -> Option<&'a ReleaseAsset> {
+    let extensions: &[&str] = match platform {
+        "windows" => &["-setup.exe"],
+        "linux" if appimage => &[".appimage"],
+        "linux" => &[".deb", ".appimage"],
+        "macos" => &[".dmg"],
+        _ => return None,
+    };
+    for extension in extensions {
+        if let Some(asset) = assets.iter().find(|asset| {
+            asset.name.to_ascii_lowercase().ends_with(extension)
+                && matches_arch(&asset.name, arch, platform == "macos")
+        }) {
+            return Some(asset);
         }
-        return assets.iter().find(|asset| asset.name.to_ascii_lowercase().ends_with("_x64-setup.exe"))
-            .or_else(|| assets.iter().find(|asset| asset.name.to_ascii_lowercase().ends_with("-setup.exe")));
     }
-
-    #[cfg(target_os = "linux")]
-    {
-        let arch = std::env::consts::ARCH;
-        let marker = if arch == "aarch64" { "aarch64" } else { "amd64" };
-        if std::env::var_os("APPIMAGE").is_some() {
-            return assets.iter().find(|asset| {
-                let name = asset.name.to_ascii_lowercase();
-                name.contains(marker) && name.ends_with(".appimage")
-            });
-        }
-        return assets.iter().find(|asset| {
-            let name = asset.name.to_ascii_lowercase();
-            name.contains(marker) && name.ends_with(".deb")
-        }).or_else(|| assets.iter().find(|asset| asset.name.to_ascii_lowercase().ends_with(".appimage")));
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let arch = std::env::consts::ARCH;
-        return assets.iter().find(|asset| {
-            let name = asset.name.to_ascii_lowercase();
-            name.contains(arch) && name.ends_with(".dmg")
-        }).or_else(|| assets.iter().find(|asset| asset.name.to_ascii_lowercase().ends_with(".dmg")));
-    }
-
-    #[allow(unreachable_code)]
     None
+}
+
+fn select_asset(assets: &[ReleaseAsset]) -> Option<&ReleaseAsset> {
+    select_asset_for(assets, std::env::consts::OS, std::env::consts::ARCH, std::env::var_os("APPIMAGE").is_some())
 }
 
 pub fn check() -> Result<UpdateInfo, String> {
@@ -137,6 +131,16 @@ fn update_directory() -> Result<PathBuf, String> {
     let directory = AppPaths::resolve()?.root.join("updates");
     fs::create_dir_all(&directory)
         .map_err(|error| format!("Não foi possível preparar a pasta de atualizações: {error}"))?;
+    let metadata = fs::symlink_metadata(&directory).map_err(|error| error.to_string())?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("Pasta de atualizações inválida.".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700))
+            .map_err(|error| error.to_string())?;
+    }
     Ok(directory)
 }
 
@@ -227,8 +231,22 @@ pub fn download(requested: &UpdateInfo) -> Result<String, String> {
         return Err("O download excede o limite de segurança.".to_string());
     }
 
-    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&partial)
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options.open(&partial)
         .map_err(|error| format!("Não foi possível criar o arquivo temporário: {error}"))?;
+    // Declared before the shadowed file so cleanup runs after its handle is closed.
+    struct PartialCleanup(PathBuf);
+    impl Drop for PartialCleanup {
+        fn drop(&mut self) { let _ = fs::remove_file(&self.0); }
+    }
+    let _cleanup = PartialCleanup(partial.clone());
+    let mut file = file;
     let mut hasher = Sha256::new();
     let mut total = 0u64;
     let mut buffer = [0u8; 64 * 1024];
@@ -262,7 +280,7 @@ pub fn download(requested: &UpdateInfo) -> Result<String, String> {
     if destination.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("AppImage")).unwrap_or(false) {
         use std::os::unix::fs::PermissionsExt;
         let mut permissions = fs::metadata(&destination).map_err(|error| error.to_string())?.permissions();
-        permissions.set_mode(0o755);
+        permissions.set_mode(0o700);
         fs::set_permissions(&destination, permissions).map_err(|error| error.to_string())?;
     }
 
@@ -321,6 +339,22 @@ pub fn install(path: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installer_selection_never_falls_back_to_other_architecture() {
+        fn asset(name: &str) -> ReleaseAsset {
+            ReleaseAsset { name: name.into(), browser_download_url: String::new(), size: 1, digest: None }
+        }
+        let assets = vec![asset("Seven Mail_1.0.2_x64-setup.exe"), asset("Seven Mail_1.0.2_amd64.deb"),
+            asset("Seven Mail_1.0.2_amd64.AppImage"), asset("Seven Mail_1.0.2_aarch64.dmg"),
+            asset("Seven Mail_1.0.2_universal.dmg")];
+        assert!(select_asset_for(&assets, "windows", "aarch64", false).is_none());
+        assert!(select_asset_for(&assets, "linux", "aarch64", false).is_none());
+        assert!(select_asset_for(&assets, "linux", "x86_64", true).unwrap().name.ends_with(".AppImage"));
+        assert!(select_asset_for(&assets, "macos", "x86_64", false).unwrap().name.contains("universal"));
+        assert!(!matches_arch("Seven Mail_1.0.2_arm64_x64.dmg", "x86_64", true));
+        assert!(matches_arch("Seven Mail_1.0.2_x86_64.dmg", "x86_64", true));
+    }
 
     #[test]
     fn installer_hash_and_size_are_verified_again() {
