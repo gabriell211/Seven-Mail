@@ -95,6 +95,7 @@ fn parse_message(
     fetch: &async_imap::types::Fetch,
     remote_folder: &str,
     folder_label: &str,
+    uid_validity: u32,
 ) -> Option<MailMessage> {
     let raw = fetch.body()?;
     let parsed = MessageParser::default().parse(raw)?;
@@ -121,11 +122,7 @@ fn parse_message(
         .collect::<Vec<_>>();
 
     Some(MailMessage {
-        id: if remote_folder.eq_ignore_ascii_case("INBOX") {
-            format!("{}-inbox-{uid}", account.id)
-        } else {
-            format!("{}-{}-{uid}", account.id, mailbox_key(remote_folder))
-        },
+        id: remote_message_id(&account.id, remote_folder, uid_validity, uid),
         account_id: account.id.clone(),
         remote_id: Some(uid.to_string()),
         remote_folder: Some(remote_folder.to_owned()),
@@ -227,6 +224,32 @@ pub fn test_find_subject(
         session.logout().await.map_err(|error| error.to_string())?;
         Ok(!matches.is_empty())
     })
+}
+
+pub(crate) fn remote_message_id(account_id: &str, folder: &str, validity: u32, uid: u32) -> String {
+    let folder_key = if folder.eq_ignore_ascii_case("INBOX") {
+        "inbox".to_string()
+    } else {
+        mailbox_key(folder)
+    };
+    format!("{account_id}-{folder_key}-v{validity}-{uid}")
+}
+
+fn validated_uid_validity(value: Option<u32>) -> Result<u32, String> {
+    value.filter(|value| *value != 0)
+        .ok_or_else(|| "O servidor IMAP não informou UIDVALIDITY válido.".to_string())
+}
+
+fn action_matches_generation(
+    operation: &crate::models::QueueOperation,
+    folder: &str,
+    validity: u32,
+) -> bool {
+    let uid = operation.payload.get("remoteId").and_then(|value| value.as_str())
+        .and_then(|value| value.parse::<u32>().ok()).filter(|value| *value != 0);
+    let Some(uid) = uid else { return false; };
+    let expected = remote_message_id(&operation.account_id, folder, validity, uid);
+    operation.payload.get("messageId").and_then(|value| value.as_str()) == Some(expected.as_str())
 }
 
 fn mailbox_key(path: &str) -> String {
@@ -497,6 +520,8 @@ pub fn sync_folder(
     limit: u32,
 ) -> Result<usize, String> {
     let limit = limit.clamp(1, 200);
+    static SYNC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = SYNC_LOCK.lock().map_err(|_| "Falha ao bloquear sincronização IMAP.".to_string())?;
 
     async_std::task::block_on(async {
         let mut session = login(account).await?;
@@ -504,6 +529,9 @@ pub fn sync_folder(
             .select(remote_folder)
             .await
             .map_err(|error| format!("Não foi possível abrir {remote_folder}: {error}"))?;
+
+        let uid_validity = validated_uid_validity(mailbox.uid_validity)?;
+        storage::prepare_imap_generation(paths, &account.id, remote_folder, uid_validity)?;
 
         if mailbox.exists == 0 {
             let empty = std::collections::HashSet::new();
@@ -534,7 +562,7 @@ pub fn sync_folder(
                 .map_err(|error| format!("Falha ao receber novas mensagens: {error}"))?;
 
             for item in &fetched {
-                if let Some(message) = parse_message(account, item, remote_folder, folder_label) {
+                if let Some(message) = parse_message(account, item, remote_folder, folder_label, uid_validity) {
                     // Write the raw source first: a failed write must not
                     // publish a cached UID whose original message is missing.
                     if let Some(raw) = item.body() {
@@ -808,10 +836,26 @@ pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize
                 .and_then(|value| value.as_str())
                 .unwrap_or("INBOX");
 
-            if let Err(error) = session.select(source_mailbox).await {
-                storage::retry_later(paths, &operation.id)?;
+            let mailbox = match session.select(source_mailbox).await {
+                Ok(mailbox) => mailbox,
+                Err(error) => {
+                    storage::retry_later(paths, &operation.id)?;
+                    let _ = session.logout().await;
+                    return Err(format!("Não foi possível abrir {source_mailbox} para sincronizar a ação: {error}"));
+                }
+            };
+            let validity = match validated_uid_validity(mailbox.uid_validity) {
+                Ok(validity) => validity,
+                Err(error) => {
+                    storage::retry_later(paths, &operation.id)?;
+                    return Err(error);
+                }
+            };
+            if !action_matches_generation(&operation, source_mailbox, validity) {
+                // Legacy or stale actions must never affect a reused UID.
+                storage::fail(paths, &operation.id)?;
                 let _ = session.logout().await;
-                return Err(format!("Não foi possível abrir {source_mailbox} para sincronizar a ação: {error}"));
+                return Err("A ação IMAP foi preservada na fila de falhas: identidade da mensagem não confirmada. Sincronize a pasta novamente.".to_string());
             }
 
             match apply_remote_action(&mut session, &operation, &folders).await {
@@ -864,5 +908,32 @@ mod uid_batch_tests {
     fn repairs_existing_uid_gaps() {
         let remote = HashSet::from([1, 2, 3, 4, 5, 6]);
         assert_eq!(missing_uid_batch(&remote, &[1, 3, 6], 2), vec![2, 4]);
+    }
+}
+
+#[cfg(test)]
+mod generation_tests {
+    use super::*;
+
+    #[test]
+    fn recreated_mailbox_cannot_reuse_local_message_identity() {
+        assert_ne!(remote_message_id("account", "INBOX", 11, 1), remote_message_id("account", "INBOX", 12, 1));
+        assert_eq!(remote_message_id("account", "INBOX", 11, 1), remote_message_id("account", "inbox", 11, 1));
+        assert!(validated_uid_validity(None).is_err());
+        assert!(validated_uid_validity(Some(0)).is_err());
+    }
+
+    #[test]
+    fn only_actions_from_current_mailbox_generation_can_execute() {
+        let mut operation = crate::models::QueueOperation {
+            id: "op".into(), kind: "move".into(), account_id: "account".into(),
+            created_at: String::new(), attempts: 0,
+            payload: serde_json::json!({"remoteId": "1", "messageId": remote_message_id("account", "INBOX", 11, 1)}),
+        };
+        assert!(action_matches_generation(&operation, "INBOX", 11));
+        assert!(!action_matches_generation(&operation, "INBOX", 12));
+        assert!(!action_matches_generation(&operation, "Other", 11));
+        operation.payload.as_object_mut().unwrap().remove("messageId");
+        assert!(!action_matches_generation(&operation, "INBOX", 11));
     }
 }
