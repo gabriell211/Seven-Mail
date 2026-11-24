@@ -21,11 +21,24 @@ pub struct OAuthTokenState {
 }
 
 fn token_endpoint(account: &AccountProfile) -> Result<&str, String> {
-    account
+    let endpoint = account
         .oauth_token_url
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| "Configure a URL de token OAuth da conta.".to_string())
+        .ok_or_else(|| "Configure a URL de token OAuth da conta.".to_string())?;
+    validate_token_endpoint(endpoint)?;
+    Ok(endpoint)
+}
+
+fn validate_token_endpoint(endpoint: &str) -> Result<(), String> {
+    let url = reqwest::Url::parse(endpoint).map_err(|_| "URL OAuth inválida.".to_string())?;
+    if url.scheme() != "https" || url.host_str().is_none()
+        || !url.username().is_empty() || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("A URL de token OAuth deve utilizar HTTPS, sem credenciais ou fragmentos.".to_string());
+    }
+    Ok(())
 }
 
 fn client_id(account: &AccountProfile) -> Result<&str, String> {
@@ -95,6 +108,8 @@ fn parse_token_response(
 fn http_client(account: &AccountProfile) -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300)))
+        .https_only(true)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| format!("Falha ao preparar OAuth: {error}"))
 }
@@ -223,4 +238,17 @@ pub fn provider_scopes(account_id: &str) -> Result<Vec<String>, String> {
 
 pub fn provider_clear(account_id: &str) -> Result<(), String> {
     credentials::delete_scoped(PROVIDER_TOKEN_SCOPE, account_id)
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use super::validate_token_endpoint;
+
+    #[test]
+    fn token_endpoint_requires_https_and_no_embedded_credentials() {
+        assert!(validate_token_endpoint("https://login.example.com/token").is_ok());
+        for endpoint in ["http://login.example.com/token", "file:///token", "https://user:pass@example.com/token", "https://example.com/token#secret"] {
+            assert!(validate_token_endpoint(endpoint).is_err());
+        }
+    }
 }
