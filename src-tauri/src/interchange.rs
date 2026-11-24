@@ -352,9 +352,9 @@ fn zip_summary(bytes: &[u8], extension: &str) -> Result<String, String> {
     let mut details = String::new();
     match extension {
         "docx" => {
-            if let Ok(mut document) = archive.by_name("word/document.xml") {
+            if let Ok(document) = archive.by_name("word/document.xml") {
                 let mut xml = String::new();
-                let _ = document.read_to_string(&mut xml);
+                let _ = document.take(2 * 1024 * 1024).read_to_string(&mut xml);
                 let text = strip_xml_text(&xml);
                 if !text.is_empty() {
                     details.push_str("Texto extraído do documento:\n\n");
@@ -364,9 +364,9 @@ fn zip_summary(bytes: &[u8], extension: &str) -> Result<String, String> {
             }
         }
         "xlsx" => {
-            if let Ok(mut workbook) = archive.by_name("xl/workbook.xml") {
+            if let Ok(workbook) = archive.by_name("xl/workbook.xml") {
                 let mut xml = String::new();
-                let _ = workbook.read_to_string(&mut xml);
+                let _ = workbook.take(2 * 1024 * 1024).read_to_string(&mut xml);
                 let text = strip_xml_text(&xml);
                 if !text.is_empty() {
                     details.push_str("Estrutura da planilha:\n\n");
@@ -417,7 +417,7 @@ pub fn preview_message_attachment(
     }
 
     let extension = name.rsplit_once('.').map(|(_, value)| value.to_ascii_lowercase()).unwrap_or_default();
-    if mime.starts_with("image/") {
+    if mime.starts_with("image/") && mime != "image/svg+xml" {
         return Ok(MailAttachmentPreview {
             name,
             mime: mime.clone(),
@@ -468,6 +468,30 @@ pub fn preview_message_attachment(
     })
 }
 
+fn cleanup_expired_attachment_exports(root: &Path) -> Result<(), String> {
+    for entry in fs::read_dir(root).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if uuid::Uuid::parse_str(&entry.file_name().to_string_lossy()).is_err() {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(entry.path()).map_err(|error| error.to_string())?;
+        if metadata.is_dir() && !metadata.file_type().is_symlink() &&
+            metadata.modified().ok().and_then(|time| time.elapsed().ok())
+                .map(|age| age >= std::time::Duration::from_secs(3600)).unwrap_or(false)
+        {
+            // A file may still be in use by an external application on Windows.
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+    Ok(())
+}
+
+pub fn cleanup_attachment_exports(paths: &AppPaths) -> Result<(), String> {
+    let root = paths.root.join("attachment-exports");
+    if root.exists() { cleanup_expired_attachment_exports(&root)?; }
+    Ok(())
+}
+
 pub fn cache_message_attachment(
     paths: &AppPaths,
     account_id: &str,
@@ -483,19 +507,36 @@ pub fn cache_message_attachment(
         .ok_or_else(|| "Anexo não encontrado.".to_string())?;
     let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
 
-    let account = account_id
-        .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') { ch } else { '_' })
-        .collect::<String>();
-    let message = message_id
-        .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') { ch } else { '_' })
-        .collect::<String>();
-    let directory = paths.attachment_cache.join(account).join(message);
-    fs::create_dir_all(&directory).map_err(|error| format!("Não foi possível preparar o cache de anexos: {error}"))?;
+    if part.contents().len() > 64 * 1024 * 1024 {
+        return Err("O anexo excede o limite de materialização de 64 MB.".to_string());
+    }
+    // Raw message storage is encrypted. Materialize only for an explicit
+    // external-open or drag operation, in an isolated transient directory.
+    let root = paths.root.join("attachment-exports");
+    fs::create_dir_all(&root).map_err(|error| error.to_string())?;
+    cleanup_expired_attachment_exports(&root)?;
+    let directory = root.join(uuid::Uuid::new_v4().to_string());
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(&directory).map_err(|error| error.to_string())?;
     let destination = directory.join(format!("{index:03}-{name}"));
-    fs::write(&destination, part.contents())
-        .map_err(|error| format!("Não foi possível materializar o anexo: {error}"))?;
+    use std::io::Write;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let written = options.open(&destination).and_then(|mut file| file.write_all(part.contents()));
+    if let Err(error) = written {
+        let _ = fs::remove_dir_all(&directory);
+        return Err(format!("Não foi possível materializar o anexo: {error}"));
+    }
     Ok(destination.display().to_string())
 }
 
@@ -532,14 +573,22 @@ pub fn stage_message_attachments(
         .parse(&raw)
         .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
 
+    if uuid::Uuid::parse_str(operation_id).is_err() {
+        return Err("Identificador de operação de anexo inválido.".to_string());
+    }
     let directory = paths.queue_attachments.join(operation_id);
     fs::create_dir_all(&directory).map_err(|error| format!("Não foi possível preparar anexos: {error}"))?;
 
     let mut output = Vec::new();
+    let mut total = 0usize;
     for index in 0..parsed.attachment_count() {
         let Some(part) = parsed.attachment(index as u32) else { continue; };
         let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
-        let staged_name = format!("{index:03}-{name}");
+        total = total.saturating_add(part.contents().len());
+        if part.contents().len() > 64 * 1024 * 1024 || total > 100 * 1024 * 1024 {
+            return Err("Anexos excedem o limite de 64 MB por arquivo ou 100 MB no total.".to_string());
+        }
+        let staged_name = format!("{}-{index:03}-{name}", uuid::Uuid::new_v4());
         let path = directory.join(staged_name);
         local_crypto::write(&path, part.contents())
             .map_err(|error| format!("Não foi possível preparar o anexo {name}: {error}"))?;
