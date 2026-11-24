@@ -4,6 +4,9 @@ on:
     paths:
       - 'src-tauri/Cargo.toml'
       - 'src-tauri/Cargo.lock'
+      - 'src-tauri/src/credentials.rs'
+      - 'src-tauri/src/local_crypto.rs'
+      - 'src-tauri/src/storage.rs'
       - '.github/workflows/native-keyring-lock.yml'
 permissions:
   contents: read
@@ -22,3 +25,41 @@ jobs:
           name: native-keyring-cargo-lock
           path: src-tauri/Cargo.lock
           if-no-files-found: error
+  native-vault-linux:
+    needs: lock
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Tauri and Secret Service dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential libssl-dev dbus-x11 gnome-keyring
+      - run: npm ci
+      - run: npm run icons
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - name: Build storage tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --no-run
+      - name: Exercise actual Linux Secret Service in an isolated session
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+          export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+          export HOME="$(mktemp -d)"
+          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          chmod 700 "$HOME" "$XDG_RUNTIME_DIR"
+          trap 'rm -rf "$HOME" "$XDG_RUNTIME_DIR"' EXIT
+          # Preserve the runner toolchains while isolating the OS vault.
+          dbus-run-session -- bash -euo pipefail -c '
+            eval "$(printf %s seven-mail-ci-only | gnome-keyring-daemon --unlock --components=secrets)"
+            cargo test --locked --manifest-path src-tauri/Cargo.toml --lib credentials::native_backend_tests::native_backend_roundtrip -- --ignored --exact
+          '

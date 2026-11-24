@@ -143,3 +143,27 @@ pub fn store_local_storage_key(value: &str) -> Result<(), String> {
         .set_password(value)
         .map_err(|error| error.to_string())
 }
+
+#[cfg(test)]
+mod native_backend_tests {
+    #[test]
+    #[ignore = "requires an unlocked native OS credential store"]
+    fn native_backend_roundtrip() {
+        // Never use the real application's service or credential names.
+        let id = uuid::Uuid::new_v4().to_string();
+        let service = "Seven Mail CI storage smoke";
+        let entry = keyring::Entry::new(service, &id).expect("native entry");
+        struct Cleanup(keyring::Entry);
+        impl Drop for Cleanup {
+            fn drop(&mut self) { let _ = self.0.delete_credential(); }
+        }
+        let cleanup = Cleanup(entry);
+        assert!(matches!(cleanup.0.get_password(), Err(keyring::Error::NoEntry)));
+        let secret = uuid::Uuid::new_v4().to_string();
+        cleanup.0.set_password(&secret).expect("native write");
+        let reopened = keyring::Entry::new(service, &id).expect("reopen native entry");
+        assert_eq!(reopened.get_password().expect("native read"), secret);
+        reopened.delete_credential().expect("native delete");
+        assert!(matches!(cleanup.0.get_password(), Err(keyring::Error::NoEntry)));
+    }
+}
