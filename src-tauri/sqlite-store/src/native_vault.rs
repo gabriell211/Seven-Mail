@@ -192,7 +192,7 @@ pub fn open_native_staging(staging:&Path)->Result<Store>{
     if !meta.is_file()||meta.file_type().is_symlink(){return Err("Banco de staging inválido.".into());}
     let completion=read_completion(staging)?;
     let key=existing_key(&NativeVault,SQL_SERVICE,&id)?;
-    let store=Store::open(&path,&key)?;
+    let store=Store::open_read_only(&path,&key)?;
     store.verify()?;
     let count:i64=store.conn.query_row("SELECT count(*) FROM messages",[],|row|row.get(0)).map_err(crate::db_error)?;
     if count<0||count as u64!=completion.messages as u64{
