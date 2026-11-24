@@ -29,6 +29,14 @@ export function reconcileDocuments<T>(local: WorkspaceDocument<T>, remote: Works
 /** Compare only mirrored fields, never unrelated server metadata. */
 export function sameProjection(local: Record<string, unknown>, remote: object): boolean {
   const row = remote as Record<string, unknown>;
-  return Object.entries(local).every(([key, value]) =>
-    key === "owner_id" || (Object.hasOwn(row, key) && canonical(value) === canonical(row[key])));
+  return Object.entries(local).every(([key, value]) => {
+    if (key === "owner_id") return true;
+    if (!Object.hasOwn(row, key)) return false;
+    if (key === "received_at" && typeof value === "string" && typeof row[key] === "string") {
+      const localTime = Date.parse(value);
+      const remoteTime = Date.parse(row[key]);
+      return Number.isFinite(localTime) && localTime === remoteTime;
+    }
+    return canonical(value) === canonical(row[key]);
+  });
 }
