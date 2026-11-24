@@ -461,21 +461,32 @@ pub fn update_cached_remote_flags(
     paths: &AppPaths,
     account_id: &str,
     remote_folder: &str,
+    uid_validity: u32,
     uid: u32,
     is_read: bool,
     is_flagged: bool,
 ) -> Result<bool, String> {
-    let remote_id = uid.to_string();
-    let Some(mut message) = list_cached_messages(paths, Some(account_id))?
-        .into_iter()
-        .find(|message| {
-            message.remote_folder.as_deref() == Some(remote_folder)
-                && message.remote_id.as_deref() == Some(remote_id.as_str())
-        })
-    else {
-        return Ok(false);
-    };
-
+    safe_component(account_id)?;
+    if uid_validity == 0 || uid == 0 {
+        return Err("Identidade IMAP inválida.".into());
+    }
+    let id = crate::imap_sync::remote_message_id(account_id, remote_folder, uid_validity, uid);
+    safe_component(&id)?;
+    let path = paths.message_cache.join(account_id).join(format!("{id}.json"));
+    // Resolve the exact generation-scoped record instead of decrypting and
+    // sorting the entire account cache for each returned UID.
+    match fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => {}
+        Ok(_) => return Err("Arquivo de mensagem IMAP inválido.".into()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(io_error(error)),
+    }
+    let mut message: MailMessage = read_json(&path)?;
+    if message.id != id || message.account_id != account_id ||
+        message.remote_folder.as_deref() != Some(remote_folder) ||
+        message.remote_id.as_deref() != Some(uid.to_string().as_str()) {
+        return Err("Identidade da mensagem IMAP diverge do arquivo.".into());
+    }
     if message.is_read == is_read && message.is_flagged == is_flagged {
         return Ok(true);
     }
