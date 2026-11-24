@@ -276,8 +276,25 @@ fn safe_attachment_name(value: &str, index: usize) -> String {
         .chars()
         .map(|ch| if ch.is_control() || matches!(ch, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { ch })
         .collect::<String>();
-    let cleaned = cleaned.trim().trim_matches('.').to_string();
-    if cleaned.is_empty() { format!("anexo-{}", index + 1) } else { cleaned }
+    let cleaned = cleaned.trim_matches(|c: char| c.is_whitespace() || c == '.');
+    let device = cleaned.split('.').next().unwrap_or("").trim_end().to_ascii_uppercase();
+    let reserved = matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
+        || ["COM", "LPT"].iter().any(|prefix| device.strip_prefix(*prefix)
+            .is_some_and(|suffix| matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³")));
+    // Leave room for UUID prefixes and export collision suffixes. Preserve
+    // normal extensions so a truncated filename retains its file type.
+    let cleaned = if cleaned.len() > 160 {
+        let extension = Path::new(cleaned).extension().and_then(|v| v.to_str())
+            .filter(|v| v.len() <= 20).map(|v| format!(".{v}")).unwrap_or_default();
+        let stem = if extension.is_empty() { cleaned } else { &cleaned[..cleaned.len()-extension.len()] };
+        let mut end = (160 - extension.len()).min(stem.len());
+        while !stem.is_char_boundary(end) { end -= 1; }
+        format!("{}{extension}", &stem[..end])
+    } else { cleaned.to_owned() };
+    let cleaned = cleaned.trim_end_matches(|c: char| c.is_whitespace() || c == '.');
+    if cleaned.is_empty() { format!("anexo-{}", index.saturating_add(1)) }
+    else if reserved { format!("_{cleaned}") }
+    else { cleaned.to_owned() }
 }
 
 pub fn read_message_source(paths: &AppPaths, account_id: &str, message_id: &str) -> Result<String, String> {
@@ -586,19 +603,28 @@ pub fn stage_message_attachments(
     let directory = paths.queue_attachments.join(operation_id);
     fs::create_dir_all(&directory).map_err(|error| format!("Não foi possível preparar anexos: {error}"))?;
 
-    let mut output = Vec::new();
+    if parsed.attachment_count() > 256 {
+        return Err("Quantidade de anexos acima do limite.".into());
+    }
+    // Validate the complete batch before creating any staged files.
     let mut total = 0usize;
     for index in 0..parsed.attachment_count() {
         let Some(part) = parsed.attachment(index as u32) else { continue; };
-        let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
         total = total.saturating_add(part.contents().len());
         if part.contents().len() > 64 * 1024 * 1024 || total > 100 * 1024 * 1024 {
-            return Err("Anexos excedem o limite de 64 MB por arquivo ou 100 MB no total.".to_string());
+            return Err("Anexos excedem o limite de 64 MB por arquivo ou 100 MB no total.".into());
         }
+    }
+    let mut output: Vec<crate::models::QueuedAttachment> = Vec::new();
+    for index in 0..parsed.attachment_count() {
+        let Some(part) = parsed.attachment(index as u32) else { continue; };
+        let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
         let staged_name = format!("{}-{index:03}-{name}", uuid::Uuid::new_v4());
         let path = directory.join(staged_name);
-        local_crypto::write(&path, part.contents())
-            .map_err(|error| format!("Não foi possível preparar o anexo {name}: {error}"))?;
+        if let Err(error) = local_crypto::write(&path, part.contents()) {
+            for attachment in &output { let _ = fs::remove_file(&attachment.path); }
+            return Err(format!("Não foi possível preparar o anexo {name}: {error}"));
+        }
         output.push(crate::models::QueuedAttachment {
             name,
             path: path.display().to_string(),
@@ -883,6 +909,19 @@ pub fn export_pst(paths: &AppPaths, account_id: Option<&str>, destination: &str)
 #[cfg(test)]
 mod attachment_export_safety_tests {
     use super::*;
+
+    #[test]
+    fn attachment_names_are_portable_and_bounded() {
+        for name in ["CON.txt", "NUL", "COM1.pdf", "LPT².txt", "CONIN$", "AUX .doc"] {
+            assert!(safe_attachment_name(name, 0).starts_with('_'), "{name}");
+        }
+        assert_eq!(safe_attachment_name(" . ", 0), "anexo-1");
+        assert_eq!(safe_attachment_name("report.pdf. ", 0), "report.pdf");
+        assert_eq!(safe_attachment_name("../a\\b:stream", 0), "_a_b_stream");
+        let long = safe_attachment_name(&format!("{}.pdf", "á".repeat(200)), 0);
+        assert!(long.len() <= 160);
+        assert!(long.ends_with(".pdf"));
+    }
 
     #[test]
     fn exporting_does_not_overwrite_original_or_previous_collision() {
