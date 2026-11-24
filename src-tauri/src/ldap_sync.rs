@@ -2,7 +2,7 @@ use crate::{
     credentials,
     models::{AccountProfile, DirectoryContact},
 };
-use ldap3::{LdapConn, Scope, SearchEntry};
+use ldap3::{LdapConn, LdapConnSettings, Scope, SearchEntry};
 use std::{
     collections::HashMap,
     hash::{Hash, Hasher},
@@ -26,6 +26,18 @@ fn first(attrs: &HashMap<String, Vec<String>>, names: &[&str]) -> String {
     String::new()
 }
 
+fn ldap_starttls(url: &str) -> Result<bool, String> {
+    let parsed = reqwest::Url::parse(url).map_err(|_| "URL LDAP inválida.".to_string())?;
+    if parsed.host_str().is_none() || !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("URL LDAP inválida.".to_string());
+    }
+    match parsed.scheme() {
+        "ldaps" => Ok(false),
+        "ldap" => Ok(true),
+        _ => Err("Use LDAPS ou LDAP com StartTLS obrigatório.".to_string()),
+    }
+}
+
 pub fn sync(account: &AccountProfile) -> Result<Vec<DirectoryContact>, String> {
     let url = account
         .ldap_url
@@ -43,7 +55,12 @@ pub fn sync(account: &AccountProfile) -> Result<Vec<DirectoryContact>, String> {
         .filter(|value| !value.trim().is_empty())
         .unwrap_or("(&(objectClass=person)(mail=*))");
 
-    let mut ldap = LdapConn::new(url).map_err(|error| format!("Falha ao conectar ao LDAP: {error}"))?;
+    let starttls = ldap_starttls(url)?;
+    let settings = LdapConnSettings::new()
+        .set_conn_timeout(Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300)))
+        .set_starttls(starttls);
+    let mut ldap = LdapConn::with_settings(settings, url)
+        .map_err(|error| format!("Falha ao estabelecer conexão LDAP criptografada: {error}"))?;
     ldap.with_timeout(Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300)));
 
     let username = account.username.as_deref().unwrap_or(&account.email);
@@ -96,4 +113,16 @@ pub fn sync(account: &AccountProfile) -> Result<Vec<DirectoryContact>, String> {
 pub fn test(account: &AccountProfile) -> Result<bool, String> {
     let _ = sync(account)?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod tls_tests {
+    use super::ldap_starttls;
+
+    #[test]
+    fn requires_encrypted_ldap_connection() {
+        assert_eq!(ldap_starttls("ldap://directory.example.com:389"), Ok(true));
+        assert_eq!(ldap_starttls("ldaps://directory.example.com:636"), Ok(false));
+        assert!(ldap_starttls("http://directory.example.com").is_err());
+    }
 }
