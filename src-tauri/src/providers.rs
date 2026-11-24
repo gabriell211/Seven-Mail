@@ -251,6 +251,47 @@ fn attachment_mime(name: &str) -> &'static str {
     }
 }
 
+fn read_staged_mail_file(
+    path: &str,
+    expected_operation: Option<&str>,
+    max_bytes: u64,
+) -> Result<Vec<u8>, String> {
+    let paths = AppPaths::resolve()?;
+    let root = paths.queue_attachments.canonicalize().map_err(|error| error.to_string())?;
+    let candidate = std::path::Path::new(path);
+    let metadata = fs::symlink_metadata(candidate).map_err(|error| error.to_string())?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err("Anexo não é um arquivo regular.".into());
+    }
+    let canonical = candidate.canonicalize().map_err(|error| error.to_string())?;
+    let relative = canonical.strip_prefix(&root)
+        .map_err(|_| "Arquivo fora da área de anexos da fila.".to_string())?;
+    let components = relative.components().collect::<Vec<_>>();
+    if components.len() != 2 || !components.iter().all(|component| matches!(component, std::path::Component::Normal(_))) {
+        return Err("Caminho de anexo inválido.".into());
+    }
+    if let Some(operation) = expected_operation {
+        if components[0].as_os_str() != std::ffi::OsStr::new(operation) {
+            return Err("A fonte não pertence à operação de redirecionamento.".into());
+        }
+    }
+    if metadata.len() > max_bytes + 1024 {
+        return Err("Arquivo da fila excede o limite de tamanho.".into());
+    }
+    use std::io::Read;
+    let file = fs::File::open(&canonical).map_err(|error| error.to_string())?;
+    let mut encrypted = Vec::new();
+    file.take(max_bytes + 1025).read_to_end(&mut encrypted).map_err(|error| error.to_string())?;
+    if encrypted.len() as u64 > max_bytes + 1024 || !local_crypto::is_encrypted(&encrypted) {
+        return Err("Arquivo de fila inválido ou não criptografado.".into());
+    }
+    let bytes = local_crypto::decrypt_or_plain(&encrypted)?;
+    if bytes.len() as u64 > max_bytes {
+        return Err("Arquivo da fila excede o limite de tamanho.".into());
+    }
+    Ok(bytes)
+}
+
 fn redirect_queued(
     account: &AccountProfile,
     operation: &QueueOperation,
@@ -274,7 +315,7 @@ fn redirect_queued(
     let envelope = Envelope::new(Some(envelope_from), vec![recipient.clone()])
         .map_err(|error| format!("Envelope SMTP inválido: {error}"))?;
 
-    let original = fs::read(source_path)
+    let original = read_staged_mail_file(source_path, Some(&operation.id), 64 * 1024 * 1024)
         .map_err(|error| format!("Não foi possível ler a mensagem a redirecionar: {error}"))?;
     let resent = format!(
         "Resent-Date: {}\r\nResent-From: {}\r\nResent-To: {}\r\n",
@@ -467,7 +508,7 @@ pub fn send_queued_raw_with_checkpoint(
 
     let mut mixed = MultiPart::mixed().multipart(body_part);
     for attachment in attachments {
-        let bytes = local_crypto::read(std::path::Path::new(&attachment.path))
+        let bytes = read_staged_mail_file(&attachment.path, None, 250 * 1024 * 1024)
             .map_err(|error| format!("Falha ao ler o anexo {}: {error}", attachment.name))?;
         let content_type: ContentType = attachment_mime(&attachment.name)
             .parse()
