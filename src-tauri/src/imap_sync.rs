@@ -594,6 +594,7 @@ pub fn sync_folder(
                     paths,
                     &account.id,
                     remote_folder,
+                    uid_validity,
                     uid,
                     is_read,
                     is_flagged,
