@@ -47,7 +47,11 @@ jobs:
           choco install strawberryperl nasm -y --no-progress
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "C:\Strawberry\perl\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-      - run: npm ci
+      - name: Install locked dependencies without peer conflicts
+        run: npm ci --strict-peer-deps --strict-allow-scripts
+      - name: Reject vulnerable dependency tree
+        run: npm audit --audit-level=low
+      - run: npm test
       - run: npm run icons
       - uses: swatinem/rust-cache@v2
         with:
