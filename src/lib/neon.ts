@@ -52,12 +52,20 @@ export async function getAuthorizedCloudOwner(): Promise<string | null> {
   return binding?.enabled && binding.ownerId === owner ? owner : null;
 }
 
+let lastCloudSyncError: { scope: string; message: string } | null = null;
+
+export function getLastCloudSyncError() { return lastCloudSyncError; }
+
+export function clearCloudSyncError(): void {
+  lastCloudSyncError = null;
+  window.dispatchEvent(new Event("seven-mail:cloud-sync-error"));
+}
+
 export function reportCloudSyncError(error: unknown, scope: string): void {
   // Report scope only; remote errors may contain message payloads or identifiers.
   void error;
-  window.dispatchEvent(new CustomEvent("seven-mail:cloud-sync-error", {
-    detail: { scope, message: "A sincronização não foi concluída. Os dados locais foram preservados." },
-  }));
+  lastCloudSyncError = { scope, message: "A sincronização não foi concluída. Os dados locais foram preservados." };
+  window.dispatchEvent(new Event("seven-mail:cloud-sync-error"));
 }
 
 export async function setCloudSyncConsent(enabled: boolean): Promise<void> {
@@ -86,6 +94,7 @@ export async function signOutCloud() {
   if (!neonClient) return;
   const result = await neonClient.auth.signOut();
   if (result.error) throw new Error(errorMessage(result.error));
+  clearCloudSyncError();
   window.dispatchEvent(new Event("seven-mail:cloud-session"));
 }
 
