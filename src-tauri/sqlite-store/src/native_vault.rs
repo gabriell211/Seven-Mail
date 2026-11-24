@@ -1,5 +1,5 @@
 //! Native-only staging adapter. No IPC, activation, or writes to legacy data.
-use crate::{legacy::{create_snapshot, migrate_completed_snapshot, MigrationReport}, Result, Store};
+use crate::{legacy::{create_snapshot, migrate_completed_snapshot, verify_completed_snapshot, MigrationReport}, Result, Store};
 use aes_gcm::{aead::{Aead, KeyInit, OsRng, rand_core::RngCore}, Aes256Gcm, Nonce};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::{fs, io::{Read, Write}, path::{Path, PathBuf}, sync::Mutex};
@@ -124,6 +124,12 @@ pub fn prepare_offline(data_root: &Path) -> Result<OfflinePreparation> {
     let expected = create_snapshot(&source, &snapshot)?;
     let report = prepare_native_staging(&snapshot, &staging)?;
     if report != expected { return Err("Relatório de preparação diverge do backup.".into()); }
+    let reopened = open_native_staging(&staging)?;
+    let legacy = existing_key(&NativeVault, LEGACY_SERVICE, LEGACY_ID)?;
+    let verified = verify_completed_snapshot(&reopened, &snapshot, |bytes| decrypt_legacy(&legacy, bytes))?;
+    if verified != report {
+        return Err("Reabertura diverge do snapshot autenticado.".into());
+    }
     Ok(OfflinePreparation { staging, report })
 }
 
