@@ -103,7 +103,7 @@ async fn command(stream: &mut PopStream, value: &str) -> Result<String, String> 
     read_status(stream).await
 }
 
-async fn multiline(stream: &mut PopStream, limit: usize) -> Result<Vec<u8>, String> {
+async fn multiline<R: async_std::io::BufRead + Unpin>(stream: &mut R, limit: usize) -> Result<Vec<u8>, String> {
     let mut output = Vec::new();
     loop {
         let mut line = bounded_line(stream, MAX_LINE).await?;
@@ -450,6 +450,27 @@ mod reliability_tests {
         drop(first);
         assert!(AccountSyncGuard::acquire("pop3-test-account-a").is_ok());
         drop(other);
+    }
+
+    #[test]
+    fn multiline_preserves_dot_stuffing_and_stops_at_terminator() {
+        async_std::task::block_on(async {
+            let mut stream = BufReader::new(async_std::io::Cursor::new(b"header\r\n..body\r\n...dot\r\n.\r\n+OK next\r\n".to_vec()));
+            assert_eq!(multiline(&mut stream, 128).await.unwrap(), b"header\r\n.body\r\n..dot\r\n");
+            assert_eq!(status_line(&mut stream).await.unwrap(), "+OK next\r\n");
+        });
+    }
+
+    #[test]
+    fn multiline_rejects_truncated_and_oversized_responses() {
+        async_std::task::block_on(async {
+            let mut truncated = BufReader::new(async_std::io::Cursor::new(b"header\r\nbody\r\n".to_vec()));
+            assert!(multiline(&mut truncated, 128).await.is_err());
+            let mut oversized = BufReader::new(async_std::io::Cursor::new(b"1234\r\n5678\r\n.\r\n".to_vec()));
+            assert!(multiline(&mut oversized, 10).await.is_err());
+            let mut exact = BufReader::new(async_std::io::Cursor::new(b"123\r\n.\r\n".to_vec()));
+            assert_eq!(multiline(&mut exact, 5).await.unwrap(), b"123\r\n");
+        });
     }
 
     #[test]
