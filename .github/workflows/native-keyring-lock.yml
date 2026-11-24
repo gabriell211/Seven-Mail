@@ -11,13 +11,13 @@ jobs:
   lock:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - name: Resolve native keyring feature graph
         working-directory: src-tauri
         run: |
           cargo metadata --locked --format-version 1 > /dev/null
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: native-keyring-cargo-lock
           path: src-tauri/Cargo.lock
