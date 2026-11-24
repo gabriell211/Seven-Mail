@@ -1270,28 +1270,40 @@ export default function App() {
       return;
     }
     let disposed = false;
+    let refreshing = false;
+    let generation = 0;
     async function refresh() {
+      if (refreshing) return;
+      refreshing = true;
+      const requestGeneration = generation;
       try {
         const value = await bridge.isAppLocked();
-        if (!disposed) {
+        if (!disposed && requestGeneration === generation) {
           setLocked(value);
           setLockError("");
         }
       } catch (error) {
-        if (!disposed) {
+        if (!disposed && requestGeneration === generation) {
           setLocked(true);
           setLockError(error instanceof Error ? error.message : String(error));
         }
+      } finally {
+        refreshing = false;
       }
     }
     void refresh();
     const timer = window.setInterval(() => void refresh(), 2000);
-    const onLock = () => setLocked(true);
+    const onLock = () => { generation += 1; setLocked(true); };
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
     window.addEventListener("seven-mail:native-locked", onLock);
     return () => {
       disposed = true;
       window.clearInterval(timer);
       window.removeEventListener("seven-mail:native-locked", onLock);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
     };
   }, []);
   if (locked === null) return <LaunchScreen ready={false}/>;
@@ -2682,7 +2694,7 @@ function UnlockedApp() {
         if(!disposed) window.dispatchEvent(new Event("seven-mail:native-locked"));
       });
     }
-    const onActivity=()=>updateActivity();
+    const onActivity=(event:Event)=>{ if(event.isTrusted) updateActivity(); };
     const events=["pointerdown","keydown","wheel","touchstart"] as const;
     for(const event of events) window.addEventListener(event,onActivity,{passive:true});
     updateActivity(true);
