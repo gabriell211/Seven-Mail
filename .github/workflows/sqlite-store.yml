@@ -15,7 +15,30 @@ permissions:
   contents: read
 
 jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-tauri/sqlite-store
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve canonical lockfile
+        shell: bash
+        run: |
+          if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
+          cargo metadata --locked --no-deps --format-version 1 > /dev/null
+          echo 'BEGIN_SEVEN_MAIL_SQLITE_LOCKFILE'
+          cat Cargo.lock
+          echo 'END_SEVEN_MAIL_SQLITE_LOCKFILE'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sqlite-store-canonical-lock
+          path: src-tauri/sqlite-store/Cargo.lock
+          if-no-files-found: error
+
   sqlcipher:
+    needs: lockfile
     strategy:
       fail-fast: false
       matrix:
@@ -27,17 +50,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          name: sqlite-store-canonical-lock
+          path: src-tauri/sqlite-store
       - name: Install Windows OpenSSL build prerequisites
         if: runner.os == 'Windows'
         run: choco install strawberryperl nasm -y --no-progress
-      - name: Resolve independent foundation lockfile
-        shell: bash
-        run: |
-          if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
       - run: cargo test --locked
       - run: cargo check --locked
-      - uses: actions/upload-artifact@v4
-        with:
-          name: sqlite-store-lock-${{ matrix.os }}
-          path: src-tauri/sqlite-store/Cargo.lock
-          if-no-files-found: error
