@@ -925,6 +925,7 @@ fn copy_message_to_folder(
         payload: serde_json::json!({
             "remoteId": remote_id,
             "mailbox": mailbox,
+            "messageId": message_id,
             "targetMailbox": target_path,
         }),
     })
