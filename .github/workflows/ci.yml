@@ -12,26 +12,27 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
-      - run: npm ci
+      - run: npm ci --strict-peer-deps --strict-allow-scripts
+      - run: npm audit --audit-level=low
       - run: npm test
       - run: npm run build
 
   rust:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Tauri dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential curl wget file libssl-dev
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
-      - run: npm ci
+      - run: npm ci --strict-peer-deps --strict-allow-scripts
       - run: npm run icons
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
@@ -59,15 +60,15 @@ jobs:
       SEVEN_MAIL_TEST_SECRET: "sevenpass"
       XDG_DATA_HOME: /tmp/seven-mail-e2e
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Tauri dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential curl wget file libssl-dev
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
-      - run: npm ci
+      - run: npm ci --strict-peer-deps --strict-allow-scripts
       - run: npm run icons
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
@@ -77,14 +78,35 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import socket, time
+          import socket, ssl, time
           ports = (3025, 3993, 3995)
-          deadline = time.time() + 30
+          deadline = time.monotonic() + 30
           pending = set(ports)
-          while pending and time.time() < deadline:
+          # GreenMail uses a self-signed fixture certificate on loopback.
+          # No production TLS validation is changed.
+          context = ssl._create_unverified_context()
+          def probe(port):
+              with socket.create_connection(("127.0.0.1", port), timeout=2) as raw:
+                  connection = context.wrap_socket(raw, server_hostname="localhost") if port != 3025 else raw
+                  with connection:
+                      with connection.makefile("rb") as reader:
+                          greeting = reader.readline(8192)
+                          prefix, command = {3025: (b"220", b"QUIT\r\n"), 3993: (b"* OK", b"a1 LOGOUT\r\n"), 3995: (b"+OK", b"QUIT\r\n")}[port]
+                          if not greeting.startswith(prefix):
+                              raise OSError("Unexpected GreenMail greeting")
+                          connection.sendall(command)
+                          if port == 3993:
+                              while True:
+                                  line = reader.readline(8192)
+                                  if not line or line.startswith(b"a1 "):
+                                      break
+                          else:
+                              reader.readline(8192)
+              return True
+          while pending and time.monotonic() < deadline:
               for port in tuple(pending):
                   try:
-                      with socket.create_connection(("127.0.0.1", port), timeout=1):
+                      if probe(port):
                           pending.remove(port)
                   except OSError:
                       pass

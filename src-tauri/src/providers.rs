@@ -503,6 +503,7 @@ pub fn send_queued_raw(account: &AccountProfile, operation: &QueueOperation) -> 
     Ok(raw)
 }
 
+#[cfg(test)]
 pub fn send_queued(account: &AccountProfile, operation: &QueueOperation) -> Result<(), String> {
     send_queued_raw(account, operation).map(|_| ())
 }
