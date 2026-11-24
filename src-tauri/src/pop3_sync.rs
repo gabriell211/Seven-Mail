@@ -12,7 +12,7 @@ use async_std::{
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use mail_parser::{MessageParser, MimeHeaders};
-use std::{collections::HashSet, hash::{Hash, Hasher}, time::Duration};
+use std::{collections::{HashMap, HashSet}, hash::{Hash, Hasher}, sync::{LazyLock, Mutex}, time::Duration};
 
 type PopStream = BufReader<TlsStream<TcpStream>>;
 
@@ -36,6 +36,28 @@ const MAX_STATUS: usize = 8 * 1024;
 const MAX_LINE: usize = 1024 * 1024;
 const MAX_UIDL: usize = 16 * 1024 * 1024;
 const MAX_MESSAGE: usize = 64 * 1024 * 1024;
+
+static ACTIVE_ACCOUNTS: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+
+struct AccountSyncGuard(String);
+
+impl AccountSyncGuard {
+    fn acquire(account_id: &str) -> Result<Self, String> {
+        let mut active = ACTIVE_ACCOUNTS.lock().map_err(|_| "Sincronização POP3 indisponível.".to_string())?;
+        if !active.insert(account_id.to_owned()) {
+            return Err("Já existe uma sincronização POP3 em andamento para esta conta.".into());
+        }
+        Ok(Self(account_id.to_owned()))
+    }
+}
+
+impl Drop for AccountSyncGuard {
+    fn drop(&mut self) {
+        if let Ok(mut active) = ACTIVE_ACCOUNTS.lock() {
+            active.remove(&self.0);
+        }
+    }
+}
 
 fn validate_auth_value(value: &str) -> Result<(), String> {
     if value.is_empty() || value.len() > 64 * 1024 || value.chars().any(char::is_control) {
@@ -212,6 +234,51 @@ async fn uidl(stream: &mut PopStream) -> Result<Vec<(u32, String)>, String> {
     parse_uidl(&multiline(stream, MAX_UIDL).await?)
 }
 
+fn parse_list(raw: &[u8]) -> Result<HashMap<u32, u64>, String> {
+    let text = std::str::from_utf8(raw).map_err(|_| "LIST POP3 inválido.".to_string())?;
+    let mut sizes = HashMap::new();
+    for line in text.lines() {
+        let mut parts = line.split_ascii_whitespace();
+        let number = parts.next().and_then(|value| value.parse::<u32>().ok())
+            .filter(|value| *value > 0).ok_or_else(|| "Número LIST POP3 inválido.".to_string())?;
+        let size = parts.next().and_then(|value| value.parse::<u64>().ok())
+            .ok_or_else(|| "Tamanho LIST POP3 inválido.".to_string())?;
+        if parts.next().is_some() || sizes.insert(number, size).is_some() {
+            return Err("Lista de tamanhos POP3 duplicada ou inválida.".into());
+        }
+    }
+    Ok(sizes)
+}
+
+async fn list_sizes(stream: &mut PopStream) -> Result<HashMap<u32, u64>, String> {
+    command(stream, "LIST").await?;
+    parse_list(&multiline(stream, MAX_UIDL).await?)
+}
+
+fn eligible_entries(
+    entries: Vec<(u32, String)>,
+    sizes: &HashMap<u32, u64>,
+    cached: &HashSet<String>,
+) -> Result<(Vec<(u32, String)>, usize), String> {
+    let mut eligible = Vec::new();
+    let mut oversized = 0;
+    if entries.len() != sizes.len() {
+        return Err("LIST e UIDL POP3 divergentes.".into());
+    }
+    for (number, uid) in entries {
+        let size = sizes.get(&number).ok_or_else(|| "Mensagem UIDL sem tamanho LIST.".to_string())?;
+        if cached.contains(&uid) {
+            continue;
+        }
+        if *size > MAX_MESSAGE as u64 {
+            oversized += 1;
+        } else {
+            eligible.push((number, uid));
+        }
+    }
+    Ok((eligible, oversized))
+}
+
 async fn retrieve(stream: &mut PopStream, number: u32) -> Result<Vec<u8>, String> {
     command(stream, &format!("RETR {number}")).await?;
     multiline(stream, MAX_MESSAGE).await
@@ -293,8 +360,7 @@ pub fn test(account: &AccountProfile) -> Result<bool, String> {
 }
 
 pub fn sync_latest(paths: &AppPaths, account: &AccountProfile, limit: u32) -> Result<usize, String> {
-    static SYNC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = SYNC_LOCK.lock().map_err(|_| "Sincronização POP3 indisponível.".to_string())?;
+    let _guard = AccountSyncGuard::acquire(&account.id)?;
     async_std::task::block_on(async {
         let mut stream = connect_bounded(account).await?;
         let entries = async_std::future::timeout(timeout_for(account), uidl(&mut stream)).await
@@ -305,7 +371,10 @@ pub fn sync_latest(paths: &AppPaths, account: &AccountProfile, limit: u32) -> Re
             .filter_map(|message| message.remote_id)
             .collect();
 
-        let missing = missing_batch(entries, &cached, limit.clamp(1, 200) as usize);
+        let sizes = async_std::future::timeout(timeout_for(account), list_sizes(&mut stream)).await
+            .map_err(|_| "Tempo limite LIST POP3 excedido.".to_string())??;
+        let (eligible, oversized) = eligible_entries(entries, &sizes, &cached)?;
+        let missing = missing_batch(eligible, &cached, limit.clamp(1, 200) as usize);
 
         let mut imported = 0usize;
         for (number, uid) in missing {
@@ -318,6 +387,11 @@ pub fn sync_latest(paths: &AppPaths, account: &AccountProfile, limit: u32) -> Re
         }
 
         let _ = async_std::future::timeout(timeout_for(account), command(&mut stream, "QUIT")).await;
+        if oversized > 0 {
+            return Err(format!(
+                "POP3: {imported} mensagens importadas; {oversized} mensagens acima de 64 MiB permanecem no servidor."
+            ));
+        }
         Ok(imported)
     })
 }
@@ -354,6 +428,28 @@ mod reliability_tests {
         assert_eq!(second[0].0, 1);
         cached.extend(second.into_iter().map(|(_, uid)| uid));
         assert_eq!(missing_batch(entries, &cached, 200).len(), 100);
+    }
+
+    #[test]
+    fn oversized_messages_do_not_consume_the_batch() {
+        let entries = vec![(1, "large".into()), (2, "small".into()), (3, "cached".into())];
+        let sizes = parse_list(format!("1 {}\r\n2 100\r\n3 200\r\n", MAX_MESSAGE + 1).as_bytes()).unwrap();
+        let cached = HashSet::from(["cached".to_string()]);
+        let (eligible, skipped) = eligible_entries(entries.clone(), &sizes, &cached).unwrap();
+        assert_eq!(skipped, 1);
+        assert_eq!(missing_batch(eligible, &cached, 1), vec![(2, "small".into())]);
+        assert!(eligible_entries(entries, &HashMap::new(), &cached).is_err());
+        assert!(parse_list(b"1 10\n1 20\n").is_err());
+    }
+
+    #[test]
+    fn sync_guard_is_per_account_and_releases_on_drop() {
+        let first = AccountSyncGuard::acquire("pop3-test-account-a").unwrap();
+        assert!(AccountSyncGuard::acquire("pop3-test-account-a").is_err());
+        let other = AccountSyncGuard::acquire("pop3-test-account-b").unwrap();
+        drop(first);
+        assert!(AccountSyncGuard::acquire("pop3-test-account-a").is_ok());
+        drop(other);
     }
 
     #[test]
