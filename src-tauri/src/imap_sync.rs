@@ -99,7 +99,7 @@ fn parse_message(
     let raw = fetch.body()?;
     let parsed = MessageParser::default().parse(raw)?;
 
-    let uid = fetch.uid.unwrap_or(fetch.message);
+    let uid = fetch.uid?;
     let flags: Vec<_> = fetch.flags().collect();
     let is_read = flags.iter().any(|flag| matches!(flag, Flag::Seen));
     let is_flagged = flags.iter().any(|flag| matches!(flag, Flag::Flagged));
@@ -467,6 +467,28 @@ pub fn list_folders(account: &AccountProfile) -> Result<Vec<MailFolder>, String>
     })
 }
 
+fn missing_uid_batch(
+    remote: &std::collections::HashSet<u32>,
+    cached: &[u32],
+    limit: usize,
+) -> Vec<u32> {
+    let cached_set = cached.iter().copied().collect::<std::collections::HashSet<_>>();
+    let mut missing = remote
+        .iter()
+        .copied()
+        .filter(|uid| !cached_set.contains(uid))
+        .collect::<Vec<_>>();
+    missing.sort_unstable();
+    // Show recent mail first on a fresh installation. On subsequent passes
+    // drain the oldest missing UIDs so newer arrivals cannot starve the backlog.
+    if cached.is_empty() && missing.len() > limit {
+        missing = missing.split_off(missing.len() - limit);
+    } else {
+        missing.truncate(limit);
+    }
+    missing
+}
+
 pub fn sync_folder(
     paths: &AppPaths,
     account: &AccountProfile,
@@ -495,30 +517,9 @@ pub fn sync_folder(
             .await
             .map_err(|error| format!("Falha ao consultar UIDs de {remote_folder}: {error}"))?;
         let cached_uids = storage::cached_remote_uids(paths, &account.id, remote_folder)?;
-        let cached_set = cached_uids.iter().copied().collect::<std::collections::HashSet<_>>();
-        let highest_cached = cached_uids.last().copied();
-
-        let mut sorted_remote = remote_uids.iter().copied().collect::<Vec<_>>();
-        sorted_remote.sort_unstable();
-
-        let mut wanted = if let Some(highest) = highest_cached {
-            sorted_remote
-                .iter()
-                .copied()
-                .filter(|uid| *uid > highest && !cached_set.contains(uid))
-                .collect::<Vec<_>>()
-        } else {
-            sorted_remote
-                .iter()
-                .rev()
-                .take(limit as usize)
-                .copied()
-                .collect::<Vec<_>>()
-        };
-        wanted.sort_unstable();
-        if wanted.len() > limit as usize {
-            wanted = wanted.split_off(wanted.len() - limit as usize);
-        }
+        // The persisted cache is the set of completed UIDs, not a high-water
+        // mark. Missing older UIDs must remain eligible after every batch.
+        let wanted = missing_uid_batch(&remote_uids, &cached_uids, limit as usize);
 
         let mut cached = 0usize;
         if !wanted.is_empty() {
@@ -534,23 +535,24 @@ pub fn sync_folder(
 
             for item in &fetched {
                 if let Some(message) = parse_message(account, item, remote_folder, folder_label) {
-                    storage::cache_message(paths, &message)?;
+                    // Write the raw source first: a failed write must not
+                    // publish a cached UID whose original message is missing.
                     if let Some(raw) = item.body() {
                         storage::cache_raw_message(paths, &message.account_id, &message.id, raw)?;
                     }
+                    storage::cache_message(paths, &message)?;
                     cached += 1;
                 }
             }
         }
 
-        let recent_cached = cached_uids
-            .iter()
-            .rev()
-            .take(limit as usize)
-            .copied()
+        // Refresh every cached UID in bounded requests, including old mail.
+        let existing = cached_uids
+            .into_iter()
+            .filter(|uid| remote_uids.contains(uid))
             .collect::<Vec<_>>();
-        if !recent_cached.is_empty() {
-            let sequence = recent_cached.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+        for batch in existing.chunks(limit as usize) {
+            let sequence = batch.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
             let flag_stream = session
                 .uid_fetch(sequence, "(UID FLAGS)")
                 .await
@@ -829,4 +831,38 @@ pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize
         session.logout().await.map_err(|error| error.to_string())?;
         Ok(applied)
     })
+}
+
+#[cfg(test)]
+mod uid_batch_tests {
+    use super::missing_uid_batch;
+    use std::collections::HashSet;
+
+    #[test]
+    fn catches_up_after_more_than_two_hundred_arrivals() {
+        let remote: HashSet<u32> = (1..=501).collect();
+        let mut cached = vec![1];
+        for expected in [200, 200, 100, 0] {
+            let batch = missing_uid_batch(&remote, &cached, 200);
+            assert_eq!(batch.len(), expected);
+            cached.extend(batch);
+        }
+        assert_eq!(cached.into_iter().collect::<HashSet<_>>(), remote);
+    }
+
+    #[test]
+    fn initial_recent_batch_does_not_lose_older_mail() {
+        let remote: HashSet<u32> = (1..=500).collect();
+        let mut cached = missing_uid_batch(&remote, &[], 200);
+        assert_eq!(cached.first(), Some(&301));
+        cached.extend(missing_uid_batch(&remote, &cached, 200));
+        cached.extend(missing_uid_batch(&remote, &cached, 200));
+        assert_eq!(cached.into_iter().collect::<HashSet<_>>(), remote);
+    }
+
+    #[test]
+    fn repairs_existing_uid_gaps() {
+        let remote = HashSet::from([1, 2, 3, 4, 5, 6]);
+        assert_eq!(missing_uid_batch(&remote, &[1, 3, 6], 2), vec![2, 4]);
+    }
 }
