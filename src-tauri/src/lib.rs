@@ -145,7 +145,7 @@ fn store_secret(account_id: String, secret: String) -> Result<(), String> {
 
 #[tauri::command]
 fn has_app_lock() -> Result<bool, String> {
-    credentials::has_app_lock()
+    app_lock::configured()
 }
 
 #[tauri::command]
