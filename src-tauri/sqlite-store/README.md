@@ -32,3 +32,7 @@ O manifesto detecta deriva acidental, não é uma assinatura nem substitui a aut
 
 Referências: https://www.zetetic.net/sqlcipher/sqlcipher-api/ ,
 https://sqlite.org/fts5.html e https://docs.rs/crate/rusqlite/0.43.0 .
+
+## Adaptador de cofre nativo (feature `native-vault`)
+
+O módulo Rust `native_vault` lê a chave AES-GCM original do cofre, sem criar uma substituta, e prepara um banco em diretório exclusivo com nova chave de 256 bits no serviço separado Seven Mail SQLCipher. Após importação e verificação de integridade, grava a confirmação de staging. A reabertura exige confirmação, chave original do staging e contagem correspondente. O chamador deve fornecer uma identidade aleatória de 128 bits e diretório privado; a chave está vinculada a essa identidade. Não é uma API IPC, não ativa o banco e não substitui o modo manutenção. O lockfile anterior precisa incorporar as novas dependências opcionais antes de consolidar. Os testes usam cofre em memória; homologar os cofres reais e ACLs Windows, recuperação de falha e política de retenção de entradas órfãs.
