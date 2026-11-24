@@ -245,6 +245,11 @@ struct SnapshotManifest {
 /// before the database transaction commits.
 pub fn migrate_completed_snapshot<F>(store: &mut Store, snapshot: &Path, decrypt: F) -> Result<MigrationReport>
 where F: FnMut(&[u8]) -> Result<Vec<u8>> {
+    let manifest = read_snapshot_manifest(snapshot)?;
+    migrate_snapshot_inner(store, &snapshot.join("messages"), decrypt, Some(&manifest))
+}
+
+fn read_snapshot_manifest(snapshot: &Path) -> Result<SnapshotManifest> {
     require_directory(snapshot)?;
     let path = snapshot.join("snapshot.complete.json");
     let meta = fs::symlink_metadata(&path).map_err(io_error)?;
@@ -258,7 +263,42 @@ where F: FnMut(&[u8]) -> Result<Vec<u8>> {
     if manifest.version != 1 || manifest.fingerprint.len()!=64 || !manifest.fingerprint.bytes().all(|ch|ch.is_ascii_hexdigit()) {
         return Err("Versão ou fingerprint de snapshot inválido.".into());
     }
-    migrate_snapshot_inner(store, &snapshot.join("messages"), decrypt, Some(&manifest))
+    Ok(manifest)
+}
+
+/// Compare the entire prepared database with the authenticated snapshot.
+/// Unlike a count-only check, this also detects equal-count content changes.
+pub fn verify_completed_snapshot<F>(store: &Store, snapshot: &Path, mut decrypt: F) -> Result<MigrationReport>
+where F: FnMut(&[u8]) -> Result<Vec<u8>> {
+    let manifest = read_snapshot_manifest(snapshot)?;
+    let root = snapshot.join("messages");
+    let files = inventory(&root)?;
+    let accounts = files.keys().map(|(account, _)| account).collect::<std::collections::BTreeSet<_>>().len();
+    let count: i64 = store.conn.query_row("SELECT count(*) FROM messages", [], |row| row.get(0)).map_err(crate::db_error)?;
+    if count != files.len() as i64 || files.len() != manifest.messages || accounts != manifest.accounts {
+        return Err("Contagem diverge do snapshot autenticado.".into());
+    }
+    let mut digests = BTreeMap::new();
+    for (identity, path) in &files {
+        let bytes = encrypted_file(path)?;
+        digests.insert(identity.clone(), Sha256::digest(&bytes).into());
+        let plain = decrypt(&bytes)?;
+        if plain.len() as u64 > MAX_FILE { return Err("Mensagem acima do limite.".into()); }
+        let expected = decode(identity, &plain)?;
+        if store.get(&identity.0, &identity.1)?.as_ref() != Some(&expected) {
+            return Err("Conteúdo do banco diverge do snapshot autenticado.".into());
+        }
+    }
+    if inventory(&root)? != files || fingerprint(&digests) != manifest.fingerprint {
+        return Err("Fingerprint diverge do snapshot autenticado.".into());
+    }
+    for (identity, path) in &files {
+        let digest: [u8; 32] = Sha256::digest(encrypted_file(path)?).into();
+        if digests.get(identity) != Some(&digest) {
+            return Err("Snapshot mudou durante a verificação.".into());
+        }
+    }
+    Ok(MigrationReport { messages: files.len(), accounts, source_fingerprint: fingerprint(&digests) })
 }
 
 fn migrate_snapshot_inner<F>(store: &mut Store, root: &Path, mut decrypt: F, manifest: Option<&SnapshotManifest>) -> Result<MigrationReport>
