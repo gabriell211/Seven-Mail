@@ -26,11 +26,8 @@ jobs:
       - name: Resolve canonical lockfile
         shell: bash
         run: |
-          if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
+          test -f Cargo.lock
           cargo metadata --locked --no-deps --format-version 1 > /dev/null
-          echo 'BEGIN_SEVEN_MAIL_SQLITE_LOCKFILE'
-          cat Cargo.lock
-          echo 'END_SEVEN_MAIL_SQLITE_LOCKFILE'
       - uses: actions/upload-artifact@v4
         with:
           name: sqlite-store-canonical-lock
