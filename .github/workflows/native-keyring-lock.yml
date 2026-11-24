@@ -16,10 +16,7 @@ jobs:
       - name: Resolve native keyring feature graph
         working-directory: src-tauri
         run: |
-          cargo metadata --format-version 1 > /dev/null
-          echo 'BEGIN_SEVEN_MAIL_NATIVE_LOCK'
-          cat Cargo.lock
-          echo 'END_SEVEN_MAIL_NATIVE_LOCK'
+          cargo metadata --locked --format-version 1 > /dev/null
       - uses: actions/upload-artifact@v4
         with:
           name: native-keyring-cargo-lock
