@@ -1,5 +1,5 @@
 use aes_gcm::{aead::{Aead, KeyInit, OsRng, rand_core::RngCore}, Aes256Gcm, Nonce};
-use seven_mail_sqlite_store::{legacy::migrate_snapshot, Store};
+use seven_mail_sqlite_store::{legacy::{migrate_snapshot, create_snapshot, migrate_completed_snapshot}, Store};
 use std::{fs, path::{Path,PathBuf}, sync::atomic::{AtomicU64,Ordering}};
 static NEXT: AtomicU64=AtomicU64::new(0);
 const MAGIC:&[u8]=b"SEVENMAIL-ENC-1\0";
@@ -108,4 +108,39 @@ fn rejects_symlinks(){
     std::os::unix::fs::symlink(&path,t.source().join("a/2.json")).unwrap();
     assert!(migrate_snapshot(&mut db,&t.source(),decrypt).is_err());
     assert!(db.get("a","1").unwrap().is_none());
+}
+
+#[test]
+fn copies_encrypted_snapshot_without_touching_original_and_requires_completion(){
+    let t=Temp::new();let mut db=t.store();
+    let original=write_fixture(&t.source(),"a","1",&payload("a","1"));
+    let before=fs::read(&original).unwrap();
+    let destination=t.0.join("backup");
+    let report=create_snapshot(&t.source(),&destination).unwrap();
+    assert_eq!(report.messages,1);
+    assert_eq!(fs::read(destination.join("messages/a/1.json")).unwrap(),before);
+    assert_eq!(fs::read(&original).unwrap(),before);
+    assert!(create_snapshot(&t.source(),&destination).is_err());
+    assert_eq!(migrate_completed_snapshot(&mut db,&destination,decrypt).unwrap(),report);
+}
+#[test]
+fn rejects_incomplete_and_modified_snapshot_without_committing(){
+    let t=Temp::new();let mut db=t.store();
+    write_fixture(&t.source(),"a","1",&payload("a","1"));
+    let destination=t.0.join("backup");
+    create_snapshot(&t.source(),&destination).unwrap();
+    let marker=destination.join("snapshot.complete.json");
+    let bytes=fs::read(&marker).unwrap();
+    fs::remove_file(&marker).unwrap();
+    assert!(migrate_completed_snapshot(&mut db,&destination,decrypt).is_err());
+    fs::write(&marker,bytes).unwrap();
+    fs::write(destination.join("messages/a/1.json"),envelope(&payload("a","1"))).unwrap();
+    assert!(migrate_completed_snapshot(&mut db,&destination,decrypt).is_err());
+    assert!(db.get("a","1").unwrap().is_none());
+}
+#[test]
+fn snapshot_cannot_be_created_inside_source(){
+    let t=Temp::new();
+    assert!(create_snapshot(&t.source(),&t.source().join("backup")).is_err());
+    assert!(!t.source().join("backup").exists());
 }
