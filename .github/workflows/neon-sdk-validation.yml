@@ -23,6 +23,25 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+      - name: Audit committed dependency baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          npm audit --json > /tmp/neon-baseline-audit.json || status=$?
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const report=JSON.parse(fs.readFileSync('/tmp/neon-baseline-audit.json','utf8'));
+          if (!report.metadata?.vulnerabilities || !report.vulnerabilities) {
+            throw new Error('Missing committed dependency audit data');
+          }
+          for (const [name, issue] of Object.entries(report.vulnerabilities)) {
+            console.log(JSON.stringify({name,severity:issue.severity,via:issue.via,fixAvailable:issue.fixAvailable}));
+          }
+          console.log(JSON.stringify(report.metadata.vulnerabilities));
+          JS
+          # Record the baseline, then evaluate a possible replacement independently.
+          echo "$status" > /tmp/neon-baseline-audit-status.txt
       - name: Resolve candidate in clean dependency tree
         shell: bash
         env:
@@ -86,6 +105,8 @@ jobs:
         with:
           name: neon-sdk-diagnostics-${{ matrix.candidate }}
           path: |
+            /tmp/neon-baseline-audit.json
+            /tmp/neon-baseline-audit-status.txt
             /tmp/neon-audit.json
             /tmp/neon-dependency-tree.txt
             /tmp/npm-resolution.log
