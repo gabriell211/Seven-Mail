@@ -8,8 +8,16 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $$
 BEGIN
+  IF NEW.owner_id IS DISTINCT FROM OLD.owner_id OR NEW.id IS DISTINCT FROM OLD.id THEN
+    RAISE EXCEPTION 'Mail identity conflict' USING ERRCODE = '23514';
+  END IF;
   IF OLD.deleted_at IS NOT NULL THEN
-    RETURN OLD;
+    RAISE EXCEPTION 'Mail record is deleted' USING ERRCODE = '23514';
+  END IF;
+  -- Server-owned monotonic version; no dependence on device clock.
+  NEW.updated_at := GREATEST(clock_timestamp(), OLD.updated_at + interval '1 microsecond');
+  IF NEW.deleted_at IS NOT NULL THEN
+    NEW.deleted_at := NEW.updated_at;
   END IF;
   RETURN NEW;
 END;
@@ -58,5 +66,48 @@ DROP TRIGGER IF EXISTS seven_mail_guard_workspace_version ON public.workspace_do
 CREATE TRIGGER seven_mail_guard_workspace_version
 BEFORE UPDATE ON public.workspace_documents
 FOR EACH ROW EXECUTE FUNCTION public.seven_mail_guard_workspace_version();
+
+-- Deleting an account and its cloud message mirror is one transaction.
+CREATE OR REPLACE FUNCTION public.seven_mail_cascade_account_tombstone()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $
+BEGIN
+  IF OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL THEN
+    UPDATE public.desktop_mail_messages
+    SET deleted_at = NEW.deleted_at
+    WHERE owner_id = NEW.owner_id AND account_id = NEW.id AND deleted_at IS NULL;
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS seven_mail_cascade_account_tombstone ON public.desktop_mail_accounts;
+CREATE TRIGGER seven_mail_cascade_account_tombstone
+AFTER UPDATE OF deleted_at ON public.desktop_mail_accounts
+FOR EACH ROW EXECUTE FUNCTION public.seven_mail_cascade_account_tombstone();
+
+CREATE OR REPLACE FUNCTION public.seven_mail_guard_message_account()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $
+DECLARE
+  account_deleted timestamptz;
+BEGIN
+  SELECT deleted_at INTO account_deleted FROM public.desktop_mail_accounts
+    WHERE id = NEW.account_id AND owner_id = NEW.owner_id FOR SHARE;
+  IF NOT FOUND OR account_deleted IS NOT NULL THEN
+    RAISE EXCEPTION 'Mail account unavailable' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS seven_mail_guard_message_account ON public.desktop_mail_messages;
+CREATE TRIGGER seven_mail_guard_message_account
+BEFORE INSERT ON public.desktop_mail_messages
+FOR EACH ROW EXECUTE FUNCTION public.seven_mail_guard_message_account();
 
 COMMIT;
