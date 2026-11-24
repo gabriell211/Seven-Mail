@@ -221,6 +221,8 @@ pub struct OutboxFlushResult {
     pub sent_account_ids: Vec<String>,
     #[serde(default)]
     pub sent_copy_warnings: Vec<String>,
+    #[serde(default)]
+    pub delivery_warnings: Vec<String>,
 }
 
 
