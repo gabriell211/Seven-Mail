@@ -628,6 +628,7 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
     let paths = AppPaths::resolve()?;
     let accounts = storage::list_accounts(&paths)?;
     let mut sent = 0usize;
+    let mut sent_operation_ids = Vec::new();
     let mut sent_account_ids = Vec::new();
     let mut sent_copy_warnings = Vec::new();
     let mut delivery_warnings = Vec::new();
@@ -638,7 +639,8 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
         };
 
         let Some(account) = accounts.iter().find(|item| item.id == operation.account_id) else {
-            storage::fail(&paths, &operation.id)?;
+            storage::quarantine_operation(&paths, &operation.id, "account_missing")?;
+            delivery_warnings.push(format!("{}: conta de envio não encontrada.", operation.id));
             continue;
         };
 
@@ -653,6 +655,7 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
                 // the copy into IMAP Sent must never trigger a duplicate resend.
                 storage::complete(&paths, &operation.id)?;
                 sent += 1;
+                sent_operation_ids.push(operation.id.clone());
                 if !sent_account_ids.iter().any(|value| value == &account.id) {
                     sent_account_ids.push(account.id.clone());
                 }
@@ -686,6 +689,7 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
 
     Ok(OutboxFlushResult {
         sent,
+        sent_operation_ids,
         sent_account_ids,
         sent_copy_warnings,
         delivery_warnings,
