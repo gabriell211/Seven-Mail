@@ -63,3 +63,57 @@ jobs:
             eval "$(printf %s seven-mail-ci-only | gnome-keyring-daemon --unlock --components=secrets)"
             cargo test --locked --manifest-path src-tauri/Cargo.toml --lib credentials::native_backend_tests::native_backend_roundtrip -- --ignored --exact
           '
+
+  native-vault-desktop:
+    needs: lock
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci --strict-peer-deps --strict-allow-scripts
+      - run: npm run icons
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - name: Build storage tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --no-run
+      - name: Exercise Windows Credential Manager
+        if: runner.os == 'Windows'
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib credentials::native_backend_tests::native_backend_roundtrip -- --ignored --exact
+      - name: Exercise macOS Keychain in an isolated temporary vault
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/seven-mail-ci-$(uuidgen).keychain-db"
+          password="$(openssl rand -hex 32)"
+          original_default="$(security default-keychain -d user | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//')"
+          original_list=()
+          while IFS= read -r item; do
+            if [[ -n "$item" ]]; then original_list+=("$item"); fi
+          done < <(security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//')
+          cleanup() {
+            if [[ -n "$original_default" ]]; then
+              security default-keychain -d user -s "$original_default" || true
+            fi
+            if [[ ${#original_list[@]} -gt 0 ]]; then
+              security list-keychains -d user -s "${original_list[@]}" || true
+            fi
+            security delete-keychain "$keychain" || true
+          }
+          trap cleanup EXIT
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib credentials::native_backend_tests::native_backend_roundtrip -- --ignored --exact
