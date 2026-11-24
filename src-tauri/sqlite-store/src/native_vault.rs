@@ -151,6 +151,14 @@ fn prepare_with_vault(vault:&impl Vault,snapshot:&Path,staging:&Path)->Result<Mi
     let report=migrate_completed_snapshot(&mut store,snapshot,|bytes|decrypt_legacy(&legacy,bytes))?;
     store.verify()?;
     drop(store);
+    // Confirm the actual on-disk database with the key retrieved from the
+    // vault, before making a completion marker visible.
+    let confirmed_key=existing_key(vault,SQL_SERVICE,&id)?;
+    let reopened=Store::open_read_only(&staging.join("messages.db"),&confirmed_key)?;
+    reopened.verify()?;
+    let verified=verify_completed_snapshot(&reopened,snapshot,|bytes|decrypt_legacy(&legacy,bytes))?;
+    if verified!=report { return Err("Staging diverge do snapshot autenticado.".into()); }
+    drop(reopened);
     let manifest=serde_json::to_vec(&serde_json::json!({
         "version":1,"messages":report.messages,"fingerprint":report.source_fingerprint
     })).map_err(|_|"Manifesto de staging inválido.".to_string())?;
@@ -160,8 +168,10 @@ fn prepare_with_vault(vault:&impl Vault,snapshot:&Path,staging:&Path)->Result<Mi
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut marker=options.open(staging.join("staging.complete.json")).map_err(|_|"Não foi possível confirmar staging.".to_string())?;
+    let mut marker=options.open(staging.join("staging.complete.tmp")).map_err(|_|"Não foi possível confirmar staging.".to_string())?;
     marker.write_all(&manifest).and_then(|_|marker.sync_all()).map_err(|_|"Não foi possível persistir confirmação.".to_string())?;
+    drop(marker);
+    fs::rename(staging.join("staging.complete.tmp"),staging.join("staging.complete.json")).map_err(|_|"Não foi possível publicar confirmação.".to_string())?;
     #[cfg(unix)]
     fs::File::open(staging).and_then(|dir|dir.sync_all()).map_err(|_|"Não foi possível persistir diretório.".to_string())?;
     Ok(report)
@@ -220,6 +230,29 @@ mod tests {
         fn write(&self,service:&str,id:&str,value:&str)->Result<()>{
             self.0.borrow_mut().insert((service.into(),id.into()),value.into());Ok(())
         }
+    }
+    // Never use the real application's service or its keys in this smoke test.
+    // Explicit invocation only: requires an actual OS credential backend.
+    #[test]
+    #[ignore = "requires an unlocked native credential vault"]
+    fn native_vault_round_trip_isolated() {
+        let mut random=[0u8;16];
+        OsRng.fill_bytes(&mut random);
+        let id=random.iter().map(|b|format!("{b:02x}")).collect::<Vec<_>>().join("");
+        let service="Seven Mail CI isolated vault";
+        let entry=keyring::Entry::new(service,&id).expect("native credential entry");
+        struct Cleanup(keyring::Entry);
+        impl Drop for Cleanup {
+            fn drop(&mut self) { let _=self.0.delete_credential(); }
+        }
+        let cleanup=Cleanup(entry);
+        assert!(matches!(cleanup.0.get_password(),Err(keyring::Error::NoEntry)));
+        let value=Zeroizing::new(STANDARD.encode(random));
+        NativeVault.write(service,&id,&value).expect("native vault write");
+        assert_eq!(NativeVault.read(service,&id).unwrap().unwrap().as_str(),value.as_str());
+        // Recreate the entry via the provider and delete the test credential.
+        cleanup.0.delete_credential().expect("native vault delete");
+        assert!(NativeVault.read(service,&id).unwrap().is_none());
     }
     #[test]
     fn missing_or_invalid_original_key_never_creates_a_replacement(){

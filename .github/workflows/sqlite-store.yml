@@ -88,3 +88,11 @@ jobs:
             echo 'Compiler or linker warning detected.'
             exit 1
           fi
+      - name: Native credential vault smoke (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Strawberry\perl\bin;C:\Strawberry\c\bin;$env:PATH"
+          $env:CARGO_HOME = Join-Path $env:RUNNER_TEMP 'seven-mail-sqlcipher-cargo'
+          cargo test --locked --all-features --lib native_vault::tests::native_vault_round_trip_isolated -- --ignored --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
