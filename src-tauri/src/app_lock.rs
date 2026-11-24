@@ -75,7 +75,8 @@ fn check_pin(s: &mut LockState, pin: &str) -> Result<bool, String> {
         return Err("Muitas tentativas. Aguarde antes de tentar novamente.".into());
     }
     // Record the attempt before checking the PIN; interruption cannot erase a failure.
-    persist_retry(s, s.failures.saturating_add(1))?;
+    let failures = s.failures.saturating_add(1);
+    persist_retry(s, failures)?;
     if pin.len() <= 64 && credentials::verify_app_lock(pin)? {
         persist_retry(s, 0)?;
         return Ok(true);
