@@ -1177,6 +1177,55 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
+    #[ignore = "requires isolated protocol CI key"]
+    fn interrupted_smtp_queue_preserves_data_without_automatic_replay() {
+        assert_eq!(std::env::var("SEVEN_MAIL_PROTOCOL_E2E").as_deref(), Ok("1"));
+        let root = std::env::temp_dir().join(format!("seven-mail-queue-{}", uuid::Uuid::new_v4()));
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+        }
+        let _cleanup = Cleanup(root.clone());
+        let paths = AppPaths {
+            config: root.join("config"), cache: root.join("cache"),
+            message_cache: root.join("cache/messages"), search_index: root.join("cache/search-index"),
+            attachment_cache: root.join("cache/attachments"), queue: root.join("queue"),
+            queue_attachments: root.join("queue/attachments"), pending: root.join("queue/pending"),
+            processing: root.join("queue/processing"), completed: root.join("queue/completed"),
+            failed: root.join("queue/failed"), root,
+        };
+        paths.ensure().unwrap();
+        let operation = QueueOperation {
+            id: uuid::Uuid::new_v4().to_string(), kind: "send".into(),
+            account_id: "ci-account".into(), created_at: chrono::Utc::now().to_rfc3339(),
+            attempts: 0, payload: serde_json::json!({"subject":"original"}),
+        };
+        let name = format!("{}.json", operation.id);
+        let attachment_dir = paths.queue_attachments.join(&operation.id);
+        fs::create_dir(&attachment_dir).unwrap();
+        local_crypto::write(&attachment_dir.join("attachment"), b"preserved").unwrap();
+        queue_operation(&paths, &operation).unwrap();
+        assert!(queue_operation(&paths, &operation).is_err());
+        assert_eq!(claim_next_send_due(&paths).unwrap().unwrap().id, operation.id);
+        assert!(!cancel_operation(&paths, &operation.id).unwrap());
+        mark_smtp_submission(&paths, &operation.id).unwrap();
+        // A legacy retry may have left a second pending record before crash.
+        fs::copy(paths.processing.join(&name), paths.pending.join(&name)).unwrap();
+        recover_interrupted_operations(&paths).unwrap();
+        assert!(claim_next_send_due(&paths).unwrap().is_none());
+        assert!(!paths.processing.join(&name).exists());
+        assert!(!paths.pending.join(&name).exists());
+        let failed = read_json::<QueueOperation>(&paths.failed.join(&name)).unwrap();
+        assert_eq!(failed.payload["_deliveryState"], "delivery_unknown");
+        assert_eq!(failed.payload["subject"], "original");
+        assert_eq!(local_crypto::read(&attachment_dir.join("attachment")).unwrap(), b"preserved");
+        assert_eq!(fs::read_dir(paths.queue.join("recovery-conflicts")).unwrap().count(), 1);
+        assert!(queue_operation(&paths, &operation).is_err());
+        recover_interrupted_operations(&paths).unwrap();
+        assert!(claim_next_send_due(&paths).unwrap().is_none());
+    }
+
+    #[test]
     fn attachment_reader_checks_actual_bytes_and_exact_boundary() {
         assert_eq!(read_attachment_bounded(&b"1234"[..], 4).unwrap(), b"1234");
         assert!(read_attachment_bounded(&b"12345"[..], 4).is_err());

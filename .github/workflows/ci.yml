@@ -96,3 +96,5 @@ jobs:
           PY
       - name: Seven Mail SMTP -> IMAP + POP3 round trip
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml protocol_e2e::smtp_imap_pop3_roundtrip -- --nocapture
+      - name: Recover interrupted SMTP operation without duplicate delivery
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib storage::tests::interrupted_smtp_queue_preserves_data_without_automatic_replay -- --ignored --exact
