@@ -12,7 +12,7 @@ mod providers;
 mod smime;
 mod storage;
 #[path = "../storage_guard.rs"]
-mod storage_guard;
+pub mod storage_guard;
 mod updater;
 mod workspace;
 
