@@ -67,11 +67,14 @@ jobs:
           if ($perl.Source -ne 'C:\Strawberry\perl\bin\perl.exe') { throw "Unexpected Perl: $($perl.Source)" }
           & perl.exe -MLocale::Maketext::Simple -MIPC::Cmd -e 'print "Native Perl ready\n"'
           if ($LASTEXITCODE -ne 0) { throw 'Native Perl check failed' }
+          ./scripts/prepare-msvc-openssl.ps1
           cargo test --locked --all-features --color never 2>&1 | Tee-Object -FilePath cargo-test.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo check --locked --all-features --color never 2>&1 | Tee-Object -FilePath cargo-check.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (Select-String -Path cargo-test.log,cargo-check.log -Pattern '(^|\s)warning:|warning LNK[0-9]+') {
+          $warnings = Select-String -Path cargo-test.log,cargo-check.log -Pattern '(^|\s)warning:|warning LNK[0-9]+'
+          if ($warnings) {
+            $warnings | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
             throw 'Compiler or linker warning detected.'
           }
       - name: Test and check without native linker warnings (Unix)

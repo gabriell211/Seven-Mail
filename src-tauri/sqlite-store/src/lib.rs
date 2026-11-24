@@ -5,10 +5,6 @@ pub mod storage_guard;
 #[cfg(feature = "native-vault")]
 pub mod native_vault;
 
-// The direct dependency supplies DEP_OPENSSL_ROOT to the build script.
-#[cfg(all(windows, target_env = "msvc"))]
-use openssl_sys as _;
-
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use std::{fmt::Write as _, path::Path, sync::Mutex, time::Duration};
 

@@ -1171,7 +1171,6 @@ dependencies = [
  "base64",
  "chrono",
  "keyring",
- "openssl-sys",
  "rusqlite",
  "serde",
  "serde_json",
