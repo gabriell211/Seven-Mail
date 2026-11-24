@@ -6,6 +6,7 @@ struct LockState {
     last_activity: Option<Instant>,
     idle_minutes: u64,
     failures: u32,
+    retry_loaded: bool,
     retry_after: Option<Instant>,
 }
 
@@ -14,6 +15,7 @@ static STATE: Mutex<LockState> = Mutex::new(LockState {
     last_activity: None,
     idle_minutes: 5,
     failures: 0,
+    retry_loaded: false,
     retry_after: None,
 });
 
@@ -39,19 +41,45 @@ pub fn require_unlocked() -> Result<(), String> {
     Ok(())
 }
 
+// Reserved keyring scope; no retry state is accepted from the webview.
+const RETRY_SCOPE: &str = "app-lock-retry";
+const RETRY_ID: &str = "native";
+
+fn restore_retry(s: &mut LockState, failures: u32) {
+    s.failures = failures;
+    let seconds = retry_delay(failures);
+    // Reapply the full bounded delay on restart instead of trusting wall-clock time.
+    s.retry_after = (seconds > 0).then(|| Instant::now() + Duration::from_secs(seconds));
+    s.retry_loaded = true;
+}
+
+fn load_retry(s: &mut LockState) -> Result<(), String> {
+    if s.retry_loaded { return Ok(()); }
+    let failures = match credentials::load_scoped(RETRY_SCOPE, RETRY_ID)? {
+        Some(value) => value.parse::<u32>().map_err(|_| "Estado de tentativas do PIN inválido.".to_string())?,
+        None => 0,
+    };
+    restore_retry(s, failures);
+    Ok(())
+}
+
+fn persist_retry(s: &mut LockState, failures: u32) -> Result<(), String> {
+    credentials::store_scoped(RETRY_SCOPE, RETRY_ID, &failures.to_string())?;
+    restore_retry(s, failures);
+    Ok(())
+}
+
 fn check_pin(s: &mut LockState, pin: &str) -> Result<bool, String> {
+    load_retry(s)?;
     if s.retry_after.map(|until| Instant::now() < until).unwrap_or(false) {
         return Err("Muitas tentativas. Aguarde antes de tentar novamente.".into());
     }
-    if pin.len() > 64 { return Ok(false); }
-    if credentials::verify_app_lock(pin)? {
-        s.failures = 0;
-        s.retry_after = None;
+    // Record the attempt before checking the PIN; interruption cannot erase a failure.
+    persist_retry(s, s.failures.saturating_add(1))?;
+    if pin.len() <= 64 && credentials::verify_app_lock(pin)? {
+        persist_retry(s, 0)?;
         return Ok(true);
     }
-    s.failures = s.failures.saturating_add(1);
-    let seconds = retry_delay(s.failures);
-    if seconds > 0 { s.retry_after = Some(Instant::now() + Duration::from_secs(seconds)); }
     Ok(false)
 }
 
@@ -61,7 +89,7 @@ fn retry_delay(failures: u32) -> u64 {
 
 pub fn unlock(pin: &str) -> Result<bool, String> {
     let mut s = state()?;
-    if !check_pin(&mut s, pin)? { return Ok(false); }
+    if credentials::has_app_lock()? && !check_pin(&mut s, pin)? { return Ok(false); }
     s.unlocked = true;
     s.last_activity = Some(Instant::now());
     Ok(true)
@@ -95,6 +123,7 @@ pub fn configure(pin: &str, current_pin: Option<&str>) -> Result<(), String> {
             return Err("Confirme o PIN atual para alterar o bloqueio.".into());
         }
     }
+    persist_retry(&mut s, 0)?;
     credentials::set_app_lock(pin)?;
     s.unlocked = true;
     s.last_activity = Some(Instant::now());
@@ -124,8 +153,20 @@ mod tests {
         assert_eq!(retry_delay(u32::MAX), 320);
     }
     #[test]
+    fn restored_failures_reapply_delay_without_wall_clock() {
+        let mut s = LockState { unlocked: false, last_activity: None, idle_minutes: 5, failures: 0, retry_loaded: false, retry_after: None };
+        restore_retry(&mut s, 6);
+        assert!(s.retry_loaded);
+        assert_eq!(s.failures, 6);
+        assert!(s.retry_after.unwrap() > Instant::now());
+        restore_retry(&mut s, 0);
+        assert!(s.retry_after.is_none());
+        assert_eq!(s.failures, 0);
+    }
+
+    #[test]
     fn expiration_revokes_access() {
-        let mut s = LockState { unlocked: true, last_activity: Some(Instant::now() - Duration::from_secs(61)), idle_minutes: 1, failures: 0, retry_after: None };
+        let mut s = LockState { unlocked: true, last_activity: Some(Instant::now() - Duration::from_secs(61)), idle_minutes: 1, failures: 0, retry_loaded: false, retry_after: None };
         expire(&mut s);
         assert!(!s.unlocked);
     }
