@@ -1,5 +1,6 @@
 import { BetterAuthVanillaAdapter, createClient } from "@neondatabase/neon-js";
 import type { AccountProfile, MailMessage, WorkspaceDocument, WorkspaceKind } from "../types";
+import { bridge } from "./bridge";
 
 const authUrl = import.meta.env.VITE_NEON_AUTH_URL?.trim();
 const dataApiUrl = import.meta.env.VITE_NEON_DATA_API_URL?.trim();
@@ -40,6 +41,25 @@ export async function getCloudSession() {
   return result.data ?? null;
 }
 
+// The local workspace is not a multi-user container. Do not attach it to a
+// second cloud account, even if Neon authentication itself succeeds.
+async function authorizedCloudOwner(): Promise<string | null> {
+  if (!neonClient) return null;
+  const session = await getCloudSession();
+  const owner = session?.session && session.user?.id;
+  if (!owner) return null;
+  const binding = await bridge.getCloudBinding();
+  return binding?.enabled && binding.ownerId === owner ? owner : null;
+}
+
+export async function setCloudSyncConsent(enabled: boolean): Promise<void> {
+  const session = await getCloudSession();
+  const owner = session?.session && session.user?.id;
+  if (!owner) throw new Error("Entre na conta Neon antes de configurar a sincronização.");
+  await bridge.setCloudBinding(owner, enabled);
+  window.dispatchEvent(new Event("seven-mail:cloud-session"));
+}
+
 export async function signInCloud(email: string, password: string) {
   const result = await requireClient().auth.signIn.email({ email, password });
   if (result.error) throw new Error(errorMessage(result.error));
@@ -71,8 +91,8 @@ interface CloudWorkspaceRow<T> {
 
 export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<WorkspaceDocument<T>>> {
   if (!neonClient) return [];
-  const session = await getCloudSession();
-  if (!session?.session) return [];
+  const owner = await authorizedCloudOwner();
+  if (!owner) return [];
 
   const rows: Array<CloudWorkspaceRow<T>> = [];
   const pageSize = 500;
@@ -80,6 +100,7 @@ export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<
     const result = await neonClient
       .from("workspace_documents")
       .select("id, kind, payload, updated_at, deleted_at")
+      .eq("owner_id", owner)
       .eq("kind", kind)
       .order("id")
       .range(offset, offset + pageSize - 1);
@@ -103,13 +124,14 @@ export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<
 
 export async function pushCloudDocument<T>(document: WorkspaceDocument<T>): Promise<void> {
   if (!neonClient) return;
-  const session = await getCloudSession();
-  if (!session?.session) return;
+  const owner = await authorizedCloudOwner();
+  if (!owner) return;
 
   const result = await neonClient
     .from("workspace_documents")
     .upsert(
       {
+        owner_id: owner,
         id: document.id,
         kind: document.kind,
         payload: document.payload,
@@ -124,8 +146,8 @@ export async function pushCloudDocument<T>(document: WorkspaceDocument<T>): Prom
 
 export async function pushCloudDocuments(documents: WorkspaceDocument[]): Promise<void> {
   if (!neonClient || documents.length === 0) return;
-  const session = await getCloudSession();
-  if (!session?.session) return;
+  const owner = await authorizedCloudOwner();
+  if (!owner) return;
 
   const rows = documents.map((document) => ({
     id: document.id,
@@ -160,12 +182,13 @@ interface CloudAccountRow {
 
 export async function pullCloudAccounts(): Promise<AccountProfile[]> {
   if (!neonClient) return [];
-  const session = await getCloudSession();
-  if (!session?.session) return [];
+  const owner = await authorizedCloudOwner();
+  if (!owner) return [];
 
   const result = await neonClient
     .from("desktop_mail_accounts")
     .select("id, display_name, email, provider, color, is_default, username, imap_host, imap_port, smtp_host, smtp_port, security_mode, updated_at")
+    .eq("owner_id", owner)
     .is("deleted_at", null)
     .order("updated_at", { ascending: false });
 
@@ -189,10 +212,11 @@ export async function pullCloudAccounts(): Promise<AccountProfile[]> {
 
 export async function pushCloudAccount(account: AccountProfile): Promise<void> {
   if (!neonClient) return;
-  const session = await getCloudSession();
-  if (!session?.session) return;
+  const owner = await authorizedCloudOwner();
+  if (!owner) return;
 
   const result = await neonClient.from("desktop_mail_accounts").upsert({
+    owner_id: owner,
     id: account.id,
     display_name: account.displayName,
     email: account.email,
@@ -206,7 +230,6 @@ export async function pushCloudAccount(account: AccountProfile): Promise<void> {
     smtp_port: account.smtpPort ?? null,
     security_mode: account.securityMode ?? null,
     updated_at: new Date().toISOString(),
-    deleted_at: null,
   }, { onConflict: "id" });
 
   if (result.error) throw new Error(errorMessage(result.error));
@@ -262,12 +285,13 @@ function cloudRowToMessage(row: CloudMessageRow): MailMessage {
 
 export async function pullCloudMessages(accountId: string, limit = 500): Promise<MailMessage[]> {
   if (!neonClient) return [];
-  const session = await getCloudSession();
-  if (!session?.session) return [];
+  const owner = await authorizedCloudOwner();
+  if (!owner) return [];
 
   const result = await neonClient
     .from("desktop_mail_messages")
     .select("id, account_id, remote_id, remote_folder, folder, subject, preview, sender, recipients, received_at, is_read, is_flagged, is_pinned, has_attachments, body_html, body_text, categories")
+    .eq("owner_id", owner)
     .eq("account_id", accountId)
     .is("deleted_at", null)
     .order("received_at", { ascending: false })
@@ -277,12 +301,9 @@ export async function pullCloudMessages(accountId: string, limit = 500): Promise
   return ((result.data ?? []) as unknown as CloudMessageRow[]).map(cloudRowToMessage);
 }
 
-export async function pushCloudMessage(message: MailMessage): Promise<void> {
-  if (!neonClient) return;
-  const session = await getCloudSession();
-  if (!session?.session) return;
-
-  const result = await neonClient.from("desktop_mail_messages").upsert({
+function messageToCloudRow(message: MailMessage, owner: string) {
+  return {
+    owner_id: owner,
     id: message.id,
     account_id: message.accountId,
     remote_id: message.remoteId ?? null,
@@ -301,29 +322,39 @@ export async function pushCloudMessage(message: MailMessage): Promise<void> {
     body_text: message.bodyText ?? null,
     categories: message.categories,
     updated_at: new Date().toISOString(),
-    deleted_at: null,
-  }, { onConflict: "id" });
+  };
+}
 
-  if (result.error) throw new Error(errorMessage(result.error));
+export async function pushCloudMessage(message: MailMessage): Promise<void> {
+  await pushCloudMessages([message]);
 }
 
 export async function pushCloudMessages(messages: MailMessage[]): Promise<void> {
-  if (messages.length === 0) return;
-  for (const message of messages) {
-    await pushCloudMessage(message);
+  if (!neonClient || messages.length === 0) return;
+  const owner = await authorizedCloudOwner();
+  if (!owner) return;
+  // Deduplicate IDs and bound requests by batch size.
+  const unique = [...new Map(messages.map((message) => [message.id, message])).values()];
+  const batchSize = 50;
+  for (let offset = 0; offset < unique.length; offset += batchSize) {
+    if (await authorizedCloudOwner() !== owner) return;
+    const rows = unique.slice(offset, offset + batchSize).map((message) => messageToCloudRow(message, owner));
+    const result = await neonClient.from("desktop_mail_messages").upsert(rows, { onConflict: "id" });
+    if (result.error) throw new Error(errorMessage(result.error));
   }
 }
 
 
 export async function deleteCloudAccount(accountId: string): Promise<void> {
   if (!neonClient) return;
-  const session = await getCloudSession();
-  if (!session?.session) return;
+  const owner = await authorizedCloudOwner();
+  if (!owner) return;
 
   const deletedAt = new Date().toISOString();
   const accountResult = await neonClient
     .from("desktop_mail_accounts")
     .update({ deleted_at: deletedAt, updated_at: deletedAt })
+    .eq("owner_id", owner)
     .eq("id", accountId);
 
   if (accountResult.error) throw new Error(errorMessage(accountResult.error));
@@ -331,6 +362,7 @@ export async function deleteCloudAccount(accountId: string): Promise<void> {
   const messagesResult = await neonClient
     .from("desktop_mail_messages")
     .update({ deleted_at: deletedAt, updated_at: deletedAt })
+    .eq("owner_id", owner)
     .eq("account_id", accountId);
 
   if (messagesResult.error) throw new Error(errorMessage(messagesResult.error));
