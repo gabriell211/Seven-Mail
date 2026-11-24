@@ -2764,6 +2764,14 @@ export default function App() {
   },[settings.notificationsEnabled]);
 
   useEffect(()=>{
+    void bridge.listQueue().then((queue)=>{
+      const interrupted=queue.filter((operation)=>operation.payload._deliveryState==="delivery_unknown");
+      if(interrupted.length){
+        setSendFeedback({state:"error",title:"Operações interrompidas",detail:`${interrupted.length} operação(ões) preservada(s) sem reenvio automático. Confira o servidor antes de repetir.`});
+      }
+    }).catch((reason)=>{
+      setSendFeedback({state:"error",title:"Falha ao consultar a caixa de saída",detail:reason instanceof Error?reason.message:String(reason)});
+    });
     const flush = () => {
       if (!navigator.onLine) return;
       void bridge.flushOutbox()
@@ -2772,7 +2780,13 @@ export default function App() {
             const refreshed=await bridge.listCachedMessages(unified?undefined:activeAccount?.id).catch(()=>null);
             if(refreshed) setMessages(refreshed);
           }
-          if(result.sentCopyWarnings.length>0){
+          if(result.deliveryWarnings?.length){
+            setSendFeedback({
+              state:"error",
+              title:"Caixa de saída requer atenção",
+              detail:result.deliveryWarnings.join(" · "),
+            });
+          }else if(result.sentCopyWarnings.length>0){
             setSendFeedback({
               state:"accepted",
               title:"Enviado · cópia pendente",
@@ -3330,7 +3344,11 @@ export default function App() {
           .then(async(result)=>{
             const queue=await bridge.listQueue().catch(()=>[]);
             const pending=queue.find((operation)=>operation.id===info.id);
-            if(pending){
+            if(pending?.payload._deliveryState==="delivery_unknown"){
+              setSendFeedback({state:"error",title:"Entrega não confirmada",detail:"A mensagem foi preservada sem reenvio automático. Confira a pasta Enviados antes de tentar novamente.",id:info.id});
+            }else if(pending?.payload._deliveryState==="retry_exhausted"){
+              setSendFeedback({state:"error",title:"Limite de tentativas atingido",detail:"A mensagem foi preservada na fila de falhas. Revise as configurações da conta.",id:info.id});
+            }else if(pending){
               setSendFeedback({
                 state:pending.attempts>0?"error":"queued",
                 title:pending.attempts>0?"Envio não aceito":"Mensagem na fila",
@@ -3352,7 +3370,7 @@ export default function App() {
                 id:info.id,
               });
             }else{
-              setSendFeedback({state:"accepted",title:"Saiu da fila",detail:"A mensagem não está mais pendente. O Seven Mail não a marca como entregue sem confirmação do servidor.",id:info.id});
+              setSendFeedback({state:"queued",title:"Estado do envio não confirmado",detail:"Não foi possível confirmar o resultado desta mensagem. Confira Enviados antes de reenviar.",id:info.id});
             }
           })
           .catch((reason)=>{
