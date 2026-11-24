@@ -2464,7 +2464,7 @@ export default function App() {
 
       const merged = new Map(local.map((account) => [account.id, account]));
       try {
-        const cloud = await pullCloudAccounts();
+        const cloud = await pullCloudAccounts(local);
         for (const account of cloud) {
           if (!merged.has(account.id)) {
             await bridge.saveAccount(account);
@@ -2548,7 +2548,7 @@ export default function App() {
       try {
         const targets = unified ? profileAccounts : (activeAccount ? [activeAccount] : []);
         for (const account of targets) {
-          const cloud = await pullCloudMessages(account.id);
+          const cloud = await pullCloudMessages(account.id, 500, local);
           for (const message of cloud) {
             if (!merged.has(message.id)) {
               await bridge.cacheMessage(message);
