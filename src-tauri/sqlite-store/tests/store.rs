@@ -93,3 +93,28 @@ fn import_is_idempotent_and_rolls_back_on_conflict_or_source_error() {
     assert!(store.get("a","2").unwrap().is_none());
     store.verify().unwrap();
 }
+
+#[test]
+fn read_only_inspection_preserves_existing_database_and_never_creates_one() {
+    let temp=Temp::new();
+    let path=temp.db();
+    let key=[42u8;32];
+    assert!(Store::open_read_only(&path,&key).is_err());
+    assert!(!path.exists());
+    let value=record("a","1",100,"Original");
+    {
+        let mut store=Store::open(&path,&key).unwrap();
+        store.upsert(&value).unwrap();
+    }
+    let before=fs::read(&path).unwrap();
+    assert!(Store::open_read_only(&path,&[13u8;32]).is_err());
+    {
+        let mut store=Store::open_read_only(&path,&key).unwrap();
+        store.verify().unwrap();
+        assert_eq!(store.get("a","1").unwrap(),Some(value.clone()));
+        assert!(store.upsert(&record("a","2",101,"New")).is_err());
+        assert!(store.remove("a","1").is_err());
+        assert_eq!(store.get("a","1").unwrap(),Some(value));
+    }
+    assert_eq!(fs::read(&path).unwrap(),before);
+}
