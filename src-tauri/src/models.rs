@@ -218,6 +218,8 @@ pub struct QueueOperation {
 #[serde(rename_all = "camelCase")]
 pub struct OutboxFlushResult {
     pub sent: usize,
+    #[serde(default)]
+    pub sent_operation_ids: Vec<String>,
     pub sent_account_ids: Vec<String>,
     #[serde(default)]
     pub sent_copy_warnings: Vec<String>,
