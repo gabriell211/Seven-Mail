@@ -1,5 +1,6 @@
 mod credentials;
 mod dav_sync;
+mod dav_xml;
 mod imap_sync;
 mod interchange;
 mod ldap_sync;
@@ -329,43 +330,43 @@ fn test_dav_connection(account_id: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn put_dav_calendar(account_id: String, event_id: String, ics: String) -> Result<(), String> {
+fn put_dav_calendar(account_id: String, event_id: String, ics: String, resource: Option<dav_xml::DavResource>, create: Option<bool>) -> Result<dav_xml::DavResource, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    dav_sync::put_calendar(&account, &event_id, &ics)
+    dav_sync::put_calendar(&account, &event_id, &ics, resource.as_ref(), create.unwrap_or(false))
 }
 
 #[tauri::command]
-fn delete_dav_calendar(account_id: String, event_id: String) -> Result<(), String> {
+fn delete_dav_calendar(account_id: String, resource: Option<dav_xml::DavResource>) -> Result<(), String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    dav_sync::delete_calendar(&account, &event_id)
+    dav_sync::delete_calendar(&account, resource.as_ref())
 }
 
 #[tauri::command]
-fn put_dav_contact(account_id: String, contact_id: String, vcard: String) -> Result<(), String> {
+fn put_dav_contact(account_id: String, contact_id: String, vcard: String, resource: Option<dav_xml::DavResource>, create: Option<bool>) -> Result<dav_xml::DavResource, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    dav_sync::put_contact(&account, &contact_id, &vcard)
+    dav_sync::put_contact(&account, &contact_id, &vcard, resource.as_ref(), create.unwrap_or(false))
 }
 
 #[tauri::command]
-fn delete_dav_contact(account_id: String, contact_id: String) -> Result<(), String> {
+fn delete_dav_contact(account_id: String, resource: Option<dav_xml::DavResource>) -> Result<(), String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    dav_sync::delete_contact(&account, &contact_id)
+    dav_sync::delete_contact(&account, resource.as_ref())
 }
 
 #[tauri::command]
