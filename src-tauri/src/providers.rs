@@ -251,6 +251,23 @@ fn attachment_mime(name: &str) -> &'static str {
     }
 }
 
+const MAX_SMTP_ATTACHMENT_BYTES: u64 = 250 * 1024 * 1024;
+const MAX_SMTP_TOTAL_ATTACHMENT_BYTES: u64 = 500 * 1024 * 1024;
+const MAX_SMTP_ATTACHMENT_COUNT: usize = 256;
+
+fn validate_attachment_count(count: usize) -> Result<(), String> {
+    if count > MAX_SMTP_ATTACHMENT_COUNT {
+        return Err("Quantidade de anexos excede o limite de 256 arquivos.".into());
+    }
+    Ok(())
+}
+
+fn attachment_budget(used: u64) -> Result<u64, String> {
+    MAX_SMTP_TOTAL_ATTACHMENT_BYTES.checked_sub(used)
+        .map(|remaining| remaining.min(MAX_SMTP_ATTACHMENT_BYTES))
+        .ok_or_else(|| "Total de anexos excede o limite de 500 MiB.".into())
+}
+
 fn read_staged_mail_file(
     path: &str,
     expected_operation: Option<&str>,
@@ -507,10 +524,15 @@ pub fn send_queued_raw_with_checkpoint(
         );
     }
 
+    validate_attachment_count(attachments.len())?;
     let mut mixed = MultiPart::mixed().multipart(body_part);
+    let mut attachment_bytes = 0u64;
     for attachment in attachments {
-        let bytes = read_staged_mail_file(&attachment.path, None, 250 * 1024 * 1024)
+        let remaining = attachment_budget(attachment_bytes)?;
+        let bytes = read_staged_mail_file(&attachment.path, None, remaining)
             .map_err(|error| format!("Falha ao ler o anexo {}: {error}", attachment.name))?;
+        attachment_bytes = attachment_bytes.checked_add(bytes.len() as u64)
+            .ok_or_else(|| "Total de anexos inválido.".to_string())?;
         let content_type: ContentType = attachment_mime(&attachment.name)
             .parse()
             .map_err(|error| format!("MIME inválido para {}: {error}", attachment.name))?;
@@ -659,5 +681,20 @@ mod protocol_security_tests {
         let settings = settings_for(&account);
         assert_eq!(settings.imap_security_mode, "tls");
         assert_eq!(settings.smtp_security_mode, "starttls");
+    }
+}
+
+#[cfg(test)]
+mod smtp_attachment_budget_tests {
+    use super::*;
+
+    #[test]
+    fn limits_attachment_count_and_actual_total_bytes() {
+        assert!(validate_attachment_count(256).is_ok());
+        assert!(validate_attachment_count(257).is_err());
+        assert_eq!(attachment_budget(0).unwrap(), MAX_SMTP_ATTACHMENT_BYTES);
+        assert_eq!(attachment_budget(MAX_SMTP_TOTAL_ATTACHMENT_BYTES - 1).unwrap(), 1);
+        assert_eq!(attachment_budget(MAX_SMTP_TOTAL_ATTACHMENT_BYTES).unwrap(), 0);
+        assert!(attachment_budget(MAX_SMTP_TOTAL_ATTACHMENT_BYTES + 1).is_err());
     }
 }
