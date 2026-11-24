@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - 'src-tauri/sqlite-store/**'
+      - 'src-tauri/storage_guard.rs'
       - '.github/workflows/sqlite-store.yml'
   push:
     branches: [main]
     paths:
       - 'src-tauri/sqlite-store/**'
+      - 'src-tauri/storage_guard.rs'
       - '.github/workflows/sqlite-store.yml'
 
 permissions:
@@ -26,10 +28,7 @@ jobs:
       - name: Resolve canonical lockfile
         shell: bash
         run: |
-          cargo metadata --all-features --format-version 1 > /dev/null
-          echo 'BEGIN_SEVEN_MAIL_SQLITE_LOCKFILE'
-          cat Cargo.lock
-          echo 'END_SEVEN_MAIL_SQLITE_LOCKFILE'
+          cargo metadata --locked --all-features --format-version 1 > /dev/null
       - uses: actions/upload-artifact@v4
         with:
           name: sqlite-store-canonical-lock
