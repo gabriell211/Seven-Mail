@@ -12,6 +12,8 @@ const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 
 fn key_bytes() -> Result<[u8; KEY_LEN], String> {
+    static KEY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = KEY_LOCK.lock().map_err(|_| "Falha ao acessar chave local.".to_string())?;
     if let Some(encoded) = credentials::load_local_storage_key()? {
         let decoded = BASE64.decode(encoded).map_err(|error| error.to_string())?;
         let bytes: [u8; KEY_LEN] = decoded
@@ -77,9 +79,31 @@ pub fn write(path: &Path, plain: &[u8]) -> Result<(), String> {
     let parent = path.parent().ok_or_else(|| "Caminho local inválido.".to_string())?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     let encrypted = encrypt(plain)?;
-    let mut file = fs::File::create(path).map_err(|error| error.to_string())?;
-    file.write_all(&encrypted).map_err(|error| error.to_string())?;
-    file.sync_all().map_err(|error| error.to_string())
+    atomic_write(path, &encrypted)
+}
+
+// The temporary file lives on the same filesystem as the destination.
+// Never truncate the existing file before the replacement is durable.
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path.parent().ok_or_else(|| "Caminho local inválido.".to_string())?;
+    let temporary = parent.join(format!(".sevenmail-{}.tmp", uuid::Uuid::new_v4()));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .map_err(|error| error.to_string())?;
+    let written = file.write_all(bytes).and_then(|_| file.sync_all());
+    drop(file);
+    let result = written.and_then(|_| fs::rename(&temporary, path));
+    if let Err(error) = result {
+        let _ = fs::remove_file(&temporary);
+        return Err(error.to_string());
+    }
+    #[cfg(unix)]
+    fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn encrypt_file_if_needed(path: &Path) -> Result<usize, String> {
@@ -121,4 +145,33 @@ pub fn migrate_local_data(root: &Path) -> Result<usize, String> {
 
     fs::write(marker, b"v1").map_err(|error| error.to_string())?;
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_write_replaces_existing_bytes() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&root).unwrap();
+        let path = root.join("cache.json");
+        atomic_write(&path, b"original").unwrap();
+        atomic_write(&path, b"replacement").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"replacement");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_replacement_preserves_destination_and_cleans_temp() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let path = root.join("occupied");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("keep"), b"original").unwrap();
+        assert!(atomic_write(&path, b"replacement").is_err());
+        assert_eq!(fs::read(path.join("keep")).unwrap(), b"original");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
 }
