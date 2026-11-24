@@ -483,7 +483,8 @@ pub fn queue_operation(paths: &AppPaths, operation: &QueueOperation) -> Result<(
     safe_component(&operation.id)?;
     safe_component(&operation.account_id)?;
     let path = paths.pending.join(format!("{}.json", operation.id));
-    if path.exists() {
+    let name = format!("{}.json", operation.id);
+    if path.exists() || [&paths.processing, &paths.completed, &paths.failed].iter().any(|dir| dir.join(&name).exists()) {
         return Err("Operação já existe na fila.".to_string());
     }
     write_json(&path, operation)
@@ -510,7 +511,11 @@ fn list_operations(dir: &Path) -> Result<Vec<QueueOperation>, String> {
 }
 
 pub fn list_queue(paths: &AppPaths) -> Result<Vec<QueueOperation>, String> {
-    list_operations(&paths.pending)
+    let mut operations = list_operations(&paths.pending)?;
+    // Failed items remain inspectable. They are never selected by the worker.
+    operations.extend(list_operations(&paths.failed)?);
+    operations.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    Ok(operations)
 }
 
 pub fn claim_next_send_due(paths: &AppPaths) -> Result<Option<QueueOperation>, String> {
@@ -695,8 +700,12 @@ fn claim_next_matching(
     safe_component(&operation.id)?;
     let source = paths.pending.join(format!("{}.json", operation.id));
     let destination = paths.processing.join(format!("{}.json", operation.id));
-    fs::rename(source, destination).map_err(io_error)?;
-    Ok(Some(operation))
+    // A cancellation or another worker may have won the atomic claim.
+    match fs::rename(source, destination) {
+        Ok(()) => Ok(Some(operation)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(io_error(error)),
+    }
 }
 
 pub fn complete(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
@@ -721,9 +730,69 @@ pub fn fail(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
         return Ok(());
     }
     let destination = paths.failed.join(format!("{}.json", operation_id));
+    if destination.exists() {
+        return Err("Operação já existe na fila de falhas.".to_string());
+    }
     fs::rename(source, destination).map_err(io_error)
 }
 
+
+const MAX_QUEUE_ATTEMPTS: u32 = 8;
+
+fn set_delivery_state(operation: &mut QueueOperation, state: &str) -> Result<(), String> {
+    let payload = operation.payload.as_object_mut()
+        .ok_or_else(|| "Operação de fila possui payload inválido.".to_string())?;
+    payload.insert("_deliveryState".into(), serde_json::Value::String(state.into()));
+    Ok(())
+}
+
+pub fn mark_smtp_submission(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
+    safe_component(operation_id)?;
+    let source = paths.processing.join(format!("{operation_id}.json"));
+    let mut operation = read_json::<QueueOperation>(&source)?;
+    set_delivery_state(&mut operation, "submitting")?;
+    write_json(&source, &operation)
+}
+
+pub fn quarantine_operation(paths: &AppPaths, operation_id: &str, state: &str) -> Result<(), String> {
+    safe_component(operation_id)?;
+    let source = paths.processing.join(format!("{operation_id}.json"));
+    let destination = paths.failed.join(format!("{operation_id}.json"));
+    if destination.exists() {
+        return Err("Operação já existe na fila de falhas; recuperação manual necessária.".to_string());
+    }
+    let mut operation = read_json::<QueueOperation>(&source)?;
+    set_delivery_state(&mut operation, state)?;
+    write_json(&source, &operation)?;
+    fs::rename(source, destination).map_err(io_error)
+}
+
+/// Run once during single-instance startup, before accepting queue commands.
+/// Legacy processing records cannot prove whether the provider accepted them.
+pub fn recover_interrupted_operations(paths: &AppPaths) -> Result<(), String> {
+    for entry in fs::read_dir(&paths.processing).map_err(io_error)? {
+        let path = entry.map_err(io_error)?.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let operation = read_json::<QueueOperation>(&path)?;
+        safe_component(&operation.id)?;
+        let name = format!("{}.json", operation.id);
+        if path.file_name().and_then(|value| value.to_str()) != Some(name.as_str()) {
+            return Err("Identificador da operação interrompida não corresponde ao arquivo.".to_string());
+        }
+        let pending = paths.pending.join(&name);
+        if pending.exists() {
+            // Preserve duplicate records left by an older interrupted retry,
+            // but remove them from the active queue before recovery.
+            let conflicts = paths.queue.join("recovery-conflicts");
+            fs::create_dir_all(&conflicts).map_err(io_error)?;
+            fs::rename(&pending, conflicts.join(format!("{}-{}", uuid::Uuid::new_v4(), name))).map_err(io_error)?;
+        }
+        quarantine_operation(paths, &operation.id, "delivery_unknown")?;
+    }
+    Ok(())
+}
 
 pub fn retry_later(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     safe_component(operation_id)?;
@@ -734,6 +803,12 @@ pub fn retry_later(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
 
     let mut operation = read_json::<QueueOperation>(&source)?;
     operation.attempts = operation.attempts.saturating_add(1);
+    if operation.attempts >= MAX_QUEUE_ATTEMPTS {
+        set_delivery_state(&mut operation, "retry_exhausted")?;
+        write_json(&source, &operation)?;
+        return fail(paths, operation_id);
+    }
+    set_delivery_state(&mut operation, "retry_pending")?;
     let exponent = operation.attempts.min(8);
     let delay_seconds = (5u64.saturating_mul(1u64 << exponent)).min(15 * 60);
     let next = chrono::Utc::now() + chrono::Duration::seconds(delay_seconds as i64);
@@ -1023,6 +1098,20 @@ pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn delivery_state_requires_an_object_and_preserves_message_payload() {
+        let mut operation = QueueOperation {
+            id: "op".into(), kind: "send".into(), account_id: "account".into(),
+            created_at: "2026-01-01T00:00:00Z".into(), attempts: 0,
+            payload: serde_json::json!({"subject": "original"}),
+        };
+        set_delivery_state(&mut operation, "delivery_unknown").unwrap();
+        assert_eq!(operation.payload["subject"], "original");
+        assert_eq!(operation.payload["_deliveryState"], "delivery_unknown");
+        operation.payload = serde_json::Value::Null;
+        assert!(set_delivery_state(&mut operation, "submitting").is_err());
+    }
 
     #[test]
     fn security_rejects_path_traversal_components() {
