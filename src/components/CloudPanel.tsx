@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Icon } from "../icons";
-import { getCloudSession, neonConfigured, signInCloud, signOutCloud, signUpCloud, setCloudSyncConsent } from "../lib/neon";
+import { getCloudSession, neonConfigured, signInCloud, signOutCloud, signUpCloud, setCloudSyncConsent, getLastCloudSyncError, clearCloudSyncError } from "../lib/neon";
 import { bridge, type CloudBinding } from "../lib/bridge";
 
 type SessionState = Awaited<ReturnType<typeof getCloudSession>>;
@@ -16,6 +16,13 @@ export function CloudPanel() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const [syncError, setSyncError] = useState(getLastCloudSyncError);
+  useEffect(() => {
+    const listener = () => setSyncError(getLastCloudSyncError());
+    window.addEventListener("seven-mail:cloud-sync-error", listener);
+    listener();
+    return () => window.removeEventListener("seven-mail:cloud-sync-error", listener);
+  }, []);
 
   async function refresh() {
     if (!neonConfigured) {
@@ -140,6 +147,7 @@ export function CloudPanel() {
                 <small>Este armazenamento local ficará vinculado a esta identidade. Sair da nuvem não transfere os dados a outra conta.</small>
               </>
             ) : null}
+            {syncError && <div role="alert" className="cloud-error"><p>{syncError.message}</p><button className="secondary" onClick={clearCloudSyncError}>Dispensar aviso</button></div>}
             {error && <small className="cloud-error" role="alert">{error}</small>}
             <button className="secondary" disabled={busy} onClick={() => void signOut()}>Sair da nuvem</button>
           </>
