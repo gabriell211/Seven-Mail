@@ -4401,6 +4401,7 @@ dependencies = [
  "msg_parser",
  "openssl",
  "outlook-pst-rw",
+ "quick-xml",
  "rand 0.8.8",
  "regex",
  "reqwest",
