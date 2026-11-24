@@ -645,18 +645,22 @@ pub fn stage_message_as_eml(
 pub fn cancel_operation(paths: &AppPaths, operation_id: &str) -> Result<bool, String> {
     safe_component(operation_id)?;
     let pending = paths.pending.join(format!("{operation_id}.json"));
-    let existed = pending.exists();
-
-    if existed {
-        fs::remove_file(&pending).map_err(io_error)?;
+    // Removing the pending entry is the cancellation decision. If the
+    // sender has already claimed it, leave its attachments untouched.
+    match fs::remove_file(&pending) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(io_error(error)),
     }
 
     let attachments = paths.queue_attachments.join(operation_id);
-    if attachments.exists() {
-        fs::remove_dir_all(attachments).map_err(io_error)?;
+    match fs::remove_dir_all(attachments) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(io_error(error)),
     }
 
-    Ok(existed)
+    Ok(true)
 }
 
 pub fn claim_next_mail_action(paths: &AppPaths, account_id: &str) -> Result<Option<QueueOperation>, String> {
@@ -741,8 +745,10 @@ pub fn retry_later(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     }
 
     let destination = paths.pending.join(format!("{}.json", operation_id));
-    write_json(&destination, &operation)?;
-    fs::remove_file(source).map_err(io_error)
+    // Update the claimed record first, then move it back into pending.
+    // There must never be two live copies of the same operation.
+    write_json(&source, &operation)?;
+    fs::rename(source, destination).map_err(io_error)
 }
 
 
