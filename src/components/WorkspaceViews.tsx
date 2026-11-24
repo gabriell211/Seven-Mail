@@ -556,25 +556,36 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
   }
 
   async function saveCalendarEvent(event:CalendarEvent) {
-    await store.save(event);
     const account=eventAccount(event);
-    if(!account?.caldavUrl?.trim()) return;
+    if(!account?.caldavUrl?.trim()){
+      if(event.davResource) throw new Error("Conta DAV original indisponível.");
+      await store.save(event);
+      return;
+    }
+    const previous=store.items.find((item)=>item.id===event.id);
     try{
-      await bridge.putDavCalendar(account.id,event.id,eventsToIcs([event]));
+      if(event.davResource?.readOnly || previous?.davResource?.readOnly) throw new Error("Objeto DAV composto: edição ainda não suportada com segurança.");
+      if(previous?.accountId && previous.accountId!==account.id) throw new Error("Não é permitido alterar a conta de um recurso DAV existente.");
+      if(!previous && event.davResource) throw new Error("Não é permitido reutilizar a identidade DAV em um novo evento.");
+      const resource=await bridge.putDavCalendar(account.id,event.id,eventsToIcs([event]),event.davResource,!previous&&!event.davResource);
+      await store.save({...event,accountId:account.id,davUid:event.davUid??(event.id+"@seven-mail.local"),davResource:resource});
     }catch(error){
-      console.warn("CalDAV PUT pendente",error);
+      window.alert(error instanceof Error?error.message:String(error));
+      throw error;
     }
   }
 
   async function removeCalendarEvent(id:string) {
     const event=store.items.find((item)=>item.id===id);
-    await store.remove(id);
     const account=event?eventAccount(event):undefined;
-    if(!account?.caldavUrl?.trim()) return;
     try{
-      await bridge.deleteDavCalendar(account.id,id);
+      if(event?.davResource?.readOnly) throw new Error("Objeto DAV composto: exclusão individual não suportada com segurança.");
+      if(event?.davResource && !account?.caldavUrl?.trim()) throw new Error("Conta DAV original indisponível.");
+      if(account?.caldavUrl?.trim()) await bridge.deleteDavCalendar(account.id,event?.davResource);
+      await store.remove(id);
     }catch(error){
-      console.warn("CalDAV DELETE pendente",error);
+      window.alert(error instanceof Error?error.message:String(error));
+      throw error;
     }
   }
 
@@ -1002,14 +1013,22 @@ export function PersistentPeopleView({ query = "", accounts = [] }: { query?: st
       window.alert("Este contato compartilhado é somente leitura.");
       return;
     }
-    await store.save(contact);
     const account=contactAccount(contact);
-    if(account?.carddavUrl?.trim()){
-      try{
-        await bridge.putDavContact(account.id,contact.id,contactsToVcard([contact]));
-      }catch(error){
-        console.warn("CardDAV PUT pendente",error);
+    const previous=store.items.find((item)=>item.id===contact.id);
+    try{
+      if(contact.davResource && !account?.carddavUrl?.trim()) throw new Error("Conta DAV original indisponível.");
+      if(account?.carddavUrl?.trim()){
+        if(contact.davResource?.readOnly || previous?.davResource?.readOnly) throw new Error("Objeto DAV composto: edição ainda não suportada com segurança.");
+        if(previous?.accountId && previous.accountId!==account.id) throw new Error("Não é permitido alterar a conta de um recurso DAV existente.");
+        if(!previous && contact.davResource) throw new Error("Não é permitido reutilizar a identidade DAV em um novo contato.");
+        const resource=await bridge.putDavContact(account.id,contact.id,contactsToVcard([contact]),contact.davResource,!previous&&!contact.davResource);
+        await store.save({...contact,davUid:contact.davUid??contact.id,davResource:resource});
+      }else{
+        await store.save(contact);
       }
+    }catch(error){
+      window.alert(error instanceof Error?error.message:String(error));
+      throw error;
     }
   }
 
@@ -1018,14 +1037,15 @@ export function PersistentPeopleView({ query = "", accounts = [] }: { query?: st
       window.alert("Este contato compartilhado é somente leitura.");
       return;
     }
-    await store.remove(contact.id);
     const account=contactAccount(contact);
-    if(account?.carddavUrl?.trim()){
-      try{
-        await bridge.deleteDavContact(account.id,contact.id);
-      }catch(error){
-        console.warn("CardDAV DELETE pendente",error);
-      }
+    try{
+      if(contact.davResource?.readOnly) throw new Error("Objeto DAV composto: exclusão individual não suportada com segurança.");
+      if(contact.davResource && !account?.carddavUrl?.trim()) throw new Error("Conta DAV original indisponível.");
+      if(account?.carddavUrl?.trim()) await bridge.deleteDavContact(account.id,contact.davResource);
+      await store.remove(contact.id);
+    }catch(error){
+      window.alert(error instanceof Error?error.message:String(error));
+      throw error;
     }
   }
 
