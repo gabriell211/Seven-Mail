@@ -188,6 +188,7 @@ export async function pushCloudDocument<T>(document: WorkspaceDocument<T>, expec
       deleted_at: document.deletedAt ?? null,
     }, { onConflict: "id" });
     if (result.error) throw new Error(errorMessage(result.error));
+    if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
   } catch (error) {
     reportCloudSyncError(error, document.kind);
     throw error;
@@ -226,6 +227,7 @@ async function insertMailRows(table: MailTable, owner: string, rows: Array<Recor
   if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
   const result = await neonClient.from(table).upsert(rows, { onConflict: "id", ignoreDuplicates: true, defaultToNull: false }).select("id,updated_at");
   if (result.error) throw new Error(errorMessage(result.error));
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
   rememberVersions(owner, table, (result.data ?? []) as unknown as VersionedRow[]);
 }
 
@@ -243,8 +245,9 @@ async function updateMailRow(table: MailTable, owner: string, row: Record<string
     .eq("owner_id", owner).eq("id", row.id).eq("updated_at", version)
     .is("deleted_at", null).select("id,updated_at");
   if (result.error) throw new Error(errorMessage(result.error));
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
   const rows = (result.data ?? []) as unknown as VersionedRow[];
-  if (rows.length !== 1 || rows[0].id !== row.id) {
+  if (rows.length !== 1 || rows[0].id !== row.id || typeof rows[0].updated_at !== "string" || !rows[0].updated_at) {
     versions.delete(key);
     throw new Error("Conflito de versão: sincronize o registro antes de editar.");
   }
@@ -455,7 +458,11 @@ export async function pushCloudMessages(messages: MailMessage[]): Promise<void> 
   const unique = [...new Map(messages.map((message) => [message.id, message])).values()];
   const batchSize = 50;
   for (let offset = 0; offset < unique.length; offset += batchSize) {
-    if (await getAuthorizedCloudOwner() !== owner) return;
+    if (await getAuthorizedCloudOwner() !== owner) {
+      const error = new Error("Sessão Neon alterada durante o envio de mensagens.");
+      reportCloudSyncError(error, "messages");
+      throw error;
+    }
     const rows = unique.slice(offset, offset + batchSize).map((message) => messageToCloudRow(message, owner));
     try { await insertMailRows("desktop_mail_messages", owner, rows); }
     catch (error) { reportCloudSyncError(error, "messages"); throw error; }
