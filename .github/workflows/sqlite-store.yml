@@ -29,11 +29,6 @@ jobs:
         shell: bash
         run: |
           cargo metadata --locked --all-features --format-version 1 > /dev/null
-      - uses: actions/upload-artifact@v6
-        with:
-          name: sqlite-store-canonical-lock
-          path: src-tauri/sqlite-store/Cargo.lock
-          if-no-files-found: error
 
   sqlcipher:
     needs: lockfile
@@ -50,10 +45,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/download-artifact@v7
-        with:
-          name: sqlite-store-canonical-lock
-          path: src-tauri/sqlite-store
       - name: Install Windows OpenSSL build prerequisites
         if: runner.os == 'Windows'
         run: choco install strawberryperl nasm -y --no-progress
