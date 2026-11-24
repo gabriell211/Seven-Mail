@@ -1,5 +1,7 @@
 //! Isolated encrypted message store. Not yet connected to desktop IPC.
 pub mod legacy;
+#[cfg(feature = "native-vault")]
+pub mod native_vault;
 
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use std::{fmt::Write as _, path::Path, sync::Mutex, time::Duration};
