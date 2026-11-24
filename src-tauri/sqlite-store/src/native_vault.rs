@@ -2,7 +2,7 @@
 use crate::{legacy::{migrate_completed_snapshot, MigrationReport}, Result, Store};
 use aes_gcm::{aead::{Aead, KeyInit, OsRng, rand_core::RngCore}, Aes256Gcm, Nonce};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use std::{fs, path::Path, sync::Mutex};
+use std::{fs, io::{Read, Write}, path::Path, sync::Mutex};
 use zeroize::Zeroizing;
 
 const SQL_SERVICE: &str = "Seven Mail SQLCipher";
@@ -96,10 +96,44 @@ fn prepare_with_vault(vault:&impl Vault,snapshot:&Path,staging:&Path)->Result<Mi
     let mut store=Store::open(&staging.join("messages.db"),&key)?;
     let report=migrate_completed_snapshot(&mut store,snapshot,|bytes|decrypt_legacy(&legacy,bytes))?;
     store.verify()?;
+    drop(store);
+    let manifest=serde_json::to_vec(&serde_json::json!({
+        "version":1,"messages":report.messages,"fingerprint":report.source_fingerprint
+    })).map_err(|_|"Manifesto de staging inválido.".to_string())?;
+    let mut options=fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)] {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut marker=options.open(staging.join("staging.complete.json")).map_err(|_|"Não foi possível confirmar staging.".to_string())?;
+    marker.write_all(&manifest).and_then(|_|marker.sync_all()).map_err(|_|"Não foi possível persistir confirmação.".to_string())?;
+    #[cfg(unix)]
+    fs::File::open(staging).and_then(|dir|dir.sync_all()).map_err(|_|"Não foi possível persistir diretório.".to_string())?;
     Ok(report)
 }
 
-/// Reopen a prepared database without ever generating a replacement key.
+#[derive(serde::Deserialize)]
+struct Completion {
+    version:u32,
+    messages:usize,
+    fingerprint:String,
+}
+fn read_completion(staging:&Path)->Result<Completion>{
+    let path=staging.join("staging.complete.json");
+    let meta=fs::symlink_metadata(&path).map_err(|_|"Staging incompleto.".to_string())?;
+    if !meta.is_file()||meta.file_type().is_symlink()||meta.len()>4096{return Err("Confirmação de staging inválida.".into());}
+    let mut bytes=Vec::new();
+    fs::File::open(path).and_then(|file|file.take(4097).read_to_end(&mut bytes)).map_err(|_|"Confirmação de staging indisponível.".to_string())?;
+    if bytes.len()>4096{return Err("Confirmação excede limite.".into());}
+    let completion:Completion=serde_json::from_slice(&bytes).map_err(|_|"Confirmação de staging inválida.".to_string())?;
+    if completion.version!=1||completion.fingerprint.len()!=64||!completion.fingerprint.bytes().all(|v|v.is_ascii_hexdigit()){
+        return Err("Versão ou fingerprint de staging inválido.".into());
+    }
+    Ok(completion)
+}
+
+/// Reopen a completed staging database for validation, without generating a\n/// replacement key. Do not use this as the active mutable mail store.
 pub fn open_native_staging(staging:&Path)->Result<Store>{
     let _guard=VAULT_LOCK.lock().map_err(|_|"Cofre indisponível.".to_string())?;
     let id=staging_identity(staging)?;
@@ -108,8 +142,15 @@ pub fn open_native_staging(staging:&Path)->Result<Store>{
     let path=staging.join("messages.db");
     let meta=fs::symlink_metadata(&path).map_err(|_|"Banco de staging inexistente.".to_string())?;
     if !meta.is_file()||meta.file_type().is_symlink(){return Err("Banco de staging inválido.".into());}
+    let completion=read_completion(staging)?;
     let key=existing_key(&NativeVault,SQL_SERVICE,&id)?;
-    Store::open(&path,&key)
+    let store=Store::open(&path,&key)?;
+    store.verify()?;
+    let count:i64=store.conn.query_row("SELECT count(*) FROM messages",[],|row|row.get(0)).map_err(crate::db_error)?;
+    if count<0||count as u64!=completion.messages as u64{
+        return Err("Contagem do banco preparado diverge da confirmação.".into());
+    }
+    Ok(store)
 }
 
 #[cfg(test)]
