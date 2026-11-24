@@ -173,8 +173,15 @@ fn verify_installer(path: &Path, info: &UpdateInfo) -> Result<(), String> {
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err("O instalador não é um arquivo regular.".to_string());
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("O instalador contém um ponto de reanálise.".into());
+        }
+    }
     let size = info.asset_size.ok_or_else(|| "Tamanho do instalador ausente.".to_string())?;
-    if size > MAX_UPDATE_BYTES || metadata.len() != size {
+    if size == 0 || size > MAX_UPDATE_BYTES || metadata.len() != size {
         return Err("Tamanho do instalador inválido.".to_string());
     }
     let expected = expected_sha256(info.digest.as_deref())?;
@@ -373,6 +380,21 @@ mod tests {
             notes: None,
         };
         assert!(verify_installer(&path, &info).is_ok());
+        let mut invalid = info.clone();
+        invalid.digest = None;
+        assert!(verify_installer(&path, &invalid).is_err());
+        invalid.digest = info.digest.clone();
+        invalid.asset_size = Some(0);
+        assert!(verify_installer(&path, &invalid).is_err());
+        invalid.asset_size = Some(original.len() as u64 + 1);
+        assert!(verify_installer(&path, &invalid).is_err());
+        #[cfg(unix)]
+        {
+            let link = path.with_extension("link");
+            std::os::unix::fs::symlink(&path, &link).unwrap();
+            assert!(verify_installer(&link, &info).is_err());
+            fs::remove_file(link).unwrap();
+        }
         fs::write(&path, b"tampered installer").unwrap();
         assert!(verify_installer(&path, &info).is_err());
         fs::remove_file(path).unwrap();
