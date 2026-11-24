@@ -479,7 +479,15 @@ pub fn reconcile_remote_uids(
     Ok(removed)
 }
 
+// Serialize the state transitions of the single-instance queue. Never hold
+// this mutex across a network call, SMTP submission, or IMAP operation.
+static QUEUE_TRANSITIONS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+fn queue_guard() -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    QUEUE_TRANSITIONS.lock().map_err(|_| "Fila local indisponível após falha interna.".to_string())
+}
+
 pub fn queue_operation(paths: &AppPaths, operation: &QueueOperation) -> Result<(), String> {
+    let _guard = queue_guard()?;
     safe_component(&operation.id)?;
     safe_component(&operation.account_id)?;
     let path = paths.pending.join(format!("{}.json", operation.id));
@@ -648,6 +656,7 @@ pub fn stage_message_as_eml(
 }
 
 pub fn cancel_operation(paths: &AppPaths, operation_id: &str) -> Result<bool, String> {
+    let _guard = queue_guard()?;
     safe_component(operation_id)?;
     let pending = paths.pending.join(format!("{operation_id}.json"));
     // Removing the pending entry is the cancellation decision. If the
@@ -680,6 +689,7 @@ fn claim_next_matching(
     paths: &AppPaths,
     predicate: impl Fn(&QueueOperation) -> bool,
 ) -> Result<Option<QueueOperation>, String> {
+    let _guard = queue_guard()?;
     let now = chrono::Utc::now();
     let Some(operation) = list_operations(&paths.pending)?
         .into_iter()
@@ -700,7 +710,10 @@ fn claim_next_matching(
     safe_component(&operation.id)?;
     let source = paths.pending.join(format!("{}.json", operation.id));
     let destination = paths.processing.join(format!("{}.json", operation.id));
-    // A cancellation or another worker may have won the atomic claim.
+    if destination.exists() {
+        return Err("Operação duplicada em processamento; recuperação necessária.".into());
+    }
+    // A cancellation or another process may have won the atomic claim.
     match fs::rename(source, destination) {
         Ok(()) => Ok(Some(operation)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
@@ -709,12 +722,16 @@ fn claim_next_matching(
 }
 
 pub fn complete(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
+    let _guard = queue_guard()?;
     safe_component(operation_id)?;
     let source = paths.processing.join(format!("{}.json", operation_id));
     if !source.exists() {
         return Ok(());
     }
     let destination = paths.completed.join(format!("{}.json", operation_id));
+    if destination.exists() {
+        return Err("Operação concluída já existe; recuperação necessária.".into());
+    }
     fs::rename(source, destination).map_err(io_error)?;
     let attachments = paths.queue_attachments.join(operation_id);
     if attachments.exists() {
@@ -724,6 +741,11 @@ pub fn complete(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
 }
 
 pub fn fail(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
+    let _guard = queue_guard()?;
+    fail_locked(paths, operation_id)
+}
+
+fn fail_locked(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     safe_component(operation_id)?;
     let source = paths.processing.join(format!("{}.json", operation_id));
     if !source.exists() {
@@ -747,6 +769,7 @@ fn set_delivery_state(operation: &mut QueueOperation, state: &str) -> Result<(),
 }
 
 pub fn mark_smtp_submission(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
+    let _guard = queue_guard()?;
     safe_component(operation_id)?;
     let source = paths.processing.join(format!("{operation_id}.json"));
     let mut operation = read_json::<QueueOperation>(&source)?;
@@ -755,6 +778,7 @@ pub fn mark_smtp_submission(paths: &AppPaths, operation_id: &str) -> Result<(), 
 }
 
 pub fn quarantine_operation(paths: &AppPaths, operation_id: &str, state: &str) -> Result<(), String> {
+    let _guard = queue_guard()?;
     safe_component(operation_id)?;
     let source = paths.processing.join(format!("{operation_id}.json"));
     let destination = paths.failed.join(format!("{operation_id}.json"));
@@ -795,6 +819,7 @@ pub fn recover_interrupted_operations(paths: &AppPaths) -> Result<(), String> {
 }
 
 pub fn retry_later(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
+    let _guard = queue_guard()?;
     safe_component(operation_id)?;
     let source = paths.processing.join(format!("{}.json", operation_id));
     if !source.exists() {
@@ -806,7 +831,7 @@ pub fn retry_later(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     if operation.attempts >= MAX_QUEUE_ATTEMPTS {
         set_delivery_state(&mut operation, "retry_exhausted")?;
         write_json(&source, &operation)?;
-        return fail(paths, operation_id);
+        return fail_locked(paths, operation_id);
     }
     set_delivery_state(&mut operation, "retry_pending")?;
     let exponent = operation.attempts.min(8);
@@ -820,6 +845,9 @@ pub fn retry_later(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     }
 
     let destination = paths.pending.join(format!("{}.json", operation_id));
+    if destination.exists() {
+        return Err("Operação pendente duplicada; recuperação necessária.".into());
+    }
     // Update the claimed record first, then move it back into pending.
     // There must never be two live copies of the same operation.
     write_json(&source, &operation)?;
@@ -1098,6 +1126,17 @@ pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn queue_transition_lock_excludes_competing_workers() {
+        let guard = queue_guard().unwrap();
+        let other = std::thread::spawn(|| {
+            assert!(matches!(QUEUE_TRANSITIONS.try_lock(), Err(std::sync::TryLockError::WouldBlock)));
+        });
+        other.join().unwrap();
+        drop(guard);
+        assert!(queue_guard().is_ok());
+    }
 
     #[test]
     fn delivery_state_requires_an_object_and_preserves_message_payload() {
