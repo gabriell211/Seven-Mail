@@ -1,141 +1,38 @@
 name: Neon SDK dependency validation
 on:
-  # The candidate is evaluated separately from committed dependencies.
-  # PR execution is necessary while this workflow is not yet on main.
   pull_request:
     paths:
       - '.github/workflows/neon-sdk-validation.yml'
       - 'package.json'
       - 'package-lock.json'
+      - 'src/lib/neon*.ts'
+      - 'tests/neon*.test.mts'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   dependency-validation:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        candidate: ['standalone-data-api']
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           package-manager-cache: false
-      - name: Audit committed dependency baseline
+      - name: Validate committed dependencies
         shell: bash
         run: |
           set -euo pipefail
-          status=0
-          npm audit --json > /tmp/neon-baseline-audit.json || status=$?
-          node --input-type=module <<'JS'
-          import fs from 'node:fs';
-          const report=JSON.parse(fs.readFileSync('/tmp/neon-baseline-audit.json','utf8'));
-          if (!report.metadata?.vulnerabilities || !report.vulnerabilities) {
-            throw new Error('Missing committed dependency audit data');
-          }
-          for (const [name, issue] of Object.entries(report.vulnerabilities)) {
-            console.log(JSON.stringify({name,severity:issue.severity,via:issue.via,fixAvailable:issue.fixAvailable}));
-          }
-          console.log(JSON.stringify(report.metadata.vulnerabilities));
-          JS
-          # Record the baseline, then evaluate a possible replacement independently.
-          echo "$status" > /tmp/neon-baseline-audit-status.txt
-      - name: Resolve candidate in clean dependency tree
-        shell: bash
-        env:
-          CANDIDATE: ${{ matrix.candidate }}
-        run: |
-          set -euo pipefail
-          # Preserve the existing React version and remove the dependency chain
-          # which imports server-side Better Auth, React Native, and auth UI.
-          npm view @neondatabase/postgrest-js@0.2.0-beta dependencies --json > /tmp/neon-sdk.json
-          node --input-type=module <<'JS'
-          import fs from 'node:fs';
-          const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
-          delete pkg.dependencies['@neondatabase/neon-js'];
-          pkg.dependencies['@neondatabase/postgrest-js']='0.2.0-beta';
-          // Explicitly approve only the reviewed esbuild binary installer.
-          // New versions and any other lifecycle script require a new review.
-          pkg.allowScripts={...(pkg.allowScripts ?? {}),'esbuild@0.28.2':true};
-          fs.writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\n');
-          const path='src/lib/neon.ts';
-          let source=fs.readFileSync(path,'utf8');
-          const before='import { BetterAuthVanillaAdapter, createClient } from "@neondatabase/neon-js";';
-          if (!source.includes(before)) throw new Error('Unexpected Neon imports');
-          source=source.replace(before,[
-            'import { NeonPostgrestClient, fetchWithToken } from "@neondatabase/postgrest-js";',
-            'import { createNeonHttpAuth, validatedHttpsEndpoint } from "./neon-auth-http";'
-          ].join('\n'));
-          const start=source.indexOf('export const neonClient =');
-          const end=source.indexOf('function requireClient()',start);
-          if (start<0 || end<0) throw new Error('Unexpected Neon client factory');
-          source=source.slice(0,start)+[
-            'function createStandaloneClient(authUrl: string, dataApiUrl: string) {',
-            '  const auth = createNeonHttpAuth(authUrl);',
-            '  const data = new NeonPostgrestClient({',
-            '    dataApiUrl: validatedHttpsEndpoint(dataApiUrl).toString(),',
-            '    options: { global: { fetch: fetchWithToken(auth.getJWTToken, (input, init) => fetch(input, { ...init, redirect: "error", credentials: "omit", referrerPolicy: "no-referrer" })) } },',
-            '  });',
-            '  return Object.assign(data, { auth });',
-            '}',
-            '',
-            'export const neonClient = authUrl && dataApiUrl ? createStandaloneClient(authUrl, dataApiUrl) : null;',
-            '',
-            ''
-          ].join('\n')+source.slice(end);
-          fs.writeFileSync(path,source);
-          JS
-          rm package-lock.json
-          npm install --package-lock-only --strict-peer-deps --strict-allow-scripts 2>&1 | tee /tmp/npm-resolution.log
           npm ci --strict-peer-deps --strict-allow-scripts 2>&1 | tee /tmp/npm-install.log
-          # Collect actual advisories before applying the promotion gates.
-          # npm audit exits nonzero for vulnerabilities; preserve its report and status.
-          audit_status=0
-          npm audit --json > /tmp/neon-audit.json || audit_status=$?
-          node --input-type=module <<'JS'
-          import fs from 'node:fs';
-          const report=JSON.parse(fs.readFileSync('/tmp/neon-audit.json','utf8'));
-          if (!report.metadata?.vulnerabilities || !report.vulnerabilities) {
-            throw new Error('Missing npm audit data; cannot validate dependency security');
-          }
-          for (const [name, issue] of Object.entries(report.vulnerabilities)) {
-            console.log(JSON.stringify({
-              name, severity:issue.severity, range:issue.range,
-              via:issue.via, effects:issue.effects, fixAvailable:issue.fixAvailable
-            }));
-          }
-          console.log(JSON.stringify(report.metadata.vulnerabilities));
-          JS
-          dependency_status=0
-          npm ls --all > /tmp/neon-dependency-tree.txt 2>&1 || dependency_status=$?
-          failed=0
-          if grep -Ei 'npm warn|DeprecationWarning' /tmp/npm-resolution.log /tmp/npm-install.log; then
-            echo 'Dependency warnings still present; do not promote candidate.'
-            failed=1
+          npm audit --json > /tmp/neon-audit.json
+          npm ls --all > /tmp/neon-dependency-tree.txt
+          if grep -Ei 'npm warn|DeprecationWarning' /tmp/npm-install.log; then
+            echo 'Dependency warnings present.'
+            exit 1
           fi
-          if [ "$audit_status" -ne 0 ] || [ "$dependency_status" -ne 0 ]; then
-            echo 'Security audit or dependency tree failed; do not promote candidate.'
-            failed=1
-          fi
-          exit "$failed"
-      - name: Upload dependency diagnostics even on failure
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: neon-sdk-diagnostics-${{ matrix.candidate }}
-          path: |
-            /tmp/neon-baseline-audit.json
-            /tmp/neon-baseline-audit-status.txt
-            /tmp/neon-audit.json
-            /tmp/neon-dependency-tree.txt
-            /tmp/npm-resolution.log
-            /tmp/npm-install.log
-            /tmp/neon-sdk.json
-          if-no-files-found: warn
-      - run: npm test
-      - name: Build candidate and reject frontend warnings
+      - name: Test frontend
+        run: npm test
+      - name: Build frontend without warnings
         shell: bash
         run: |
           set -euo pipefail
@@ -144,20 +41,14 @@ jobs:
             echo 'Frontend emitted warnings.'
             exit 1
           fi
-      - name: Emit validated manifest and lockfile for review
-        shell: bash
-        run: |
-          echo 'BEGIN_SEVEN_MAIL_NPM_MANIFEST'
-          cat package.json
-          echo 'END_SEVEN_MAIL_NPM_MANIFEST'
-          echo 'BEGIN_SEVEN_MAIL_NPM_LOCK'
-          cat package-lock.json
-          echo 'END_SEVEN_MAIL_NPM_LOCK'
-      - uses: actions/upload-artifact@v6
+      - name: Upload dependency diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
         with:
-          name: neon-sdk-validated-lock-${{ matrix.candidate }}
+          name: neon-sdk-diagnostics
           path: |
-            package.json
-            package-lock.json
-            src/lib/neon.ts
-          if-no-files-found: error
+            /tmp/npm-install.log
+            /tmp/neon-audit.json
+            /tmp/neon-dependency-tree.txt
+            /tmp/frontend-build.log
+          if-no-files-found: warn

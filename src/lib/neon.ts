@@ -1,4 +1,5 @@
-import { BetterAuthVanillaAdapter, createClient } from "@neondatabase/neon-js";
+import { NeonPostgrestClient, fetchWithToken } from "@neondatabase/postgrest-js";
+import { createNeonHttpAuth, validatedHttpsEndpoint } from "./neon-auth-http";
 import type { AccountProfile, MailMessage, WorkspaceDocument, WorkspaceKind } from "../types";
 import { bridge } from "./bridge";
 import { sameProjection } from "./cloud-reconciliation";
@@ -8,17 +9,16 @@ const dataApiUrl = import.meta.env.VITE_NEON_DATA_API_URL?.trim();
 
 export const neonConfigured = Boolean(authUrl && dataApiUrl);
 
-export const neonClient = authUrl && dataApiUrl
-  ? createClient({
-      auth: {
-        adapter: BetterAuthVanillaAdapter(),
-        url: authUrl,
-      },
-      dataApi: {
-        url: dataApiUrl,
-      },
-    })
-  : null;
+function createStandaloneClient(authUrl: string, dataApiUrl: string) {
+  const auth = createNeonHttpAuth(authUrl);
+  const data = new NeonPostgrestClient({
+    dataApiUrl: validatedHttpsEndpoint(dataApiUrl).toString(),
+    options: { global: { fetch: fetchWithToken(auth.getJWTToken, (input, init) => fetch(input, { ...init, redirect: "error", credentials: "omit", referrerPolicy: "no-referrer" })) } },
+  });
+  return Object.assign(data, { auth });
+}
+
+export const neonClient = authUrl && dataApiUrl ? createStandaloneClient(authUrl, dataApiUrl) : null;
 
 function requireClient() {
   if (!neonClient) {
