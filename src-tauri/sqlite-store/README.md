@@ -35,4 +35,16 @@ https://sqlite.org/fts5.html e https://docs.rs/crate/rusqlite/0.43.0 .
 
 ## Adaptador de cofre nativo (feature `native-vault`)
 
-O módulo Rust `native_vault` lê a chave AES-GCM original do cofre, sem criar uma substituta, e prepara um banco em diretório exclusivo com nova chave de 256 bits no serviço separado Seven Mail SQLCipher. Após importação e verificação de integridade, grava a confirmação de staging. A reabertura exige confirmação, chave original do staging e contagem correspondente. O chamador deve fornecer uma identidade aleatória de 128 bits e diretório privado; a chave está vinculada a essa identidade. Não é uma API IPC, não ativa o banco e não substitui o modo manutenção. O lockfile anterior precisa incorporar as novas dependências opcionais antes de consolidar. Os testes usam cofre em memória; homologar os cofres reais e ACLs Windows, recuperação de falha e política de retenção de entradas órfãs.
+O módulo Rust `native_vault` lê a chave AES-GCM original do cofre, sem criar uma substituta, e prepara um banco em diretório exclusivo com nova chave de 256 bits no serviço separado Seven Mail SQLCipher. Após importação e verificação de integridade, grava a confirmação de staging. A reabertura exige confirmação, chave original do staging e contagem correspondente. O chamador deve fornecer uma identidade aleatória de 128 bits e diretório privado; a chave está vinculada a essa identidade. Não é uma API IPC, não ativa o banco e o fluxo offline agora usa o bloqueio de manutenção compartilhado com a inicialização Tauri. O lockfile foi regenerado no CI com as dependências opcionais e versionado. Os testes usam cofre em memória; homologar os cofres reais e ACLs Windows, recuperação de falha e política de retenção de entradas órfãs.
+
+## Preparação offline (experimental, não distribuída)
+
+O executável de manutenção usa a mesma trava exclusiva de arquivo da versão desktop compatível (Rust 1.89+). Não inicia enquanto o desktop estiver em execução, inclusive na bandeja. Versões antigas não participam da trava: encerre-as completamente. Não remova o arquivo de bloqueio manualmente.
+
+Após homologação, para um snapshot de teste (não dados de produção), o comando a partir da raiz é:
+
+```sh
+cargo run --locked --manifest-path src-tauri/sqlite-store/Cargo.toml --features native-vault --bin prepare -- --desktop-closed "<diretório-de-dados>"
+```
+
+O comando exige a trava inicializada pelo desktop compatível, cria backup criptografado e banco separado em `sqlite-preparation/<id>`, verifica integridade e informa o resultado. Não altera a origem, não modifica configurações e não ativa o banco. As tentativas incompletas permanecem isoladas. O bloqueio é cooperativo, não substitui permissões do sistema, e não impede que executáveis antigos ou outros programas escrevam diretamente nos arquivos. Homologação de PIN/ACLs, retenção, cutover e integração da pesquisa permanecem obrigatórios.
