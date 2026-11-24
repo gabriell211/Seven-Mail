@@ -568,6 +568,33 @@ fn dangerous_attachment(path: &Path) -> bool {
     )
 }
 
+// Read at most one byte beyond the authorized limit, even if a source grows
+// after its metadata was inspected.
+fn read_attachment_bounded(mut reader: impl io::Read, limit: u64) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    (&mut reader).take(limit + 1).read_to_end(&mut bytes).map_err(io_error)?;
+    if bytes.len() as u64 > limit {
+        return Err("Anexo excede o limite autorizado de armazenamento.".into());
+    }
+    Ok(bytes)
+}
+
+fn staging_directory(path: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(io_error)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("Diretório de anexos inválido.".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("Diretório de anexos contém ponto de reanálise.".into());
+        }
+    }
+    Ok(())
+}
+
 pub fn stage_attachments(
     paths: &AppPaths,
     operation_id: &str,
@@ -576,56 +603,52 @@ pub fn stage_attachments(
     max_total_mb: u64,
 ) -> Result<Vec<QueuedAttachment>, String> {
     safe_component(operation_id)?;
+    if sources.len() > 256 { return Err("Quantidade de anexos acima do limite.".into()); }
+    staging_directory(&paths.queue_attachments)?;
     let destination = paths.queue_attachments.join(operation_id);
     fs::create_dir_all(&destination).map_err(io_error)?;
-
-    let mut output = Vec::new();
+    staging_directory(&destination)?;
+    let max_file = max_file_mb.clamp(1, 250) * 1024 * 1024;
+    let max_total = max_total_mb.clamp(max_file_mb.clamp(1, 250), 500) * 1024 * 1024;
+    let mut output: Vec<QueuedAttachment> = Vec::new();
     let mut total = 0u64;
-    let offset = fs::read_dir(&destination)
-        .map_err(io_error)?
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().is_file())
-        .count();
 
-    for (index, source) in sources.iter().enumerate() {
-        let source_path = Path::new(source);
-        if !source_path.is_file() {
-            return Err(format!("Anexo não encontrado: {}", source_path.display()));
+    let result = (|| -> Result<(), String> {
+        for source in sources {
+            let source_path = Path::new(source);
+            if dangerous_attachment(source_path) {
+                return Err("Extensão de anexo bloqueada por segurança.".into());
+            }
+            let metadata = fs::symlink_metadata(source_path).map_err(io_error)?;
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err("Anexo deve ser um arquivo regular.".into());
+            }
+            let file = fs::File::open(source_path).map_err(io_error)?;
+            let remaining = max_total.saturating_sub(total).min(max_file);
+            if file.metadata().map_err(io_error)?.len() > remaining {
+                return Err("Anexo excede o limite individual ou total.".into());
+            }
+            let source_bytes = read_attachment_bounded(file, remaining)?;
+            let size = source_bytes.len() as u64;
+            total += size;
+            let original_name = source_path.file_name().and_then(|value| value.to_str()).unwrap_or("arquivo");
+            let name = safe_attachment_name(original_name);
+            // Names do not depend on the number of existing entries, which
+            // may change during concurrent staging or attachment removal.
+            let staged_path = destination.join(format!("{}-{name}", uuid::Uuid::new_v4()));
+            local_crypto::write(&staged_path, &source_bytes)?;
+            output.push(QueuedAttachment {
+                name, path: staged_path.display().to_string(), size,
+                inline: false, content_id: None,
+            });
         }
-        if dangerous_attachment(source_path) {
-            return Err(format!("Extensão de anexo bloqueada por segurança: {}", source_path.display()));
-        }
-
-        let metadata = fs::metadata(source_path).map_err(io_error)?;
-        let max_file = max_file_mb.clamp(1, 250) * 1024 * 1024;
-        let max_total = max_total_mb.clamp(max_file_mb.clamp(1, 250), 500) * 1024 * 1024;
-        if metadata.len() > max_file {
-            return Err(format!("Cada anexo deve ter no máximo {max_file_mb} MB."));
-        }
-        total = total.saturating_add(metadata.len());
-        if total > max_total {
-            return Err(format!("O total de anexos desta mensagem não pode exceder {max_total_mb} MB."));
-        }
-
-        let original_name = source_path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("arquivo");
-        let name = safe_attachment_name(original_name);
-        let staged_name = format!("{:03}-{name}", offset + index);
-        let staged_path = destination.join(staged_name);
-        let source_bytes = fs::read(source_path).map_err(io_error)?;
-        local_crypto::write(&staged_path, &source_bytes)?;
-
-        output.push(QueuedAttachment {
-            name,
-            path: staged_path.display().to_string(),
-            size: metadata.len(),
-            inline: false,
-            content_id: None,
-        });
+        Ok(())
+    })();
+    if let Err(error) = result {
+        // Remove only files created by this invocation; preserve earlier drafts.
+        for attachment in &output { let _ = fs::remove_file(&attachment.path); }
+        return Err(error);
     }
-
     Ok(output)
 }
 
@@ -652,7 +675,9 @@ pub fn stage_message_as_eml(
     if !base.to_ascii_lowercase().ends_with(".eml") {
         base.push_str(".eml");
     }
-    let staged_path = destination.join(format!("000-{base}"));
+    staging_directory(&paths.queue_attachments)?;
+    staging_directory(&destination)?;
+    let staged_path = destination.join(format!("{}-{base}", uuid::Uuid::new_v4()));
     local_crypto::write(&staged_path, &raw)?;
 
     Ok(QueuedAttachment {
@@ -1155,6 +1180,14 @@ pub fn clear_cache(paths: &AppPaths) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn attachment_reader_checks_actual_bytes_and_exact_boundary() {
+        assert_eq!(read_attachment_bounded(&b"1234"[..], 4).unwrap(), b"1234");
+        assert!(read_attachment_bounded(&b"12345"[..], 4).is_err());
+        assert!(read_attachment_bounded(&b"1"[..], 0).is_err());
+        assert!(read_attachment_bounded(&b""[..], 0).unwrap().is_empty());
+    }
 
     #[test]
     fn queue_transition_lock_excludes_competing_workers() {
