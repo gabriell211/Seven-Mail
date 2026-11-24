@@ -110,6 +110,7 @@ fn list_accounts() -> Result<Vec<AccountProfile>, String> {
 
 #[tauri::command]
 fn save_account(account: AccountProfile) -> Result<(), String> {
+    oauth::validate_account_endpoints(&account)?;
     storage::save_account(&AppPaths::resolve()?, account)
 }
 
@@ -157,13 +158,13 @@ fn oauth_exchange_code(
     code: String,
     verifier: String,
     redirect_uri: Option<String>,
-) -> Result<oauth::OAuthTokenState, String> {
+) -> Result<oauth::OAuthAuthorizationStatus, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    oauth::exchange_code(&account, &code, &verifier, redirect_uri.as_deref())
+    oauth::exchange_code(&account, &code, &verifier, redirect_uri.as_deref()).map(Into::into)
 }
 
 #[tauri::command]
@@ -172,13 +173,13 @@ fn provider_oauth_exchange_code(
     code: String,
     verifier: String,
     redirect_uri: Option<String>,
-) -> Result<oauth::OAuthTokenState, String> {
+) -> Result<oauth::OAuthAuthorizationStatus, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    oauth::provider_exchange_code(&account, &code, &verifier, redirect_uri.as_deref())
+    oauth::provider_exchange_code(&account, &code, &verifier, redirect_uri.as_deref()).map(Into::into)
 }
 
 #[tauri::command]
@@ -192,13 +193,13 @@ fn provider_oauth_clear(account_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn oauth_refresh(account_id: String) -> Result<oauth::OAuthTokenState, String> {
+fn oauth_refresh(account_id: String) -> Result<oauth::OAuthAuthorizationStatus, String> {
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    oauth::refresh(&account)
+    oauth::refresh(&account).map(Into::into)
 }
 
 #[tauri::command]
