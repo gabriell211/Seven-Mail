@@ -133,20 +133,32 @@ export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<
 
   const rows: Array<CloudWorkspaceRow<T>> = [];
   const pageSize = 500;
-  for (let offset = 0; ; offset += pageSize) {
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  // Keyset pagination avoids shifting offsets when a preceding row is deleted.
+  // This is not a transaction-wide snapshot; a new lower ID is seen on the next sync.
+  for (;;) {
     if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
-    const result = await neonClient
+    let query = neonClient
       .from("workspace_documents")
       .select("id, kind, payload, updated_at, deleted_at")
       .eq("owner_id", owner)
-      .eq("kind", kind)
-      .order("id")
-      .range(offset, offset + pageSize - 1);
+      .eq("kind", kind);
+    if (cursor !== undefined) query = query.gt("id", cursor);
+    const result = await query.order("id", { ascending: true }).limit(pageSize);
 
     if (result.error) throw new Error(errorMessage(result.error));
     const page = (result.data ?? []) as unknown as Array<CloudWorkspaceRow<T>>;
-    rows.push(...page);
-    if (page.length < pageSize) break;
+    if (page.length === 0) break;
+    for (const row of page) {
+      if (typeof row.id !== "string" || !row.id || row.kind !== kind || seen.has(row.id)) {
+        throw new Error("Página Neon contém identidade inválida ou repetida.");
+      }
+      seen.add(row.id);
+      rows.push(row);
+    }
+    cursor = page[page.length - 1].id;
+    // A server-side row limit may be lower than the requested page size.
   }
 
   if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
