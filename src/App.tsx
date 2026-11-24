@@ -3342,10 +3342,12 @@ export default function App() {
         setSendFeedback({state:"sending",title:"Enviando",detail:"Conectando ao servidor SMTP...",id:info.id});
         void bridge.flushOutbox()
           .then(async(result)=>{
-            const queue=await bridge.listQueue().catch(()=>[]);
+            const queue=await bridge.listQueue();
             const pending=queue.find((operation)=>operation.id===info.id);
             if(pending?.payload._deliveryState==="delivery_unknown"){
               setSendFeedback({state:"error",title:"Entrega não confirmada",detail:"A mensagem foi preservada sem reenvio automático. Confira a pasta Enviados antes de tentar novamente.",id:info.id});
+            }else if(pending?.payload._deliveryState==="account_missing"){
+              setSendFeedback({state:"error",title:"Conta de envio não encontrada",detail:"A mensagem foi preservada na fila de falhas.",id:info.id});
             }else if(pending?.payload._deliveryState==="retry_exhausted"){
               setSendFeedback({state:"error",title:"Limite de tentativas atingido",detail:"A mensagem foi preservada na fila de falhas. Revise as configurações da conta.",id:info.id});
             }else if(pending){
@@ -3357,7 +3359,7 @@ export default function App() {
                   : "A mensagem continua aguardando na fila.",
                 id:info.id,
               });
-            }else if(result.sent>0){
+            }else if(result.sentOperationIds?.includes(info.id)){
               const refreshed=await bridge.listCachedMessages(unified?undefined:activeAccount?.id).catch(()=>null);
               if(refreshed) setMessages(refreshed);
               const warning=result.sentCopyWarnings.find((value)=>value.includes(info.accountId))??result.sentCopyWarnings[0];
