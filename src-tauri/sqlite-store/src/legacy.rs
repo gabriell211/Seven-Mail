@@ -226,10 +226,48 @@ pub fn create_snapshot(source: &Path, destination: &Path) -> Result<MigrationRep
 /// Imports only from an offline, stable snapshot; the active application must
 /// not write into this tree. Detects accidental source drift before committing.
 /// The decryptor must authenticate ciphertext and reject missing/wrong keys.
-pub fn migrate_snapshot<F>(store: &mut Store, root: &Path, mut decrypt: F) -> Result<MigrationReport>
+pub fn migrate_snapshot<F>(store: &mut Store, root: &Path, decrypt: F) -> Result<MigrationReport>
+where F: FnMut(&[u8]) -> Result<Vec<u8>> {
+    migrate_snapshot_inner(store, root, decrypt, None)
+}
+
+#[derive(Deserialize)]
+struct SnapshotManifest {
+    version: u32,
+    messages: usize,
+    accounts: usize,
+    fingerprint: String,
+}
+
+/// Import a completed snapshot, requiring the manifest to match the source
+/// before the database transaction commits.
+pub fn migrate_completed_snapshot<F>(store: &mut Store, snapshot: &Path, decrypt: F) -> Result<MigrationReport>
+where F: FnMut(&[u8]) -> Result<Vec<u8>> {
+    require_directory(snapshot)?;
+    let path = snapshot.join("snapshot.complete.json");
+    let meta = fs::symlink_metadata(&path).map_err(io_error)?;
+    if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > 4096 {
+        return Err("Manifesto de snapshot inválido.".into());
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(&path).map_err(io_error)?.take(4097).read_to_end(&mut bytes).map_err(io_error)?;
+    if bytes.len()>4096 { return Err("Manifesto excede limite.".into()); }
+    let manifest: SnapshotManifest = serde_json::from_slice(&bytes).map_err(|_| "Snapshot incompleto ou manifesto inválido.".to_string())?;
+    if manifest.version != 1 || manifest.fingerprint.len()!=64 || !manifest.fingerprint.bytes().all(|ch|ch.is_ascii_hexdigit()) {
+        return Err("Versão ou fingerprint de snapshot inválido.".into());
+    }
+    migrate_snapshot_inner(store, &snapshot.join("messages"), decrypt, Some(&manifest))
+}
+
+fn migrate_snapshot_inner<F>(store: &mut Store, root: &Path, mut decrypt: F, manifest: Option<&SnapshotManifest>) -> Result<MigrationReport>
 where F: FnMut(&[u8]) -> Result<Vec<u8>> {
     let files = inventory(root)?;
     let accounts = files.keys().map(|(account, _)| account).collect::<std::collections::BTreeSet<_>>().len();
+    if let Some(manifest) = manifest {
+        if manifest.messages != files.len() || manifest.accounts != accounts {
+            return Err("Contagem diverge do manifesto do snapshot.".into());
+        }
+    }
     let mut digests = BTreeMap::new();
     let mut iter = files.iter();
     let mut checked = false;
@@ -251,6 +289,11 @@ where F: FnMut(&[u8]) -> Result<Vec<u8>> {
                 let digest: [u8;32] = Sha256::digest(encrypted_file(path)?).into();
                 if digests.get(identity) != Some(&digest) {
                     return Err("Conteúdo legado mudou durante a migração.".into());
+                }
+            }
+            if let Some(manifest) = manifest {
+                if manifest.fingerprint != fingerprint(&digests) {
+                    return Err("Fingerprint diverge do manifesto do snapshot.".into());
                 }
             }
             Ok(())
