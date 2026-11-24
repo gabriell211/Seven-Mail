@@ -26,8 +26,10 @@ jobs:
       - name: Resolve canonical lockfile
         shell: bash
         run: |
-          test -f Cargo.lock
-          cargo metadata --locked --no-deps --format-version 1 > /dev/null
+          cargo metadata --all-features --format-version 1 > /dev/null
+          echo 'BEGIN_SEVEN_MAIL_SQLITE_LOCKFILE'
+          cat Cargo.lock
+          echo 'END_SEVEN_MAIL_SQLITE_LOCKFILE'
       - uses: actions/upload-artifact@v4
         with:
           name: sqlite-store-canonical-lock
@@ -54,5 +56,5 @@ jobs:
       - name: Install Windows OpenSSL build prerequisites
         if: runner.os == 'Windows'
         run: choco install strawberryperl nasm -y --no-progress
-      - run: cargo test --locked
-      - run: cargo check --locked
+      - run: cargo test --locked --all-features
+      - run: cargo check --locked --all-features
