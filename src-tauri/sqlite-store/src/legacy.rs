@@ -162,12 +162,14 @@ pub fn create_snapshot(source: &Path, destination: &Path) -> Result<MigrationRep
         return Err("Snapshot deve estar fora do cache legado.".into());
     }
     // create_dir is exclusive: never delete or modify a pre-existing backup.
-    let mut builder = fs::DirBuilder::new();
+    let builder = fs::DirBuilder::new();
     #[cfg(unix)]
-    {
+    let builder = {
         use std::os::unix::fs::DirBuilderExt;
+        let mut builder = builder;
         builder.mode(0o700);
-    }
+        builder
+    };
     builder.create(&destination).map_err(io_error)?;
     let result = (|| -> Result<MigrationReport> {
         let root = destination.join("messages");
