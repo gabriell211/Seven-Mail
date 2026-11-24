@@ -87,11 +87,20 @@ fn io_error(error: io::Error) -> String {
 }
 
 fn safe_component(value: &str) -> Result<&str, String> {
+    let device = value.split('.').next().unwrap_or("").trim_end().to_ascii_uppercase();
+    let reserved = matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
+        || ["COM", "LPT"].iter().any(|prefix| {
+            device.strip_prefix(*prefix).is_some_and(|suffix| {
+                matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³")
+            })
+        });
     if value.is_empty()
         || value.len() > 180
-        || value.contains('/')
-        || value.contains(char::from(92))
+        || value.trim() != value
+        || value.ends_with('.')
         || value.contains("..")
+        || value.chars().any(|ch| ch.is_control() || matches!(ch, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        || reserved
     {
         return Err("Identificador inválido para armazenamento local.".to_string());
     }
@@ -1035,7 +1044,18 @@ pub fn move_message_to_folder(
 }
 
 fn overwrite_and_remove(path: &Path) -> Result<(), String> {
-    if path.is_dir() {
+    let metadata = fs::symlink_metadata(path).map_err(io_error)?;
+    if metadata.file_type().is_symlink() {
+        return Err("Limpeza interrompida: link simbólico inesperado.".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("Limpeza interrompida: ponto de reanálise inesperado.".into());
+        }
+    }
+    if metadata.is_dir() {
         for entry in fs::read_dir(path).map_err(io_error)? {
             overwrite_and_remove(&entry.map_err(io_error)?.path())?;
         }
@@ -1043,8 +1063,15 @@ fn overwrite_and_remove(path: &Path) -> Result<(), String> {
         return Ok(());
     }
 
-    if path.is_file() {
-        let len = fs::metadata(path).map_err(io_error)?.len();
+    if metadata.is_file() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if metadata.nlink() != 1 {
+                return Err("Limpeza interrompida: arquivo com links físicos adicionais.".into());
+            }
+        }
+        let len = metadata.len();
         let mut file = fs::OpenOptions::new().write(true).open(path).map_err(io_error)?;
         let zeros = vec![0u8; 64 * 1024];
         let mut remaining = len;
@@ -1091,6 +1118,8 @@ pub fn prune_message_cache(paths: &AppPaths, retention_days: u32) -> Result<usiz
             continue;
         }
 
+        safe_component(&message.account_id)?;
+        safe_component(&message.id)?;
         let message_path = paths
             .message_cache
             .join(&message.account_id)
@@ -1154,10 +1183,27 @@ mod tests {
 
     #[test]
     fn security_rejects_path_traversal_components() {
-        for value in ["../segredo", "conta/fora", r"conta\fora", "..", ""] {
+        for value in ["../segredo", "conta/fora", r"conta\fora", "..", "", ".", "C:", "arquivo:stream", "NUL.txt", "COM1", "lpt²", "conta.", "conta ", "a\n", "a\0"] {
             assert!(safe_component(value).is_err(), "{value} deveria ser rejeitado");
         }
         assert!(safe_component("account-123_ABC").is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn secure_cleanup_does_not_follow_links_to_external_files() {
+        let root = std::env::temp_dir().join(format!("seven-mail-cleanup-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let original = root.join("original");
+        fs::write(&original, b"preserve").unwrap();
+        let symlink = root.join("symlink");
+        std::os::unix::fs::symlink(&original, &symlink).unwrap();
+        assert!(overwrite_and_remove(&symlink).is_err());
+        let hardlink = root.join("hardlink");
+        fs::hard_link(&original, &hardlink).unwrap();
+        assert!(overwrite_and_remove(&hardlink).is_err());
+        assert_eq!(fs::read(&original).unwrap(), b"preserve");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
