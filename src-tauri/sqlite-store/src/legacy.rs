@@ -3,7 +3,7 @@
 use crate::{MessageRecord, Result, Store};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, fs, io::Read, path::{Path, PathBuf}};
+use std::{collections::BTreeMap, fs, io::{Read, Write}, path::{Path, PathBuf}};
 
 const LEGACY_MAGIC: &[u8] = b"SEVENMAIL-ENC-1\0";
 const MAX_FILE: u64 = 32 * 1024 * 1024;
@@ -145,6 +145,82 @@ fn fingerprint(digests: &BTreeMap<Identity, [u8; 32]>) -> String {
         hash.update(digest);
     }
     format!("{:x}", hash.finalize())
+}
+
+/// Create a new encrypted-only snapshot from a quiescent legacy cache.
+/// The caller must stop all writers before this operation. A failed or
+/// interrupted copy has no completion marker and cannot be used for cutover.
+/// No source file is modified, and an existing destination is never reused.
+pub fn create_snapshot(source: &Path, destination: &Path) -> Result<MigrationReport> {
+    require_directory(source)?;
+    let source = fs::canonicalize(source).map_err(io_error)?;
+    let parent = destination.parent().ok_or_else(|| "Destino inválido.".to_string())?;
+    require_directory(parent)?;
+    let parent = fs::canonicalize(parent).map_err(io_error)?;
+    let destination = parent.join(name(destination)?);
+    if destination.starts_with(&source) || source.starts_with(&destination) {
+        return Err("Snapshot deve estar fora do cache legado.".into());
+    }
+    // create_dir is exclusive: never delete or modify a pre-existing backup.
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(&destination).map_err(io_error)?;
+    let result = (|| -> Result<MigrationReport> {
+        let root = destination.join("messages");
+        builder.create(&root).map_err(io_error)?;
+        let files = inventory(&source)?;
+        let mut digests = BTreeMap::new();
+        let mut accounts = std::collections::BTreeSet::new();
+        for ((account, id), path) in &files {
+            let dir = root.join(account);
+            if accounts.insert(account.clone()) { builder.create(&dir).map_err(io_error)?; }
+            let bytes = encrypted_file(path)?;
+            let mut options = fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut output = options.open(dir.join(format!("{id}.json"))).map_err(io_error)?;
+            output.write_all(&bytes).and_then(|_| output.sync_all()).map_err(io_error)?;
+            digests.insert((account.clone(), id.clone()), Sha256::digest(&bytes).into());
+        }
+        if inventory(&source)? != files { return Err("Inventário mudou durante a cópia.".into()); }
+        let copied = inventory(&root)?;
+        if copied.len() != files.len() { return Err("Contagem de snapshot inválida.".into()); }
+        for (identity, path) in &files {
+            let actual: [u8;32] = Sha256::digest(encrypted_file(path)?).into();
+            let target = copied.get(identity).ok_or_else(|| "Arquivo ausente no snapshot.".to_string())?;
+            let backup: [u8;32] = Sha256::digest(encrypted_file(target)?).into();
+            if digests.get(identity) != Some(&actual) || actual != backup {
+                return Err("Conteúdo mudou durante a cópia.".into());
+            }
+        }
+        #[cfg(unix)]
+        {
+            for account in &accounts { fs::File::open(root.join(account)).and_then(|dir| dir.sync_all()).map_err(io_error)?; }
+            fs::File::open(&root).and_then(|dir| dir.sync_all()).map_err(io_error)?;
+        }
+        let report = MigrationReport { messages: files.len(), accounts: accounts.len(), source_fingerprint: fingerprint(&digests) };
+        let manifest = serde_json::json!({"version":1,"messages":report.messages,"accounts":report.accounts,"fingerprint":report.source_fingerprint});
+        let manifest_bytes = serde_json::to_vec(&manifest).map_err(|_| "Manifesto inválido.".to_string())?;
+        let mut marker = fs::OpenOptions::new().write(true).create_new(true).open(destination.join("snapshot.complete.json")).map_err(io_error)?;
+        marker.write_all(&manifest_bytes).and_then(|_| marker.sync_all()).map_err(io_error)?;
+        #[cfg(unix)]
+        {
+            fs::File::open(&destination).and_then(|dir| dir.sync_all()).map_err(io_error)?;
+            fs::File::open(&parent).and_then(|dir| dir.sync_all()).map_err(io_error)?;
+        }
+        Ok(report)
+    })();
+    // Retain incomplete copies for inspection; never infer successful completion
+    // from a directory's existence. A new attempt uses a new destination.
+    result
 }
 
 /// Imports only from an offline, stable snapshot; the active application must
