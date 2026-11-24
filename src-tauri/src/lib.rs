@@ -11,6 +11,8 @@ mod provider_native;
 mod providers;
 mod smime;
 mod storage;
+#[path = "../storage_guard.rs"]
+mod storage_guard;
 mod updater;
 mod workspace;
 
@@ -992,6 +994,11 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            // Single-instance forwarding remains active before setup; the
+            // first instance holds the file lock until the application exits.
+            let root = AppPaths::data_root().map_err(std::io::Error::other)?;
+            let guard = storage_guard::StorageGuard::desktop(&root).map_err(std::io::Error::other)?;
+            app.manage(guard);
             use tauri::{
                 menu::{Menu, MenuItem},
                 tray::TrayIconBuilder,
