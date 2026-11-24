@@ -6,6 +6,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'src/lib/neon.ts'
+      - 'vite.config.ts'
 permissions:
   contents: read
 jobs:
@@ -47,7 +48,15 @@ jobs:
           fi
           npm ls --all >/dev/null
       - run: npm test
-      - run: npm run build
+      - name: Build candidate and reject frontend warnings
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build 2>&1 | tee /tmp/frontend-build.log
+          if grep -Ei '(^|[[:space:]])warning:|\[warn\]|DeprecationWarning|\(!\)' /tmp/frontend-build.log; then
+            echo 'Frontend emitted warnings.'
+            exit 1
+          fi
       - name: Emit validated manifest and lockfile for review
         shell: bash
         run: |
