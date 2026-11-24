@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/installer-homologation.yml'
       - 'src-tauri/src/updater.rs'
+      - 'src-tauri/scripts/test-windows-uninstall.ps1'
       - 'src-tauri/tauri.conf.json'
       - 'src-tauri/Cargo.toml'
       - 'src-tauri/Cargo.lock'
@@ -70,6 +71,10 @@ jobs:
           $process = Start-Process msiexec.exe -ArgumentList $args -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "MSI administrative extraction failed: $($process.ExitCode)" }
           if (-not (Get-ChildItem $out -Recurse -File -Filter 'seven-mail.exe')) { throw 'Desktop executable missing from MSI' }
+      - name: Install and uninstall Windows packages
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./src-tauri/scripts/test-windows-uninstall.ps1
       - name: Validate Linux installer payloads
         if: runner.os == 'Linux'
         shell: bash
