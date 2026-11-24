@@ -1,3 +1,4 @@
+mod cloud_binding;
 mod credentials;
 mod dav_sync;
 mod imap_sync;
@@ -29,6 +30,16 @@ struct DesktopState {
 #[tauri::command]
 fn runtime_info() -> Result<RuntimeInfo, String> {
     Ok(AppPaths::resolve()?.runtime_info())
+}
+
+#[tauri::command]
+fn get_cloud_binding() -> Result<Option<cloud_binding::CloudBinding>, String> {
+    cloud_binding::get(&AppPaths::resolve()?)
+}
+
+#[tauri::command]
+fn set_cloud_binding(owner_id: String, enabled: bool) -> Result<cloud_binding::CloudBinding, String> {
+    cloud_binding::set(&AppPaths::resolve()?, &owner_id, enabled)
 }
 
 #[tauri::command]
@@ -1047,6 +1058,8 @@ pub fn run() {
             initial_open_requests,
             set_close_to_tray,
             open_default_mail_settings,
+            get_cloud_binding,
+            set_cloud_binding,
             list_accounts,
             save_account,
             set_default_account,
