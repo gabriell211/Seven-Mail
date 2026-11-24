@@ -114,6 +114,7 @@ export interface OutboxFlushResult {
   sent: number;
   sentAccountIds: string[];
   sentCopyWarnings: string[];
+  deliveryWarnings?: string[];
 }
 
 export interface ConditionalMailRule {
