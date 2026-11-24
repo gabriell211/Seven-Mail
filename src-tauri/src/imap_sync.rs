@@ -856,7 +856,13 @@ pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize
             }
         };
 
-        let folders = special_folders(&mut session).await.unwrap_or_default();
+        let folders = match bounded(account, "LIST action folders", special_folders(&mut session)).await {
+            Ok(folders) => folders,
+            Err(error) => {
+                storage::retry_later(paths, &first.id)?;
+                return Err(error);
+            }
+        };
         let mut applied = 0usize;
         let mut current = Some(first);
 
@@ -867,7 +873,9 @@ pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize
                 .and_then(|value| value.as_str())
                 .unwrap_or("INBOX");
 
-            let mailbox = match session.select(source_mailbox).await {
+            let mailbox = match bounded(account, "SELECT action", async {
+                session.select(source_mailbox).await.map_err(|error| error.to_string())
+            }).await {
                 Ok(mailbox) => mailbox,
                 Err(error) => {
                     storage::retry_later(paths, &operation.id)?;
@@ -889,14 +897,19 @@ pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize
                 return Err("A ação IMAP foi preservada na fila de falhas: identidade da mensagem não confirmada. Sincronize a pasta novamente.".to_string());
             }
 
-            match apply_remote_action(&mut session, &operation, &folders).await {
+            match bounded(account, "UID action", apply_remote_action(&mut session, &operation, &folders)).await {
                 Ok(()) => {
                     storage::complete(paths, &operation.id)?;
                     applied += 1;
                 }
                 Err(error) => {
-                    storage::retry_later(paths, &operation.id)?;
-                    let _ = session.logout().await;
+                    // COPY/MOVE can have completed on the server before the
+                    // connection failed. Never blindly replay them.
+                    if matches!(operation.kind.as_str(), "copy" | "move" | "delete") {
+                        storage::fail(paths, &operation.id)?;
+                    } else {
+                        storage::retry_later(paths, &operation.id)?;
+                    }
                     return Err(error);
                 }
             }
@@ -974,6 +987,11 @@ mod generation_tests {
         assert!(action_matches_generation(&operation, "INBOX", 11));
         assert!(!action_matches_generation(&operation, "INBOX", 12));
         assert!(!action_matches_generation(&operation, "Other", 11));
+        for invalid in ["0", "1:2", "*", "1,2", "4294967296"] {
+            operation.payload["remoteId"] = serde_json::json!(invalid);
+            assert!(!action_matches_generation(&operation, "INBOX", 11));
+        }
+        operation.payload["remoteId"] = serde_json::json!("1");
         operation.payload.as_object_mut().unwrap().remove("messageId");
         assert!(!action_matches_generation(&operation, "INBOX", 11));
     }
