@@ -1,8 +1,8 @@
 //! Native-only staging adapter. No IPC, activation, or writes to legacy data.
-use crate::{legacy::{migrate_completed_snapshot, MigrationReport}, Result, Store};
+use crate::{legacy::{create_snapshot, migrate_completed_snapshot, MigrationReport}, Result, Store};
 use aes_gcm::{aead::{Aead, KeyInit, OsRng, rand_core::RngCore}, Aes256Gcm, Nonce};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use std::{fs, io::{Read, Write}, path::Path, sync::Mutex};
+use std::{fs, io::{Read, Write}, path::{Path, PathBuf}, sync::Mutex};
 use zeroize::Zeroizing;
 
 const SQL_SERVICE: &str = "Seven Mail SQLCipher";
@@ -77,6 +77,51 @@ fn create_private_directory(path:&Path)->Result<()> {
         builder.mode(0o700);
     }
     builder.create(path).map_err(|_|"Destino já existe ou não pôde ser criado.".into())
+}
+
+#[derive(Debug, Clone)]
+pub struct OfflinePreparation {
+    pub staging: PathBuf,
+    pub report: MigrationReport,
+}
+
+/// Create and validate an isolated database while excluding the compatible
+/// desktop process. Older versions must be fully stopped separately.
+/// Nothing here changes the application's active storage.
+pub fn prepare_offline(data_root: &Path) -> Result<OfflinePreparation> {
+    let _guard = crate::storage_guard::StorageGuard::maintenance(data_root)?;
+    let root = fs::canonicalize(data_root).map_err(|_| "Diretório de dados indisponível.".to_string())?;
+    let source = root.join("cache").join("messages");
+    for path in [&root.join("cache"), &source] {
+        let meta = fs::symlink_metadata(path).map_err(|_| "Cache legado indisponível.".to_string())?;
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            return Err("Diretório legado inválido.".into());
+        }
+    }
+    // Verify availability of the original key before creating a backup.
+    let _legacy = existing_key(&NativeVault, LEGACY_SERVICE, LEGACY_ID)?;
+    let mut random = [0u8; 16];
+    OsRng.fill_bytes(&mut random);
+    let id = random.iter().map(|byte| format!("{byte:02x}")).collect::<Vec<_>>().join("");
+    let parent = root.join("sqlite-preparation");
+    if let Err(error) = fs::symlink_metadata(&parent) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            return Err("Diretório de preparação indisponível.".into());
+        }
+        create_private_directory(&parent)?;
+    }
+    let meta = fs::symlink_metadata(&parent).map_err(|_| "Diretório de preparação inválido.".to_string())?;
+    if !meta.is_dir() || meta.file_type().is_symlink() {
+        return Err("Diretório de preparação inválido.".into());
+    }
+    let attempt = parent.join(&id);
+    create_private_directory(&attempt)?;
+    let snapshot = attempt.join("snapshot");
+    let staging = attempt.join(&id);
+    let expected = create_snapshot(&source, &snapshot)?;
+    let report = prepare_native_staging(&snapshot, &staging)?;
+    if report != expected { return Err("Relatório de preparação diverge do backup.".into()); }
+    Ok(OfflinePreparation { staging, report })
 }
 
 /// Prepare a new database from a completed offline snapshot. The caller must
