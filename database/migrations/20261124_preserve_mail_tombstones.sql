@@ -110,4 +110,10 @@ CREATE TRIGGER seven_mail_guard_message_account
 BEFORE INSERT ON public.desktop_mail_messages
 FOR EACH ROW EXECUTE FUNCTION public.seven_mail_guard_message_account();
 
+-- Published only when all synchronization guards have been installed.
+CREATE OR REPLACE VIEW public.seven_mail_sync_capabilities AS
+SELECT 2::integer AS protocol_version;
+REVOKE ALL ON public.seven_mail_sync_capabilities FROM PUBLIC;
+GRANT SELECT ON public.seven_mail_sync_capabilities TO authenticated;
+
 COMMIT;
