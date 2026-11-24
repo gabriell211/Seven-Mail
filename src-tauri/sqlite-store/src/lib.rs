@@ -1,5 +1,7 @@
 //! Isolated encrypted message store. Not yet connected to desktop IPC.
 pub mod legacy;
+#[path = "../../storage_guard.rs"]
+pub mod storage_guard;
 #[cfg(feature = "native-vault")]
 pub mod native_vault;
 
