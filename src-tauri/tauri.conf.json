@@ -79,7 +79,13 @@
         "role": "Viewer",
         "rank": "Alternate"
       }
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico"
+      }
+    }
   },
   "plugins": {
     "deep-link": {
