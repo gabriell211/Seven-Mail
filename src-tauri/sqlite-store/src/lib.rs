@@ -1,4 +1,6 @@
 //! Isolated encrypted message store. Not yet connected to desktop IPC.
+pub mod legacy;
+
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use std::{fmt::Write as _, path::Path, sync::Mutex, time::Duration};
 
@@ -171,6 +173,18 @@ impl Store {
     /// abort the entire transaction. The source is never modified.
     pub fn import_verified<I>(&mut self, records: I) -> Result<usize>
     where I: IntoIterator<Item=Result<MessageRecord>> {
+        self.import_transaction(records, None)
+    }
+
+    /// Staging database only: the exact destination count must equal the
+    /// verified source inventory before any imported records commit.
+    pub fn import_exact_snapshot<I>(&mut self, records: I, expected: usize) -> Result<usize>
+    where I: IntoIterator<Item=Result<MessageRecord>> {
+        self.import_transaction(records, Some(expected))
+    }
+
+    fn import_transaction<I>(&mut self, records: I, expected: Option<usize>) -> Result<usize>
+    where I: IntoIterator<Item=Result<MessageRecord>> {
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(db_error)?;
         let mut count = 0usize;
         for item in records {
@@ -183,6 +197,12 @@ impl Store {
                 params![record.account_id,record.message_id],decode).map_err(db_error)?;
             if actual != record { return Err("Conflito na migração; transação cancelada.".into()); }
             count += 1;
+        }
+        if let Some(expected) = expected {
+            let actual: i64 = tx.query_row("SELECT count(*) FROM messages", [], |row| row.get(0)).map_err(db_error)?;
+            if count != expected || actual != expected as i64 {
+                return Err("Contagem de destino diverge do snapshot; transação cancelada.".into());
+            }
         }
         tx.execute("INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)", []).map_err(db_error)?;
         tx.commit().map_err(db_error)?;
