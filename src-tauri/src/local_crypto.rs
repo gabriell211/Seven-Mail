@@ -54,11 +54,6 @@ pub fn is_encrypted(bytes: &[u8]) -> bool {
     bytes.starts_with(MAGIC)
 }
 
-pub fn encrypt(plain: &[u8]) -> Result<Vec<u8>, String> {
-    let key = key_bytes(false)?;
-    encrypt_with_key(plain, &key)
-}
-
 fn encrypt_with_key(plain: &[u8], key: &[u8; KEY_LEN]) -> Result<Vec<u8>, String> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|error| error.to_string())?;
     let mut nonce_bytes = [0u8; NONCE_LEN];
