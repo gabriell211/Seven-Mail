@@ -774,11 +774,6 @@ pub fn complete(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn fail(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
-    let _guard = queue_guard()?;
-    fail_locked(paths, operation_id)
-}
-
 fn fail_locked(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     safe_component(operation_id)?;
     let source = paths.processing.join(format!("{}.json", operation_id));
