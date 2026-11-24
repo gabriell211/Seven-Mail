@@ -630,6 +630,7 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
     let mut sent = 0usize;
     let mut sent_account_ids = Vec::new();
     let mut sent_copy_warnings = Vec::new();
+    let mut delivery_warnings = Vec::new();
 
     loop {
         let Some(operation) = storage::claim_next_send_due(&paths)? else {
@@ -641,7 +642,12 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
             continue;
         };
 
-        match providers::send_queued_raw(account, &operation) {
+        let submission_started = std::cell::Cell::new(false);
+        match providers::send_queued_raw_with_checkpoint(account, &operation, || {
+            storage::mark_smtp_submission(&paths, &operation.id)?;
+            submission_started.set(true);
+            Ok(())
+        }) {
             Ok(raw) => {
                 // SMTP success is final for the queue item. A failure to mirror
                 // the copy into IMAP Sent must never trigger a duplicate resend.
@@ -664,11 +670,16 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
                 }
             }
             Err(error) => {
-                storage::retry_later(&paths, &operation.id)?;
-                if sent == 0 {
-                    return Err(error);
+                if submission_started.get() {
+                    // A transport failure after submission might mean the SMTP
+                    // server accepted the message but its response was lost.
+                    storage::quarantine_operation(&paths, &operation.id, "delivery_unknown")?;
+                    delivery_warnings.push(format!("{}: entrega não confirmada; confira Enviados antes de reenviar.", operation.id));
+                } else {
+                    storage::retry_later(&paths, &operation.id)?;
+                    delivery_warnings.push(format!("{}: envio não iniciado: {error}", operation.id));
                 }
-                break;
+                // Continue draining other due messages, even when one fails.
             }
         }
     }
@@ -677,6 +688,7 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
         sent,
         sent_account_ids,
         sent_copy_warnings,
+        delivery_warnings,
     })
 }
 
@@ -992,6 +1004,8 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            let paths = AppPaths::resolve().map_err(std::io::Error::other)?;
+            storage::recover_interrupted_operations(&paths).map_err(std::io::Error::other)?;
             use tauri::{
                 menu::{Menu, MenuItem},
                 tray::TrayIconBuilder,
