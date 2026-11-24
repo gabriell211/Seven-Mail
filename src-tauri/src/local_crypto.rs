@@ -15,8 +15,8 @@ const KEY_CHECK: &[u8] = b"seven-mail:local-storage-key:v2";
 
 // A running process must not silently switch to a different key if the OS
 // vault is reset or a credential is replaced. Keep only its fingerprint.
+static FINGERPRINT: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
 fn pin_process_key(key: [u8; KEY_LEN]) -> Result<[u8; KEY_LEN], String> {
-    static FINGERPRINT: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
     let digest: [u8; 32] = Sha256::digest(key).into();
     if FINGERPRINT.get_or_init(|| digest) != &digest {
         return Err("A chave do cofre mudou durante a execução. Reinicie após restaurar a chave original.".into());
@@ -36,7 +36,7 @@ fn key_bytes(create: bool) -> Result<[u8; KEY_LEN], String> {
         return pin_process_key(bytes);
     }
 
-    if !create {
+    if !create || FINGERPRINT.get().is_some() {
         return Err("Chave local ausente no cofre do sistema. Os dados existentes foram preservados; restaure a chave original.".into());
     }
     let mut key = [0u8; KEY_LEN];
