@@ -7,7 +7,7 @@ use crate::{
 };
 use async_native_tls::{TlsConnector, TlsStream};
 use async_std::{
-    io::{prelude::BufReadExt, BufReader, WriteExt},
+    io::{prelude::BufReadExt, BufReader, ReadExt, WriteExt},
     net::TcpStream,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -32,41 +32,80 @@ fn message_id(account_id: &str, uidl: &str) -> String {
     format!("{account_id}-pop3-{:016x}", hasher.finish())
 }
 
-async fn read_status(stream: &mut PopStream) -> Result<String, String> {
-    let mut line = String::new();
-    stream.read_line(&mut line).await.map_err(|error| error.to_string())?;
-    if line.is_empty() {
-        return Err("Servidor POP3 encerrou a conexão.".to_string());
+const MAX_STATUS: usize = 8 * 1024;
+const MAX_LINE: usize = 1024 * 1024;
+const MAX_UIDL: usize = 16 * 1024 * 1024;
+const MAX_MESSAGE: usize = 64 * 1024 * 1024;
+
+fn validate_auth_value(value: &str) -> Result<(), String> {
+    if value.is_empty() || value.len() > 64 * 1024 || value.chars().any(char::is_control) {
+        return Err("Credencial POP3 possui caracteres inválidos.".into());
     }
-    if !line.starts_with("+OK") {
+    Ok(())
+}
+
+fn positive_status(line: &str) -> bool {
+    let status = line.trim_end_matches(['\r', '\n']);
+    status == "+OK" || status.starts_with("+OK ")
+}
+
+async fn bounded_line<R: async_std::io::BufRead + Unpin>(stream: &mut R, limit: usize) -> Result<Vec<u8>, String> {
+    let mut line = Vec::new();
+    let read = (&mut *stream).take((limit + 1) as u64).read_until(b'\n', &mut line)
+        .await.map_err(|error| error.to_string())?;
+    if read == 0 || read > limit || !line.ends_with(b"\n") {
+        return Err("Resposta POP3 incompleta ou acima do limite.".into());
+    }
+    Ok(line)
+}
+
+async fn status_line<R: async_std::io::BufRead + Unpin>(stream: &mut R) -> Result<String, String> {
+    String::from_utf8(bounded_line(stream, MAX_STATUS).await?)
+        .map_err(|_| "Status POP3 inválido.".into())
+}
+
+async fn read_status(stream: &mut PopStream) -> Result<String, String> {
+    let line = status_line(stream).await?;
+    if !positive_status(&line) {
         return Err(format!("Servidor POP3 recusou o comando: {}", line.trim()));
     }
     Ok(line)
 }
 
 async fn command(stream: &mut PopStream, value: &str) -> Result<String, String> {
+    if value.contains(['\r', '\n', '\0']) {
+        return Err("Comando POP3 inválido.".into());
+    }
     stream.get_mut().write_all(format!("{value}\r\n").as_bytes()).await.map_err(|error| error.to_string())?;
     stream.get_mut().flush().await.map_err(|error| error.to_string())?;
     read_status(stream).await
 }
 
-async fn multiline(stream: &mut PopStream) -> Result<Vec<Vec<u8>>, String> {
-    let mut lines = Vec::new();
+async fn multiline(stream: &mut PopStream, limit: usize) -> Result<Vec<u8>, String> {
+    let mut output = Vec::new();
     loop {
-        let mut line = Vec::new();
-        let read = stream.read_until(b'\n', &mut line).await.map_err(|error| error.to_string())?;
-        if read == 0 {
-            return Err("Resposta POP3 incompleta.".to_string());
-        }
+        let mut line = bounded_line(stream, MAX_LINE).await?;
         if line == b".\r\n" || line == b".\n" {
             break;
         }
         if line.starts_with(b"..") {
             line.remove(0);
         }
-        lines.push(line);
+        if line.len() > limit.saturating_sub(output.len()) {
+            return Err("Resposta POP3 acima do limite de armazenamento.".into());
+        }
+        output.extend_from_slice(&line);
     }
-    Ok(lines)
+    Ok(output)
+}
+
+fn timeout_for(account: &AccountProfile) -> Duration {
+    Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300))
+}
+
+async fn connect_bounded(account: &AccountProfile) -> Result<PopStream, String> {
+    async_std::future::timeout(timeout_for(account), connect(account)).await
+        .map_err(|_| "Tempo limite de autenticação/TLS POP3 excedido.".to_string())?
 }
 
 async fn connect(account: &AccountProfile) -> Result<PopStream, String> {
@@ -92,16 +131,14 @@ async fn connect(account: &AccountProfile) -> Result<PopStream, String> {
 
     let tls = if mode.eq_ignore_ascii_case("starttls") {
         let mut plain = BufReader::new(tcp);
-        let mut greeting = String::new();
-        plain.read_line(&mut greeting).await.map_err(|error| error.to_string())?;
-        if !greeting.starts_with("+OK") {
+        let greeting = status_line(&mut plain).await?;
+        if !positive_status(&greeting) {
             return Err(format!("Servidor POP3 recusou a conexão: {}", greeting.trim()));
         }
         plain.get_mut().write_all(b"STLS\r\n").await.map_err(|error| error.to_string())?;
         plain.get_mut().flush().await.map_err(|error| error.to_string())?;
-        let mut response = String::new();
-        plain.read_line(&mut response).await.map_err(|error| error.to_string())?;
-        if !response.starts_with("+OK") {
+        let response = status_line(&mut plain).await?;
+        if !positive_status(&response) {
             return Err(format!("STARTTLS POP3 recusado: {}", response.trim()));
         }
         connector
@@ -125,47 +162,70 @@ async fn connect(account: &AccountProfile) -> Result<PopStream, String> {
         return Err("A conta compartilhada não possui permissão de leitura.".to_string());
     }
     let username = account.username.as_deref().unwrap_or(&account.email);
+    validate_auth_value(username)?;
     if account.oauth_enabled {
         let token = oauth::access_token(account)?;
+        validate_auth_value(&token)?;
         let payload = STANDARD.encode(format!("user={username}\x01auth=Bearer {token}\x01\x01"));
 
         stream.get_mut().write_all(b"AUTH XOAUTH2\r\n").await.map_err(|error| error.to_string())?;
         stream.get_mut().flush().await.map_err(|error| error.to_string())?;
-        let mut challenge = String::new();
-        stream.read_line(&mut challenge).await.map_err(|error| error.to_string())?;
-        if !challenge.starts_with('+') {
-            return Err(format!("Servidor POP3 recusou XOAUTH2: {}", challenge.trim()));
+        let challenge = status_line(&mut stream).await?;
+        let challenge = challenge.trim_end_matches(['\r', '\n']);
+        if challenge != "+" && !challenge.starts_with("+ ") {
+            return Err("Servidor POP3 recusou XOAUTH2.".into());
         }
 
         stream.get_mut().write_all(format!("{payload}\r\n").as_bytes()).await.map_err(|error| error.to_string())?;
         stream.get_mut().flush().await.map_err(|error| error.to_string())?;
-        read_status(&mut stream).await?;
+        read_status(&mut stream).await.map_err(|_| "Autenticação OAuth POP3 recusada; confira as permissões e se POP3 está habilitado.".to_string())?;
     } else {
         let password = credentials::load(account.credential_account_id())?;
-        command(&mut stream, &format!("USER {username}")).await?;
-        command(&mut stream, &format!("PASS {password}")).await?;
+        validate_auth_value(&password)?;
+        command(&mut stream, &format!("USER {username}")).await.map_err(|_| "Usuário POP3 recusado.".to_string())?;
+        command(&mut stream, &format!("PASS {password}")).await.map_err(|_| "Autenticação POP3 recusada; confira a credencial e se POP3 está habilitado.".to_string())?;
     }
     Ok(stream)
 }
 
-async fn uidl(stream: &mut PopStream) -> Result<Vec<(u32, String)>, String> {
-    command(stream, "UIDL").await?;
-    let lines = multiline(stream).await?;
+fn parse_uidl(raw: &[u8]) -> Result<Vec<(u32, String)>, String> {
+    let text = std::str::from_utf8(raw).map_err(|_| "UIDL POP3 inválido.".to_string())?;
+    let mut numbers = HashSet::new();
+    let mut uids = HashSet::new();
     let mut output = Vec::new();
-    for line in lines {
-        let text = String::from_utf8_lossy(&line);
-        let mut parts = text.split_whitespace();
-        let Some(number) = parts.next().and_then(|value| value.parse::<u32>().ok()) else { continue; };
-        let Some(uid) = parts.next() else { continue; };
-        output.push((number, uid.to_string()));
+    for line in text.lines() {
+        let mut parts = line.split_ascii_whitespace();
+        let number = parts.next().and_then(|value| value.parse::<u32>().ok()).filter(|value| *value > 0)
+            .ok_or_else(|| "Número de mensagem UIDL inválido.".to_string())?;
+        let uid = parts.next().filter(|value| !value.is_empty() && value.len() <= 70 && value.bytes().all(|ch| (0x21..=0x7e).contains(&ch)))
+            .ok_or_else(|| "Identificador UIDL inválido.".to_string())?;
+        if parts.next().is_some() || !numbers.insert(number) || !uids.insert(uid) {
+            return Err("Lista UIDL duplicada ou inválida.".into());
+        }
+        output.push((number, uid.to_owned()));
     }
     Ok(output)
 }
 
+async fn uidl(stream: &mut PopStream) -> Result<Vec<(u32, String)>, String> {
+    command(stream, "UIDL").await?;
+    parse_uidl(&multiline(stream, MAX_UIDL).await?)
+}
+
 async fn retrieve(stream: &mut PopStream, number: u32) -> Result<Vec<u8>, String> {
     command(stream, &format!("RETR {number}")).await?;
-    let lines = multiline(stream).await?;
-    Ok(lines.into_iter().flatten().collect())
+    multiline(stream, MAX_MESSAGE).await
+}
+
+fn missing_batch(entries: Vec<(u32, String)>, cached: &HashSet<String>, limit: usize) -> Vec<(u32, String)> {
+    let mut missing = entries.into_iter().filter(|(_, uid)| !cached.contains(uid)).collect::<Vec<_>>();
+    missing.sort_by_key(|(number, _)| *number);
+    if cached.is_empty() && missing.len() > limit {
+        missing = missing.split_off(missing.len() - limit);
+    } else {
+        missing.truncate(limit);
+    }
+    missing
 }
 
 fn parse_message(account: &AccountProfile, uid: &str, raw: &[u8]) -> Result<MailMessage, String> {
@@ -224,42 +284,83 @@ fn parse_message(account: &AccountProfile, uid: &str, raw: &[u8]) -> Result<Mail
 
 pub fn test(account: &AccountProfile) -> Result<bool, String> {
     async_std::task::block_on(async {
-        let mut stream = connect(account).await?;
-        command(&mut stream, "STAT").await?;
-        let _ = command(&mut stream, "QUIT").await;
+        let mut stream = connect_bounded(account).await?;
+        async_std::future::timeout(timeout_for(account), command(&mut stream, "STAT")).await
+            .map_err(|_| "Tempo limite STAT POP3 excedido.".to_string())??;
+        let _ = async_std::future::timeout(timeout_for(account), command(&mut stream, "QUIT")).await;
         Ok(true)
     })
 }
 
 pub fn sync_latest(paths: &AppPaths, account: &AccountProfile, limit: u32) -> Result<usize, String> {
+    static SYNC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = SYNC_LOCK.lock().map_err(|_| "Sincronização POP3 indisponível.".to_string())?;
     async_std::task::block_on(async {
-        let mut stream = connect(account).await?;
-        let entries = uidl(&mut stream).await?;
+        let mut stream = connect_bounded(account).await?;
+        let entries = async_std::future::timeout(timeout_for(account), uidl(&mut stream)).await
+            .map_err(|_| "Tempo limite UIDL POP3 excedido.".to_string())??;
         let cached: HashSet<String> = storage::list_cached_messages(paths, Some(&account.id))?
             .into_iter()
             .filter(|message| message.remote_folder.as_deref() == Some("POP3"))
             .filter_map(|message| message.remote_id)
             .collect();
 
-        let mut missing = entries.into_iter()
-            .filter(|(_, uid)| !cached.contains(uid))
-            .collect::<Vec<_>>();
-        missing.sort_by_key(|(number, _)| *number);
-        let take = limit.clamp(1, 200) as usize;
-        if missing.len() > take {
-            missing = missing.split_off(missing.len() - take);
-        }
+        let missing = missing_batch(entries, &cached, limit.clamp(1, 200) as usize);
 
         let mut imported = 0usize;
         for (number, uid) in missing {
-            let raw = retrieve(&mut stream, number).await?;
+            let raw = async_std::future::timeout(timeout_for(account), retrieve(&mut stream, number)).await
+                .map_err(|_| "Tempo limite RETR POP3 excedido.".to_string())??;
             let message = parse_message(account, &uid, &raw)?;
-            storage::cache_message(paths, &message)?;
             storage::cache_raw_message(paths, &account.id, &message.id, &raw)?;
+            storage::cache_message(paths, &message)?;
             imported += 1;
         }
 
-        let _ = command(&mut stream, "QUIT").await;
+        let _ = async_std::future::timeout(timeout_for(account), command(&mut stream, "QUIT")).await;
         Ok(imported)
     })
+}
+
+#[cfg(test)]
+mod reliability_tests {
+    use super::*;
+
+    #[test]
+    fn uidl_requires_unique_valid_identifiers() {
+        assert_eq!(parse_uidl(b"1 a\r\n2 b\r\n").unwrap().len(), 2);
+        for bad in [b"1 a\n1 b\n".as_slice(), b"1 a\n2 a\n", b"0 a\n", b"1 a extra\n", b"1\n"] {
+            assert!(parse_uidl(bad).is_err());
+        }
+    }
+
+    #[test]
+    fn credentials_cannot_inject_pop_commands() {
+        assert!(validate_auth_value("user\r\nDELE 1").is_err());
+        assert!(validate_auth_value("password\0").is_err());
+        assert!(validate_auth_value("password").is_ok());
+        assert!(!positive_status("+OKINVALID\r\n"));
+        assert!(positive_status("+OK ready\r\n"));
+    }
+
+    #[test]
+    fn subsequent_batches_drain_older_messages() {
+        let entries = (1..=500).map(|number| (number, number.to_string())).collect::<Vec<_>>();
+        let mut cached = HashSet::new();
+        let first = missing_batch(entries.clone(), &cached, 200);
+        assert_eq!(first[0].0, 301);
+        cached.extend(first.into_iter().map(|(_, uid)| uid));
+        let second = missing_batch(entries.clone(), &cached, 200);
+        assert_eq!(second[0].0, 1);
+        cached.extend(second.into_iter().map(|(_, uid)| uid));
+        assert_eq!(missing_batch(entries, &cached, 200).len(), 100);
+    }
+
+    #[test]
+    fn oversized_line_is_rejected_before_unbounded_allocation() {
+        async_std::task::block_on(async {
+            let mut stream = BufReader::new(async_std::io::Cursor::new(b"123456789\r\n".to_vec()));
+            assert!(bounded_line(&mut stream, 5).await.is_err());
+        });
+    }
 }
