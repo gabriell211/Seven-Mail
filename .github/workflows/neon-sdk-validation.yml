@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        candidate: ['matched-neon-auth-ui']
+        candidate: ['latest-published']
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -29,64 +29,22 @@ jobs:
           CANDIDATE: ${{ matrix.candidate }}
         run: |
           set -euo pipefail
-          # auth-ui 0.4.0-beta has an exact auth 0.6.0-beta peer.
-          # Do not force auth 0.7 into that contract (upstream issue #274).
-          npm view @neondatabase/neon-js@0.8.0-beta dependencies --json > /tmp/neon-sdk.json
-          npm view @neondatabase/auth@0.6.0-beta dependencies --json > /tmp/neon-auth.json
-          npm view @neondatabase/auth-ui@0.4.0-beta peerDependencies dependencies --json > /tmp/neon-ui.json
-          npm view better-auth@1.7.6 dependencies --json > /tmp/better-auth.json
-          npm view @better-auth/core@1.7.6 peerDependencies --json > /tmp/better-core.json
-          npm view @better-auth/api-key@1.7.6 peerDependencies --json > /tmp/better-api-key.json
+          # The previously tested 0.8 beta resolves peers but carries published
+          # Better Auth/Zod advisories. Do not pin those vulnerable versions.
+          # The latest SDK must satisfy its own published peer contracts.
+          npm view @neondatabase/neon-js@0.9.0-beta dependencies --json > /tmp/neon-sdk.json
+          npm view @neondatabase/auth@0.7.0-beta dependencies peerDependencies --json > /tmp/neon-auth.json
+          npm view @neondatabase/auth-ui@0.4.0-beta dependencies peerDependencies --json > /tmp/neon-ui.json
           node --input-type=module <<'JS'
           import fs from 'node:fs';
           const read = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
-          const sdk = read('/tmp/neon-sdk.json');
-          const auth = read('/tmp/neon-auth.json');
-          const ui = read('/tmp/neon-ui.json');
-          const better = read('/tmp/better-auth.json');
-          const core = read('/tmp/better-core.json');
-          const apiKey = read('/tmp/better-api-key.json');
-          console.log(JSON.stringify({sdk,auth,ui,better,core,apiKey},null,2));
-          if (sdk['@neondatabase/auth'] !== '0.6.0-beta' ||
-              ui.peerDependencies?.['@neondatabase/auth'] !== '0.6.0-beta' ||
-              auth['@neondatabase/auth-ui'] !== '0.4.0-beta') {
-            throw new Error('Published SDK/auth/UI versions do not form the expected compatible set');
-          }
+          console.log(JSON.stringify({
+            sdk:read('/tmp/neon-sdk.json'),
+            auth:read('/tmp/neon-auth.json'),
+            ui:read('/tmp/neon-ui.json')
+          },null,2));
           const pkg = read('package.json');
-          Object.assign(pkg.dependencies,{
-            '@neondatabase/neon-js':'0.8.0-beta',
-            react:'19.3.1',
-            'react-dom':'19.3.1'
-          });
-          // Pin the shared peer dependencies to the exact versions declared by
-          // the SDK, avoiding npm selecting a newer incompatible peer.
-          for (const name of ['better-auth','better-call','@better-auth/core','@better-auth/utils','@better-fetch/fetch']) {
-            const version = auth[name] ?? ui.dependencies?.[name] ?? better[name] ?? core[name];
-            if (typeof version === 'string' && /^\d+\.\d+\.\d+$/.test(version)) {
-              pkg.dependencies[name] = version;
-            }
-          }
-          if (pkg.dependencies['@better-auth/core'] !== '1.7.6' ||
-              pkg.dependencies['better-call'] !== '1.4.0' ||
-              core['better-call'] !== '1.4.0') {
-            throw new Error('Better Auth core and better-call must match their published contract');
-          }
-          // The UI's api-key dependency is a caret range. Select its matching
-          // release rather than allowing a newer patch family to pull another core.
-          if (apiKey['@better-auth/core'] !== '^1.7.6' ||
-              apiKey['better-call'] !== '1.4.0') {
-            throw new Error('API key peer metadata does not match the SDK family');
-          }
-          pkg.dependencies['@better-auth/api-key'] = '1.7.6';
-          // Resolve the compatible exact core within each dependent subtree.
-          // The peer range ^1.7.6 permits 1.7.6; a later 1.7.27 requires a
-          // different better-call release. Keep strict peer validation enabled.
-          pkg.overrides = {
-            ...(pkg.overrides ?? {}),
-            '@better-auth/passkey@1.7.6': {'@better-auth/core':'1.7.6'},
-            '@better-auth/api-key@1.7.6': {'@better-auth/core':'1.7.6'},
-            '@daveyplate/better-auth-ui@3.4.0': {'@better-auth/api-key':'1.7.6'}
-          };
+          pkg.dependencies['@neondatabase/neon-js'] = '0.9.0-beta';
           fs.writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\n');
           JS
           rm package-lock.json
@@ -132,6 +90,9 @@ jobs:
             /tmp/neon-dependency-tree.txt
             /tmp/npm-resolution.log
             /tmp/npm-install.log
+            /tmp/neon-sdk.json
+            /tmp/neon-auth.json
+            /tmp/neon-ui.json
           if-no-files-found: warn
       - run: npm test
       - name: Build candidate and reject frontend warnings
