@@ -68,11 +68,28 @@ try {
 
     $msiPath = $msi[0].FullName
     $msiDir = Join-Path $env:RUNNER_TEMP 'seven-mail-msi-install'
-    $msiApp = Join-Path $msiDir 'seven-mail.exe'
-    Invoke-CheckedProcess 'msiexec.exe' ('/i "{0}" /qn /norestart INSTALLDIR="{1}"' -f $msiPath,$msiDir)
-    if (-not (Test-Path -LiteralPath $msiApp)) { throw 'MSI executable missing.' }
-    if (@(Get-SevenMailRegistration).Count -ne 1) { throw 'MSI uninstall registration missing.' }
-    Invoke-CheckedProcess 'msiexec.exe' ('/x "{0}" /qn /norestart' -f $msiPath)
+    $installLog = Join-Path $env:RUNNER_TEMP 'seven-mail-msi-install.log'
+    $removeLog = Join-Path $env:RUNNER_TEMP 'seven-mail-msi-uninstall.log'
+    Invoke-CheckedProcess 'msiexec.exe' ('/i "{0}" /qn /norestart INSTALLDIR="{1}" /L*v "{2}"' -f $msiPath,$msiDir,$installLog)
+    $registration = @(Get-SevenMailRegistration)
+    if ($registration.Count -ne 1 -or $registration[0].WindowsInstaller -ne 1) {
+        throw 'MSI uninstall registration missing or invalid.'
+    }
+    # WiX can restore a previous NSIS/MSI installation directory from the registry.
+    # ARPINSTALLLOCATION is set by the official Tauri WiX template.
+    $location = ([string]$registration[0].InstallLocation).Trim().Trim('"')
+    if (-not $location -or -not [IO.Path]::IsPathFullyQualified($location)) {
+        throw 'MSI did not register an absolute installation location.'
+    }
+    $msiApp = Join-Path $location 'seven-mail.exe'
+    Write-Host "MSI registered installation location: $location"
+    if (-not (Test-Path -LiteralPath $msiApp -PathType Leaf)) { throw "MSI executable missing at registered location: $msiApp" }
+    $built = Join-Path $PSScriptRoot '../target/release/seven-mail.exe'
+    if ((Get-FileHash -LiteralPath $msiApp -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath $built -Algorithm SHA256).Hash) {
+        throw 'MSI installed executable differs from the compiled executable.'
+    }
+    Invoke-CheckedProcess 'msiexec.exe' ('/x "{0}" /qn /norestart /L*v "{1}"' -f $msiPath,$removeLog)
     Assert-Removed $msiApp
     Assert-DataPreserved
     Write-Host 'MSI install/uninstall, registry cleanup and data preservation passed.'

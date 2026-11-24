@@ -5,6 +5,7 @@ on:
       - '.github/workflows/installer-homologation.yml'
       - 'src-tauri/src/updater.rs'
       - 'src-tauri/scripts/test-windows-uninstall.ps1'
+      - 'src-tauri/scripts/prepare-msvc-openssl.ps1'
       - 'src-tauri/tauri.conf.json'
       - 'src-tauri/Cargo.toml'
       - 'src-tauri/Cargo.lock'
@@ -51,7 +52,21 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
+      - name: Build Windows installers without native linker warnings
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Strawberry\perl\bin;C:\Strawberry\c\bin;$env:PATH"
+          ./src-tauri/scripts/prepare-msvc-openssl.ps1
+          npm run tauri -- build --bundles msi,nsis 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/seven-mail-windows-build.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $warnings = Select-String -Path "$env:RUNNER_TEMP/seven-mail-windows-build.log" -Pattern 'warning LNK[0-9]+'
+          if ($warnings) {
+            $warnings | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
+            throw 'Native linker warnings detected.'
+          }
       - name: Build installers without publishing a release
+        if: runner.os != 'Windows'
         run: npm run tauri -- build --bundles ${{ matrix.bundles }}
       - name: Validate Windows installer payloads
         if: runner.os == 'Windows'
@@ -106,6 +121,17 @@ jobs:
           test -x "${apps[0]}/Contents/MacOS/$executable"
           shasum -a 256 "${dmgs[0]}"
           hdiutil verify "${dmgs[0]}"
+      - name: Upload Windows installer diagnostics
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-installer-diagnostics
+          path: |
+            ${{ runner.temp }}/seven-mail-windows-build.log
+            ${{ runner.temp }}/seven-mail-msi-install.log
+            ${{ runner.temp }}/seven-mail-msi-uninstall.log
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Upload installer QA artifacts
         uses: actions/upload-artifact@v6
         with:
