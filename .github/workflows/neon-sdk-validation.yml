@@ -33,13 +33,19 @@ jobs:
           npm view @neondatabase/neon-js@0.8.0-beta dependencies --json > /tmp/neon-sdk.json
           npm view @neondatabase/auth@0.6.0-beta dependencies --json > /tmp/neon-auth.json
           npm view @neondatabase/auth-ui@0.4.0-beta peerDependencies dependencies --json > /tmp/neon-ui.json
+          npm view better-auth@1.7.6 dependencies --json > /tmp/better-auth.json
+          npm view @better-auth/core@1.7.6 peerDependencies --json > /tmp/better-core.json
+          npm view @better-auth/api-key@1.7.6 peerDependencies --json > /tmp/better-api-key.json
           node --input-type=module <<'JS'
           import fs from 'node:fs';
           const read = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
           const sdk = read('/tmp/neon-sdk.json');
           const auth = read('/tmp/neon-auth.json');
           const ui = read('/tmp/neon-ui.json');
-          console.log(JSON.stringify({sdk,auth,ui},null,2));
+          const better = read('/tmp/better-auth.json');
+          const core = read('/tmp/better-core.json');
+          const apiKey = read('/tmp/better-api-key.json');
+          console.log(JSON.stringify({sdk,auth,ui,better,core,apiKey},null,2));
           if (sdk['@neondatabase/auth'] !== '0.6.0-beta' ||
               ui.peerDependencies?.['@neondatabase/auth'] !== '0.6.0-beta' ||
               auth['@neondatabase/auth-ui'] !== '0.4.0-beta') {
@@ -54,11 +60,23 @@ jobs:
           // Pin the shared peer dependencies to the exact versions declared by
           // the SDK, avoiding npm selecting a newer incompatible peer.
           for (const name of ['better-auth','better-call','@better-auth/core','@better-auth/utils','@better-fetch/fetch']) {
-            const version = auth[name] ?? ui.dependencies?.[name];
+            const version = auth[name] ?? ui.dependencies?.[name] ?? better[name] ?? core[name];
             if (typeof version === 'string' && /^\d+\.\d+\.\d+$/.test(version)) {
               pkg.dependencies[name] = version;
             }
           }
+          if (pkg.dependencies['@better-auth/core'] !== '1.7.6' ||
+              pkg.dependencies['better-call'] !== '1.4.0' ||
+              core['better-call'] !== '1.4.0') {
+            throw new Error('Better Auth core and better-call must match their published contract');
+          }
+          // The UI's api-key dependency is a caret range. Select its matching
+          // release rather than allowing a newer patch family to pull another core.
+          if (apiKey['@better-auth/core'] !== '^1.7.6' ||
+              apiKey['better-call'] !== '1.4.0') {
+            throw new Error('API key peer metadata does not match the SDK family');
+          }
+          pkg.dependencies['@better-auth/api-key'] = '1.7.6';
           fs.writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\n');
           JS
           rm package-lock.json
