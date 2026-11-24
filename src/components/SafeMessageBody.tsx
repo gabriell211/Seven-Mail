@@ -1,5 +1,6 @@
 import { useMemo, type MouseEvent } from "react";
 import type { AppSettings, MailMessage } from "../types";
+import { htmlElementPolicy, safeMailLink, safeMailImage, safeTableSpan } from "../lib/mail-html-policy";
 
 function hostOf(value: string): string {
   try {
@@ -25,56 +26,97 @@ function suspiciousLink(anchor: HTMLAnchorElement): boolean {
   const host = url.hostname.toLocaleLowerCase("pt-BR");
   if (url.protocol !== "https:" || host.startsWith("xn--") || host.includes(".xn--") || looksLikeIp(host)) return true;
   const shown = visibleHost(anchor.textContent ?? "");
-  return Boolean(shown && shown !== host && !host.endsWith(`.${shown}`) && !shown.endsWith(`.${host}`));
+  // A subdomain is not proof that the displayed and actual hosts are equal.
+  return Boolean(shown && shown !== host);
 }
 
-function sanitizeMessageHtml(raw: string, allowRemote: boolean): { html: string; blockedRemote: number; trackers: number } {
-  const document = new DOMParser().parseFromString(raw, "text/html");
-  document.querySelectorAll("script,iframe,object,embed,form,base,meta[http-equiv]").forEach((node) => node.remove());
+const MAX_HTML_LENGTH = 2 * 1024 * 1024;
+const MAX_HTML_NODES = 20_000;
+const MAX_HTML_DEPTH = 100;
 
+export function sanitizeMessageHtml(raw: string, allowRemote: boolean): { html: string; blockedRemote: number; trackers: number } | null {
+  if (raw.length > MAX_HTML_LENGTH) return null;
+  // Template content is inert; remote assets are not inserted into the live
+  // document until a completely new allowlisted tree has been constructed.
+  const template = document.createElement("template");
+  template.innerHTML = raw;
+  const output = document.createElement("template");
   let blockedRemote = 0;
   let trackers = 0;
+  let visited = 0;
+  let exceeded = false;
 
-  for (const element of Array.from(document.querySelectorAll<HTMLElement>("*"))) {
-    for (const attribute of Array.from(element.attributes)) {
-      const name = attribute.name.toLocaleLowerCase("en-US");
-      if (name.startsWith("on") || name === "srcdoc") element.removeAttribute(attribute.name);
+  function appendChildren(source: Node, parent: Node, depth: number): void {
+    for (let child = source.firstChild; child && !exceeded; child = child.nextSibling) {
+      appendSafe(child, parent, depth);
     }
   }
 
-  for (const image of Array.from(document.querySelectorAll<HTMLImageElement>("img"))) {
-    const rawWidth = Number(image.getAttribute("width") ?? image.width ?? 0);
-    const rawHeight = Number(image.getAttribute("height") ?? image.height ?? 0);
-    const src = image.getAttribute("src") ?? "";
-    const trackingHint = /(pixel|track|open|beacon|analytics|receipt)/i.test(src);
-    const tiny = (rawWidth > 0 && rawWidth <= 2) || (rawHeight > 0 && rawHeight <= 2);
-
-    if (trackingHint || tiny) {
-      image.remove();
-      trackers += 1;
-      continue;
+  function appendSafe(node: Node, parent: Node, depth: number): void {
+    if (++visited > MAX_HTML_NODES || depth > MAX_HTML_DEPTH) {
+      exceeded = true;
+      return;
+    }
+    if (node.nodeType === Node.TEXT_NODE) {
+      parent.appendChild(document.createTextNode(node.textContent ?? ""));
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const source = node as Element;
+    const tag = source.localName;
+    const policy = htmlElementPolicy(tag, source.namespaceURI);
+    if (policy === "drop") return;
+    if (policy === "unwrap") {
+      appendChildren(source, parent, depth + 1);
+      return;
     }
 
-    if (/^https?:\/\//i.test(src) && !allowRemote) {
-      image.removeAttribute("src");
-      image.setAttribute("data-seven-blocked-src", src);
-      image.setAttribute("alt", image.getAttribute("alt") || "Imagem remota bloqueada");
-      image.classList.add("remote-image-blocked");
-      blockedRemote += 1;
+    // Never clone attributes, CSS, event handlers, namespaces, IDs or classes
+    // from a message. Only the small set below can cross this boundary.
+    const safe = output.content.ownerDocument.createElement(tag);
+    if (tag === "a") {
+      const href = safeMailLink(source.getAttribute("href") ?? "");
+      if (href) {
+        safe.setAttribute("href", href);
+        safe.setAttribute("rel", "noopener noreferrer nofollow");
+        safe.setAttribute("target", "_blank");
+        safe.setAttribute("referrerpolicy", "no-referrer");
+      }
+    } else if (tag === "img") {
+      const src = source.getAttribute("src") ?? "";
+      const width = Number(source.getAttribute("width") ?? 0);
+      const height = Number(source.getAttribute("height") ?? 0);
+      if (/(pixel|track|open|beacon|analytics|receipt)/i.test(src) ||
+          (width > 0 && width <= 2) || (height > 0 && height <= 2)) {
+        trackers += 1;
+        return;
+      }
+      const image = safeMailImage(src, allowRemote);
+      if (image.kind === "drop") return;
+      safe.setAttribute("alt", source.getAttribute("alt") ?? "");
+      if (image.kind === "blocked") {
+        blockedRemote += 1;
+        safe.setAttribute("alt", source.getAttribute("alt") || "Imagem remota bloqueada");
+        safe.className = "remote-image-blocked";
+      } else {
+        // Set src in the inert document only after the source was validated.
+        safe.setAttribute("referrerpolicy", "no-referrer");
+        safe.setAttribute("loading", "lazy");
+        safe.setAttribute("src", image.src);
+      }
+    } else if (tag === "td" || tag === "th") {
+      for (const name of ["colspan", "rowspan"]) {
+        const value = safeTableSpan(source.getAttribute(name) ?? "");
+        if (value) safe.setAttribute(name, value);
+      }
     }
+    appendChildren(source, safe, depth + 1);
+    parent.appendChild(safe);
   }
 
-  for (const anchor of Array.from(document.querySelectorAll<HTMLAnchorElement>("a"))) {
-    const href = anchor.getAttribute("href") ?? "";
-    if (!/^(https?:|mailto:)/i.test(href)) {
-      anchor.removeAttribute("href");
-      continue;
-    }
-    anchor.setAttribute("rel", "noopener noreferrer nofollow");
-    anchor.setAttribute("target", "_blank");
-  }
-
-  return { html: document.body.innerHTML, blockedRemote, trackers };
+  appendChildren(template.content, output.content, 0);
+  if (exceeded) return null;
+  return { html: output.innerHTML, blockedRemote, trackers };
 }
 
 export function SafeMessageBody({
@@ -132,6 +174,9 @@ export function SafeMessageBody({
             <button className="secondary" onClick={() => onAllowRemote(message.from.email)}>Carregar imagens deste remetente</button>
           )}
         </div>
+      )}
+      {!sanitized && message.bodyHtml?.trim() && (
+        <div className="remote-content-banner">HTML muito complexo para exibição segura. Exibindo texto simples.</div>
       )}
       {sanitized
         ? <article className="mail-body safe-html" onClick={handleClick} dangerouslySetInnerHTML={{ __html: sanitized.html }} />
