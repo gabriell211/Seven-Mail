@@ -50,7 +50,7 @@ fn strong_etag(value: &str) -> Result<&str, String> {
 }
 
 fn report(account: &AccountProfile, url: &str, body: &str, tag: &str) -> Result<Vec<DavObject>, String> {
-    let url = validate_url(url)?;
+    let url = collection_url(url)?;
     let password = credentials::load(account.credential_account_id())?;
     let username = account.username.as_deref().unwrap_or(&account.email);
     let timeout = Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300));
@@ -81,10 +81,20 @@ fn report(account: &AccountProfile, url: &str, body: &str, tag: &str) -> Result<
     if bytes.len() > dav_xml::MAX_REPORT_BYTES { return Err("Resposta DAV excede 16 MB.".into()); }
     let xml = String::from_utf8(bytes).map_err(|_| "Resposta DAV não está em UTF-8.".to_string())?;
     let mut objects = dav_xml::parse_report(&xml, tag)?;
-    for object in &mut objects {
-        object.resource.href = resource_url(url.as_str(), &object.resource.href)?.to_string();
-    }
+    normalize_report_resources(url.as_str(), &mut objects)?;
     Ok(objects)
+}
+
+fn normalize_report_resources(base: &str, objects: &mut [DavObject]) -> Result<(), String> {
+    let mut seen = std::collections::HashSet::new();
+    for object in objects {
+        let href = resource_url(base, &object.resource.href)?.to_string();
+        if !seen.insert(href.clone()) {
+            return Err("Identidade DAV duplicada após normalização.".into());
+        }
+        object.resource.href = href;
+    }
+    Ok(())
 }
 
 pub fn sync(account: &AccountProfile) -> Result<DavSyncResult, String> {
@@ -107,7 +117,7 @@ pub fn sync(account: &AccountProfile) -> Result<DavSyncResult, String> {
         Vec::new()
     };
 
-    let contact_objects = if let Some(url) = account.carddav_url.as_deref().filter(|value| !value.trim().is_empty()) {
+    let contact_objects = if let Some(url) = account.carddav_url.as_deref().filter(|value| account.can("read") && !value.trim().is_empty()) {
         report(
             account,
             url,
@@ -163,11 +173,17 @@ fn dav_client(account: &AccountProfile) -> Result<(Client, String, String), Stri
 }
 
 fn check_mutation_status(response: &reqwest::blocking::Response) -> Result<(), String> {
-    if response.status().as_u16() == 412 {
+    validate_mutation_status(response.status().as_u16())
+}
+
+fn validate_mutation_status(status: u16) -> Result<(), String> {
+    if status == 412 {
         return Err("Conflito DAV: o recurso foi alterado em outro dispositivo. Sincronize antes de tentar novamente.".into());
     }
-    if !response.status().is_success() {
-        return Err(format!("Servidor DAV recusou a alteração: HTTP {}.", response.status()));
+    // 202 is only accepted for processing, and 207 can contain individual failures.
+    // Neither confirms that the requested resource mutation completed.
+    if !matches!(status, 200 | 201 | 204) {
+        return Err(format!("Servidor DAV não confirmou a alteração: HTTP {status}."));
     }
     Ok(())
 }
@@ -273,6 +289,22 @@ mod tests {
         assert!(validate_url("http://localhost.evil.example/book").is_err());
         assert!(validate_url("http://127.0.0.1:8080/book").is_ok());
     }
+    #[test]
+    fn duplicate_resource_aliases_and_unconfirmed_mutations_are_rejected() {
+        let object = |href: &str| DavObject {
+            resource: DavResource { href: href.into(), etag: String::new() },
+            data: "example".into(),
+        };
+        let mut objects = vec![object("/book/a.vcf"), object("https://mail.example/book/a.vcf")];
+        assert!(normalize_report_resources("https://mail.example/book", &mut objects).is_err());
+        for status in [200, 201, 204] {
+            assert!(validate_mutation_status(status).is_ok());
+        }
+        for status in [202, 207, 302, 412, 500] {
+            assert!(validate_mutation_status(status).is_err());
+        }
+    }
+
     #[test]
     fn only_strong_specific_etags_can_authorize_updates() {
         assert_eq!(strong_etag("\"abc\"").unwrap(), "\"abc\"");
