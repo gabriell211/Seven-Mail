@@ -11,27 +11,43 @@ permissions:
 jobs:
   dependency-validation:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        candidate: ['current-clean', 'new-sdk-clean']
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           package-manager-cache: false
-      - name: Resolve supported Neon SDK candidate without suppressing peers
+      - name: Resolve candidate in clean dependency tree
         shell: bash
+        env:
+          CANDIDATE: ${{ matrix.candidate }}
         run: |
-          npm pkg set 'dependencies.@neondatabase/neon-js=0.9.0-beta'
-          npm install --package-lock-only --strict-peer-deps
+          set -euo pipefail
+          npm view @neondatabase/neon-js@0.9.0-beta dependencies --json
+          if [ "$CANDIDATE" = new-sdk-clean ]; then
+            npm pkg set 'dependencies.@neondatabase/neon-js=0.9.0-beta'
+            # Resolve a matching React / React DOM pair within the existing major.
+            REACT_VERSION=$(npm view 'react@19' version --json | node -e 'let s="";process.stdin.on("data",v=>s+=v);process.stdin.on("end",()=>{const v=JSON.parse(s);console.log(Array.isArray(v)?v.at(-1):v)})')
+            npm view "react-dom@$REACT_VERSION" version
+            npm pkg set "dependencies.react=$REACT_VERSION" "dependencies.react-dom=$REACT_VERSION"
+          fi
+          rm package-lock.json
+          npm install --package-lock-only --strict-peer-deps 2>&1 | tee /tmp/npm-resolution.log
           npm ci --strict-peer-deps 2>&1 | tee /tmp/npm-install.log
-          if grep -E 'npm warn (ERESOLVE|deprecated)' /tmp/npm-install.log; then
+          if grep -Ei 'npm warn (ERESOLVE|deprecated)|DeprecationWarning' /tmp/npm-resolution.log /tmp/npm-install.log; then
             echo 'Dependency warnings still present; do not promote candidate.'
             exit 1
           fi
+          npm ls --all >/dev/null
       - run: npm test
       - run: npm run build
       - uses: actions/upload-artifact@v6
         with:
-          name: neon-sdk-validated-lock
+          name: neon-sdk-validated-lock-${{ matrix.candidate }}
           path: |
             package.json
             package-lock.json
