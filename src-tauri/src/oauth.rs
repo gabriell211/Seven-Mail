@@ -20,6 +20,30 @@ pub struct OAuthTokenState {
     pub scope: Option<String>,
 }
 
+/// Public IPC response: credentials remain exclusively in the native keyring.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthAuthorizationStatus {
+    pub authorized: bool,
+    pub expires_at: Option<i64>,
+    pub scope: Option<String>,
+}
+
+impl From<OAuthTokenState> for OAuthAuthorizationStatus {
+    fn from(state: OAuthTokenState) -> Self {
+        Self { authorized: true, expires_at: state.expires_at, scope: state.scope }
+    }
+}
+
+pub fn validate_account_endpoints(account: &AccountProfile) -> Result<(), String> {
+    for endpoint in [account.oauth_authorization_url.as_deref(), account.oauth_token_url.as_deref()]
+        .into_iter().flatten().filter(|value| !value.trim().is_empty())
+    {
+        validate_token_endpoint(endpoint)?;
+    }
+    Ok(())
+}
+
 fn token_endpoint(account: &AccountProfile) -> Result<&str, String> {
     let endpoint = account
         .oauth_token_url
@@ -121,6 +145,7 @@ fn exchange_code_for_scope(
     verifier: &str,
     supplied_redirect_uri: Option<&str>,
 ) -> Result<OAuthTokenState, String> {
+    validate_account_endpoints(account)?;
     if !account.oauth_enabled {
         return Err("OAuth não está ativado nesta conta.".to_string());
     }
@@ -250,5 +275,26 @@ mod endpoint_tests {
         for endpoint in ["http://login.example.com/token", "file:///token", "https://user:pass@example.com/token", "https://example.com/token#secret"] {
             assert!(validate_token_endpoint(endpoint).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod ipc_security_tests {
+    use super::*;
+
+    #[test]
+    fn authorization_response_contains_no_credentials() {
+        let status = OAuthAuthorizationStatus::from(OAuthTokenState {
+            access_token: "secret-access".into(),
+            refresh_token: Some("secret-refresh".into()),
+            token_type: Some("Bearer".into()),
+            expires_at: Some(42),
+            scope: Some("mail".into()),
+        });
+        let json = serde_json::to_value(status).unwrap();
+        assert_eq!(json["authorized"], true);
+        assert!(json.get("accessToken").is_none());
+        assert!(json.get("refreshToken").is_none());
+        assert!(!json.to_string().contains("secret-"));
     }
 }
