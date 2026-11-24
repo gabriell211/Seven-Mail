@@ -25,3 +25,10 @@ export function reconcileDocuments<T>(local: WorkspaceDocument<T>, remote: Works
   if (local.deletedAt && remote.deletedAt) return "equal";
   return canonical(local.payload) === canonical(remote.payload) ? "equal" : "conflict";
 }
+
+/** Compare only mirrored fields, never unrelated server metadata. */
+export function sameProjection(local: Record<string, unknown>, remote: object): boolean {
+  const row = remote as Record<string, unknown>;
+  return Object.entries(local).every(([key, value]) =>
+    key === "owner_id" || (Object.hasOwn(row, key) && canonical(value) === canonical(row[key])));
+}
