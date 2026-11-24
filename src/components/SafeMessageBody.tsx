@@ -26,10 +26,16 @@ function suspiciousLink(anchor: HTMLAnchorElement): boolean {
   const host = url.hostname.toLocaleLowerCase("pt-BR");
   if (url.protocol !== "https:" || host.startsWith("xn--") || host.includes(".xn--") || looksLikeIp(host)) return true;
   const shown = visibleHost(anchor.textContent ?? "");
-  return Boolean(shown && shown !== host && !host.endsWith(`.${shown}`) && !shown.endsWith(`.${host}`));
+  // A subdomain is not proof that the displayed and actual hosts are equal.
+  return Boolean(shown && shown !== host);
 }
 
-export function sanitizeMessageHtml(raw: string, allowRemote: boolean): { html: string; blockedRemote: number; trackers: number } {
+const MAX_HTML_LENGTH = 2 * 1024 * 1024;
+const MAX_HTML_NODES = 20_000;
+const MAX_HTML_DEPTH = 100;
+
+export function sanitizeMessageHtml(raw: string, allowRemote: boolean): { html: string; blockedRemote: number; trackers: number } | null {
+  if (raw.length > MAX_HTML_LENGTH) return null;
   // Template content is inert; remote assets are not inserted into the live
   // document until a completely new allowlisted tree has been constructed.
   const template = document.createElement("template");
@@ -37,9 +43,20 @@ export function sanitizeMessageHtml(raw: string, allowRemote: boolean): { html: 
   const output = document.createElement("template");
   let blockedRemote = 0;
   let trackers = 0;
+  let visited = 0;
+  let exceeded = false;
+
+  function appendChildren(source: Node, parent: Node, depth: number): void {
+    for (let child = source.firstChild; child && !exceeded; child = child.nextSibling) {
+      appendSafe(child, parent, depth);
+    }
+  }
 
   function appendSafe(node: Node, parent: Node, depth: number): void {
-    if (depth > 100) return;
+    if (++visited > MAX_HTML_NODES || depth > MAX_HTML_DEPTH) {
+      exceeded = true;
+      return;
+    }
     if (node.nodeType === Node.TEXT_NODE) {
       parent.appendChild(document.createTextNode(node.textContent ?? ""));
       return;
@@ -50,7 +67,7 @@ export function sanitizeMessageHtml(raw: string, allowRemote: boolean): { html: 
     const policy = htmlElementPolicy(tag, source.namespaceURI);
     if (policy === "drop") return;
     if (policy === "unwrap") {
-      for (const child of Array.from(source.childNodes)) appendSafe(child, parent, depth + 1);
+      appendChildren(source, parent, depth + 1);
       return;
     }
 
@@ -93,11 +110,12 @@ export function sanitizeMessageHtml(raw: string, allowRemote: boolean): { html: 
         if (value) safe.setAttribute(name, value);
       }
     }
-    for (const child of Array.from(source.childNodes)) appendSafe(child, safe, depth + 1);
+    appendChildren(source, safe, depth + 1);
     parent.appendChild(safe);
   }
 
-  for (const node of Array.from(template.content.childNodes)) appendSafe(node, output.content, 0);
+  appendChildren(template.content, output.content, 0);
+  if (exceeded) return null;
   return { html: output.innerHTML, blockedRemote, trackers };
 }
 
@@ -156,6 +174,9 @@ export function SafeMessageBody({
             <button className="secondary" onClick={() => onAllowRemote(message.from.email)}>Carregar imagens deste remetente</button>
           )}
         </div>
+      )}
+      {!sanitized && message.bodyHtml?.trim() && (
+        <div className="remote-content-banner">HTML muito complexo para exibição segura. Exibindo texto simples.</div>
       )}
       {sanitized
         ? <article className="mail-body safe-html" onClick={handleClick} dangerouslySetInnerHTML={{ __html: sanitized.html }} />
