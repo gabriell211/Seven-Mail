@@ -85,7 +85,7 @@ fn select_asset_for<'a>(assets: &'a [ReleaseAsset], platform: &str, arch: &str, 
         "macos" => &[".dmg"],
         _ => return None,
     };
-    for extension in extensions {
+    for &extension in extensions {
         if let Some(asset) = assets.iter().find(|asset| {
             asset.name.to_ascii_lowercase().ends_with(extension)
                 && matches_arch(&asset.name, arch, platform == "macos")
