@@ -3,6 +3,7 @@ use std::{sync::Mutex, time::{Duration, Instant}};
 
 struct LockState {
     unlocked: bool,
+    pin_observed: bool,
     last_activity: Option<Instant>,
     idle_minutes: u64,
     failures: u32,
@@ -12,6 +13,7 @@ struct LockState {
 
 static STATE: Mutex<LockState> = Mutex::new(LockState {
     unlocked: false,
+    pin_observed: false,
     last_activity: None,
     idle_minutes: 5,
     failures: 0,
@@ -29,9 +31,30 @@ fn expire(s: &mut LockState) {
     }
 }
 
+// Do not silently disable a configured PIN if the cofre entry disappears
+// during this process. Explicit, authenticated disable is the only reset.
+fn observe_pin(s: &mut LockState, exists: bool) -> Result<bool, String> {
+    if s.pin_observed && !exists {
+        s.unlocked = false;
+        s.last_activity = None;
+        return Err("Registro do PIN desapareceu do cofre. Restaure o registro original.".into());
+    }
+    s.pin_observed |= exists;
+    Ok(exists)
+}
+
+fn configured_locked(s: &mut LockState) -> Result<bool, String> {
+    observe_pin(s, credentials::has_app_lock()?)
+}
+
+pub fn configured() -> Result<bool, String> {
+    let mut s = state()?;
+    configured_locked(&mut s)
+}
+
 pub fn is_locked() -> Result<bool, String> {
     let mut s = state()?;
-    if !credentials::has_app_lock()? { return Ok(false); }
+    if !configured_locked(&mut s)? { return Ok(false); }
     expire(&mut s);
     Ok(!s.unlocked)
 }
@@ -90,7 +113,7 @@ fn retry_delay(failures: u32) -> u64 {
 
 pub fn unlock(pin: &str) -> Result<bool, String> {
     let mut s = state()?;
-    if credentials::has_app_lock()? && !check_pin(&mut s, pin)? { return Ok(false); }
+    if configured_locked(&mut s)? && !check_pin(&mut s, pin)? { return Ok(false); }
     s.unlocked = true;
     s.last_activity = Some(Instant::now());
     Ok(true)
@@ -105,7 +128,7 @@ pub fn lock() -> Result<(), String> {
 
 pub fn activity(minutes: Option<u64>) -> Result<bool, String> {
     let mut s = state()?;
-    if !credentials::has_app_lock()? { return Ok(true); }
+    if !configured_locked(&mut s)? { return Ok(true); }
     expire(&mut s);
     if !s.unlocked { return Ok(false); }
     if let Some(minutes) = minutes {
@@ -118,7 +141,7 @@ pub fn activity(minutes: Option<u64>) -> Result<bool, String> {
 
 pub fn configure(pin: &str, current_pin: Option<&str>) -> Result<(), String> {
     let mut s = state()?;
-    if credentials::has_app_lock()? {
+    if configured_locked(&mut s)? {
         expire(&mut s);
         if !s.unlocked || !check_pin(&mut s, current_pin.unwrap_or(""))? {
             return Err("Confirme o PIN atual para alterar o bloqueio.".into());
@@ -126,6 +149,7 @@ pub fn configure(pin: &str, current_pin: Option<&str>) -> Result<(), String> {
     }
     persist_retry(&mut s, 0)?;
     credentials::set_app_lock(pin)?;
+    s.pin_observed = true;
     s.unlocked = true;
     s.last_activity = Some(Instant::now());
     Ok(())
@@ -134,10 +158,11 @@ pub fn configure(pin: &str, current_pin: Option<&str>) -> Result<(), String> {
 pub fn disable(pin: &str) -> Result<(), String> {
     let mut s = state()?;
     expire(&mut s);
-    if credentials::has_app_lock()? && (!s.unlocked || !check_pin(&mut s, pin)?) {
+    if configured_locked(&mut s)? && (!s.unlocked || !check_pin(&mut s, pin)?) {
         return Err("Confirme o PIN atual para desativar o bloqueio.".into());
     }
     credentials::clear_app_lock()?;
+    s.pin_observed = false;
     s.unlocked = false;
     s.last_activity = None;
     Ok(())
@@ -147,6 +172,18 @@ pub fn disable(pin: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
+    fn disappearing_pin_revokes_existing_session() {
+        let mut s = LockState { unlocked: true, pin_observed: false, last_activity: Some(Instant::now()), idle_minutes: 5, failures: 0, retry_loaded: false, retry_after: None };
+        assert!(observe_pin(&mut s, true).unwrap());
+        assert!(observe_pin(&mut s, false).is_err());
+        assert!(!s.unlocked);
+        assert!(s.last_activity.is_none());
+        assert!(observe_pin(&mut s, false).is_err());
+        assert!(observe_pin(&mut s, true).unwrap());
+        assert!(!s.unlocked);
+    }
+
+    #[test]
     fn repeated_attempts_increase_wait_with_bounded_delay() {
         assert_eq!(retry_delay(4), 0);
         assert_eq!(retry_delay(5), 5);
@@ -155,7 +192,7 @@ mod tests {
     }
     #[test]
     fn restored_failures_reapply_delay_without_wall_clock() {
-        let mut s = LockState { unlocked: false, last_activity: None, idle_minutes: 5, failures: 0, retry_loaded: false, retry_after: None };
+        let mut s = LockState { unlocked: false, pin_observed: false, last_activity: None, idle_minutes: 5, failures: 0, retry_loaded: false, retry_after: None };
         restore_retry(&mut s, 6);
         assert!(s.retry_loaded);
         assert_eq!(s.failures, 6);
@@ -167,7 +204,7 @@ mod tests {
 
     #[test]
     fn expiration_revokes_access() {
-        let mut s = LockState { unlocked: true, last_activity: Some(Instant::now() - Duration::from_secs(61)), idle_minutes: 1, failures: 0, retry_loaded: false, retry_after: None };
+        let mut s = LockState { unlocked: true, pin_observed: true, last_activity: Some(Instant::now() - Duration::from_secs(61)), idle_minutes: 1, failures: 0, retry_loaded: false, retry_after: None };
         expire(&mut s);
         assert!(!s.unlocked);
     }
