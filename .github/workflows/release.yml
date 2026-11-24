@@ -61,12 +61,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm ci --strict-peer-deps 2>&1 | tee npm-install.log
+          npm ci --strict-peer-deps --strict-allow-scripts 2>&1 | tee npm-install.log
           if grep -Ei 'npm warn|DeprecationWarning|\[DEP[0-9]+\]' npm-install.log; then
             echo "Dependency installation emitted warnings."
             exit 1
           fi
           npm ls --all >/dev/null
+          npm audit --audit-level=low
 
       - name: Generate native icons
         run: npm run icons
