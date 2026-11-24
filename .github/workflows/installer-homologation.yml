@@ -60,10 +60,10 @@ jobs:
           ./src-tauri/scripts/prepare-msvc-openssl.ps1
           npm run tauri -- build --bundles msi,nsis 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/seven-mail-windows-build.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $warnings = Select-String -Path "$env:RUNNER_TEMP/seven-mail-windows-build.log" -Pattern 'warning LNK[0-9]+'
+          $warnings = Select-String -Path "$env:RUNNER_TEMP/seven-mail-windows-build.log" -Pattern 'warning LNK[0-9]+|(^|\s)warning:'
           if ($warnings) {
             $warnings | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
-            throw 'Native linker warnings detected.'
+            throw 'Rust compiler or native linker warnings detected.'
           }
       - name: Build installers without publishing a release
         if: runner.os != 'Windows'

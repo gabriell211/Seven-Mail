@@ -84,10 +84,16 @@ try {
     $msiApp = Join-Path $location 'seven-mail.exe'
     Write-Host "MSI registered installation location: $location"
     if (-not (Test-Path -LiteralPath $msiApp -PathType Leaf)) { throw "MSI executable missing at registered location: $msiApp" }
-    $built = Join-Path $PSScriptRoot '../target/release/seven-mail.exe'
-    if ((Get-FileHash -LiteralPath $msiApp -Algorithm SHA256).Hash -ne
-        (Get-FileHash -LiteralPath $built -Algorithm SHA256).Hash) {
-        throw 'MSI installed executable differs from the compiled executable.'
+    # Compare the installed payload against the actual MSI cabinet payload,
+    # not the build output which can be modified by subsequent bundlers.
+    $extracted = @(Get-ChildItem (Join-Path $env:RUNNER_TEMP 'seven-mail-msi-extract') -Recurse -File -Filter 'seven-mail.exe')
+    if ($extracted.Count -ne 1) { throw 'Expected exactly one executable in the extracted MSI.' }
+    $installedHash = (Get-FileHash -LiteralPath $msiApp -Algorithm SHA256).Hash
+    $packageHash = (Get-FileHash -LiteralPath $extracted[0].FullName -Algorithm SHA256).Hash
+    Write-Host "MSI installed SHA256: $installedHash"
+    Write-Host "MSI package SHA256: $packageHash"
+    if ($installedHash -ne $packageHash) {
+        throw 'MSI installed executable differs from the extracted package payload.'
     }
     Invoke-CheckedProcess 'msiexec.exe' ('/x "{0}" /qn /norestart /L*v "{1}"' -f $msiPath,$removeLog)
     Assert-Removed $msiApp
