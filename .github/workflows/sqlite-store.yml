@@ -1,0 +1,43 @@
+name: Encrypted SQLite foundation
+
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/sqlite-store/**'
+      - '.github/workflows/sqlite-store.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src-tauri/sqlite-store/**'
+      - '.github/workflows/sqlite-store.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  sqlcipher:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: src-tauri/sqlite-store
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Windows OpenSSL build prerequisites
+        if: runner.os == 'Windows'
+        run: choco install strawberryperl nasm -y --no-progress
+      - name: Resolve independent foundation lockfile
+        shell: bash
+        run: |
+          if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
+      - run: cargo test --locked
+      - run: cargo check --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sqlite-store-lock-${{ matrix.os }}
+          path: src-tauri/sqlite-store/Cargo.lock
+          if-no-files-found: error
