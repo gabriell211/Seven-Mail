@@ -19,7 +19,7 @@ pub struct AppPaths {
 }
 
 impl AppPaths {
-    pub fn resolve() -> Result<Self, String> {
+    pub fn data_root() -> Result<PathBuf, String> {
         #[cfg(target_os = "windows")]
         let root = dirs::data_dir()
             .ok_or_else(|| "Não foi possível localizar o diretório APPDATA.".to_string())?
@@ -31,6 +31,11 @@ impl AppPaths {
             .ok_or_else(|| "Não foi possível localizar o diretório de dados do usuário.".to_string())?
             .join("seven-mail");
 
+        Ok(root)
+    }
+
+    pub fn resolve() -> Result<Self, String> {
+        let root = Self::data_root()?;
         let paths = Self {
             config: root.join("config"),
             cache: root.join("cache"),
