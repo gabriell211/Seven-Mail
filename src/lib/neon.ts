@@ -193,7 +193,7 @@ function rememberVersions(owner: string, table: MailTable, rows: VersionedRow[])
 async function insertMailRows(table: MailTable, owner: string, rows: Array<Record<string, unknown> & {id:string}>): Promise<void> {
   if (!neonClient || rows.length === 0) return;
   if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
-  const result = await neonClient.from(table).upsert(rows, { onConflict: "id", ignoreDuplicates: true }).select("id,updated_at");
+  const result = await neonClient.from(table).upsert(rows, { onConflict: "id", ignoreDuplicates: true, defaultToNull: false }).select("id,updated_at");
   if (result.error) throw new Error(errorMessage(result.error));
   rememberVersions(owner, table, (result.data ?? []) as unknown as VersionedRow[]);
 }
@@ -439,21 +439,24 @@ export async function deleteCloudAccount(accountId: string): Promise<void> {
   if (!neonClient) return;
   const owner = await getAuthorizedCloudOwner();
   if (!owner) return;
-
-  const deletedAt = new Date().toISOString();
-  const accountResult = await neonClient
-    .from("desktop_mail_accounts")
-    .update({ deleted_at: deletedAt, updated_at: deletedAt })
-    .eq("owner_id", owner)
-    .eq("id", accountId);
-
-  if (accountResult.error) throw new Error(errorMessage(accountResult.error));
-
-  const messagesResult = await neonClient
-    .from("desktop_mail_messages")
-    .update({ deleted_at: deletedAt, updated_at: deletedAt })
-    .eq("owner_id", owner)
-    .eq("account_id", accountId);
-
-  if (messagesResult.error) throw new Error(errorMessage(messagesResult.error));
+  try {
+    const key = versionKey(owner, "desktop_mail_accounts", accountId);
+    const version = versions.get(key);
+    if (!version) throw new Error("Conta sem versão local confirmada para exclusão remota.");
+    if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+    // The database trigger tombstones dependent messages in the same transaction.
+    const result = await neonClient.from("desktop_mail_accounts")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("owner_id", owner).eq("id", accountId).eq("updated_at", version)
+      .is("deleted_at", null).select("id");
+    if (result.error) throw new Error(errorMessage(result.error));
+    const rows = (result.data ?? []) as unknown as Array<{id:string}>;
+    if (rows.length !== 1 || rows[0].id !== accountId) {
+      throw new Error("Conflito de versão na exclusão da conta.");
+    }
+    versions.delete(key);
+  } catch (error) {
+    reportCloudSyncError(error, "accounts");
+    throw error;
+  }
 }
