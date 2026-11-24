@@ -41,6 +41,7 @@ struct GithubRelease {
 fn client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(45))
+        .https_only(true)
         .user_agent("Seven-Mail-Updater")
         .build()
         .map_err(|error| format!("Falha ao preparar o atualizador: {error}"))
@@ -150,23 +151,70 @@ fn expected_sha256(digest: Option<&str>) -> Result<String, String> {
     Ok(value.to_ascii_lowercase())
 }
 
-pub fn download(info: &UpdateInfo) -> Result<String, String> {
-    if !info.available {
-        return Err("Nenhuma atualização está disponível.".to_string());
+fn trusted_destination(info: &UpdateInfo) -> Result<PathBuf, String> {
+    let name = info.asset_name.as_deref()
+        .ok_or_else(|| "Nome do instalador ausente.".to_string())?;
+    let mut components = Path::new(name).components();
+    if !matches!(components.next(), Some(std::path::Component::Normal(_)))
+        || components.next().is_some()
+        || name.contains('/') || name.contains('\\') || name.contains(':')
+    {
+        return Err("Nome do instalador inválido.".to_string());
+    }
+    Ok(update_directory()?.join(name))
+}
+
+fn verify_installer(path: &Path, info: &UpdateInfo) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err("O instalador não é um arquivo regular.".to_string());
+    }
+    let size = info.asset_size.ok_or_else(|| "Tamanho do instalador ausente.".to_string())?;
+    if size > MAX_UPDATE_BYTES || metadata.len() != size {
+        return Err("Tamanho do instalador inválido.".to_string());
+    }
+    let expected = expected_sha256(info.digest.as_deref())?;
+    let mut file = fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    let mut total = 0u64;
+    loop {
+        let count = file.read(&mut buffer).map_err(|error| error.to_string())?;
+        if count == 0 { break; }
+        total += count as u64;
+        if total > MAX_UPDATE_BYTES {
+            return Err("O instalador excede o limite de segurança.".to_string());
+        }
+        hasher.update(&buffer[..count]);
+    }
+    if total != size || format!("{:x}", hasher.finalize()) != expected {
+        return Err("A verificação SHA-256 do instalador falhou.".to_string());
+    }
+    Ok(())
+}
+
+pub fn download(requested: &UpdateInfo) -> Result<String, String> {
+    // Never trust a URL, asset name, size or digest from the webview.
+    let info = check()?;
+    if !info.available || requested.version != info.version {
+        return Err("A atualização mudou ou não está disponível. Consulte novamente.".to_string());
     }
     let url = info.asset_url.as_deref()
         .ok_or_else(|| "Não há instalador compatível com esta plataforma na release.".to_string())?;
-    let name = info.asset_name.as_deref()
-        .ok_or_else(|| "Nome do instalador ausente.".to_string())?;
-    if info.asset_size.unwrap_or(0) > MAX_UPDATE_BYTES {
+    let parsed = reqwest::Url::parse(url).map_err(|error| error.to_string())?;
+    if parsed.scheme() != "https" || parsed.host_str() != Some("github.com")
+        || !parsed.path().to_ascii_lowercase().starts_with("/gabriell211/seven-mail/releases/download/")
+    {
+        return Err("Origem do instalador inválida.".to_string());
+    }
+    let size = info.asset_size.ok_or_else(|| "Tamanho do instalador ausente.".to_string())?;
+    if size > MAX_UPDATE_BYTES {
         return Err("O instalador excede o limite de segurança do atualizador.".to_string());
     }
 
     let expected = expected_sha256(info.digest.as_deref())?;
-    let destination = update_directory()?.join(
-        Path::new(name).file_name().and_then(|value| value.to_str()).unwrap_or("seven-mail-update")
-    );
-    let partial = destination.with_extension("download");
+    let destination = trusted_destination(&info)?;
+    let partial = destination.with_extension(format!("{}.download", uuid::Uuid::new_v4()));
 
     let mut response = client()?
         .get(url)
@@ -179,7 +227,7 @@ pub fn download(info: &UpdateInfo) -> Result<String, String> {
         return Err("O download excede o limite de segurança.".to_string());
     }
 
-    let mut file = fs::File::create(&partial)
+    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&partial)
         .map_err(|error| format!("Não foi possível criar o arquivo temporário: {error}"))?;
     let mut hasher = Sha256::new();
     let mut total = 0u64;
@@ -198,10 +246,11 @@ pub fn download(info: &UpdateInfo) -> Result<String, String> {
             .map_err(|error| format!("Falha ao gravar atualização: {error}"))?;
         hasher.update(&buffer[..count]);
     }
-    file.flush().map_err(|error| format!("Falha ao finalizar atualização: {error}"))?;
+    file.sync_all().map_err(|error| format!("Falha ao finalizar atualização: {error}"))?;
+    drop(file);
 
     let actual = format!("{:x}", hasher.finalize());
-    if actual != expected {
+    if actual != expected || total != size {
         let _ = fs::remove_file(&partial);
         return Err("A verificação SHA-256 falhou. O instalador foi descartado.".to_string());
     }
@@ -221,10 +270,16 @@ pub fn download(info: &UpdateInfo) -> Result<String, String> {
 }
 
 pub fn install(path: &str) -> Result<String, String> {
-    let path = Path::new(path);
-    if !path.exists() {
-        return Err("Instalador da atualização não foi encontrado.".to_string());
+    let info = check()?;
+    if !info.available {
+        return Err("Nenhuma atualização está disponível.".to_string());
     }
+    let trusted = trusted_destination(&info)?;
+    if Path::new(path) != trusted.as_path() {
+        return Err("O caminho não corresponde ao instalador oficial.".to_string());
+    }
+    verify_installer(&trusted, &info)?;
+    let path = trusted.as_path();
 
     #[cfg(target_os = "windows")]
     {
@@ -261,4 +316,31 @@ pub fn install(path: &str) -> Result<String, String> {
 
     #[allow(unreachable_code)]
     Err("Instalação automática não disponível nesta plataforma.".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installer_hash_and_size_are_verified_again() {
+        let path = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let original = b"verified installer";
+        fs::write(&path, original).unwrap();
+        let info = UpdateInfo {
+            available: true,
+            current_version: "1.0.1".into(),
+            version: "1.1.0".into(),
+            release_url: String::new(),
+            asset_name: None,
+            asset_url: None,
+            asset_size: Some(original.len() as u64),
+            digest: Some(format!("sha256:{:x}", Sha256::digest(original))),
+            notes: None,
+        };
+        assert!(verify_installer(&path, &info).is_ok());
+        fs::write(&path, b"tampered installer").unwrap();
+        assert!(verify_installer(&path, &info).is_err());
+        fs::remove_file(path).unwrap();
+    }
 }
