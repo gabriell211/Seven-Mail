@@ -49,6 +49,8 @@ jobs:
           "C:\Strawberry\perl\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - name: Install locked dependencies without peer conflicts
         run: npm ci --strict-peer-deps --strict-allow-scripts
+      - name: Confirm installed Tauri versions before native compilation
+        run: npm ls @tauri-apps/api @tauri-apps/plugin-deep-link @tauri-apps/plugin-opener
       - name: Reject vulnerable dependency tree
         run: npm audit --audit-level=low
       - run: npm test
