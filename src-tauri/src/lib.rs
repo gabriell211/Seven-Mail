@@ -116,6 +116,8 @@ fn list_accounts() -> Result<Vec<AccountProfile>, String> {
 #[tauri::command]
 fn save_account(account: AccountProfile) -> Result<(), String> {
     app_lock::require_unlocked()?;
+    credentials::validate_account_id(&account.id)?;
+    credentials::validate_account_id(account.credential_account_id())?;
     storage::save_account(&AppPaths::resolve()?, account)
 }
 
@@ -129,9 +131,7 @@ fn set_default_account(account_id: String) -> Result<Vec<AccountProfile>, String
 fn delete_account(account_id: String) -> Result<Vec<AccountProfile>, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
-    if account_id.starts_with("__") {
-        return Err("Identificador reservado.".to_string());
-    }
+    credentials::validate_account_id(&account_id)?;
     let accounts = storage::delete_account(&paths, &account_id)?;
     credentials::delete(&account_id)?;
     Ok(accounts)
@@ -140,9 +140,6 @@ fn delete_account(account_id: String) -> Result<Vec<AccountProfile>, String> {
 #[tauri::command]
 fn store_secret(account_id: String, secret: String) -> Result<(), String> {
     app_lock::require_unlocked()?;
-    if account_id.starts_with("__") {
-        return Err("Identificador reservado.".to_string());
-    }
     credentials::store(&account_id, &secret)
 }
 
