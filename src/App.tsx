@@ -2040,6 +2040,14 @@ export default function App() {
     }
   }
 
+  async function davLocalId(accountId:string,href:string,identity:string):Promise<string>{
+    const hash=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify([accountId,href,identity]))));
+    hash[6]=(hash[6]&15)|128;
+    hash[8]=(hash[8]&63)|128;
+    const hex=Array.from(hash.slice(0,16),(value)=>value.toString(16).padStart(2,"0")).join("");
+    return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+  }
+
   async function syncDavForAccount(account:AccountProfile) {
     if(!account.caldavUrl?.trim()&&!account.carddavUrl?.trim()) return;
     const result=await bridge.syncDav(account.id);
@@ -2067,12 +2075,21 @@ export default function App() {
 
       const existingDocuments=await bridge.listWorkspace<CalendarEvent>("calendar").catch(()=>[]);
       const existingById=new Map(existingDocuments.map((document)=>[document.id,document.payload]));
-      for(const raw of result.calendarObjects){
-        for(const event of eventsFromIcs(raw)){
-          const previous=existingById.get(event.id);
+      for(const object of result.calendarObjects){
+        const events=eventsFromIcs(object.data);
+        for(const event of events){
+          const identity=JSON.stringify([event.davUid??event.id,event.occurrenceOriginalStart??""]);
+          const previousByHref=existingDocuments.map((document)=>document.payload).find((item)=>
+            item.accountId===account.id && item.davResource?.href===object.resource.href &&
+            (events.length===1 || (item.davUid===event.davUid && item.occurrenceOriginalStart===event.occurrenceOriginalStart)));
+          const legacy=existingById.get(event.id);
+          const previous=previousByHref??(legacy?.accountId===account.id&&!legacy.davResource?legacy:undefined);
+          const id=previous?.id??await davLocalId(account.id,object.resource.href,identity);
           let payload:CalendarEvent={
             ...(previous??{} as CalendarEvent),
             ...event,
+            id,
+            davResource:{...object.resource,readOnly:events.length!==1||!event.davUid},
             participantResponses:{
               ...(previous?.participantResponses??{}),
               ...(event.participantResponses??{}),
@@ -2139,9 +2156,16 @@ export default function App() {
       void bridge.flushOutbox().catch(()=>undefined);
     }
 
-    for(const raw of result.contactObjects){
-      for(const contact of contactsFromVcard(raw)){
-        const payload:ContactItem={...contact,accountId:account.id,shared:Boolean(account.isSharedMailbox)};
+    const existingContacts=await bridge.listWorkspace<ContactItem>("contact");
+    for(const object of result.contactObjects){
+      const contacts=contactsFromVcard(object.data);
+      for(const contact of contacts){
+        const previous=existingContacts.map((document)=>document.payload).find((item)=>
+          item.accountId===account.id &&
+          (item.davResource?.href===object.resource.href && (contacts.length===1||item.davUid===contact.davUid)
+            || (!item.davResource && item.id===contact.id)));
+        const id=previous?.id??await davLocalId(account.id,object.resource.href,contact.davUid??contact.id);
+        const payload:ContactItem={...previous,...contact,id,davResource:{...object.resource,readOnly:contacts.length!==1||!contact.davUid},accountId:account.id,shared:Boolean(account.isSharedMailbox)};
         const document:WorkspaceDocument<ContactItem>={id:payload.id,kind:"contact",updatedAt:now,payload};
         await bridge.upsertWorkspace(document);
         void pushCloudDocument(document).catch(()=>undefined);
@@ -2849,7 +2873,7 @@ export default function App() {
 
           await applyFreshAutomations(fresh,account);
           await Promise.all([
-            syncDavForAccount(account).catch(()=>undefined),
+            syncDavForAccount(account),
             syncLdapForAccount(account).catch(()=>undefined),
           ]);
 
@@ -3274,7 +3298,7 @@ export default function App() {
         const label = unified ? "Caixa de entrada" : selectedFolder.name;
         await bridge.syncFolder(account.id,path,label,settings.memorySaverEnabled?25:50);
         await Promise.all([
-          syncDavForAccount(account).catch(()=>undefined),
+          syncDavForAccount(account),
           syncLdapForAccount(account).catch(()=>undefined),
         ]);
       });
