@@ -1,5 +1,5 @@
-use crate::credentials;
-use std::{sync::Mutex, time::{Duration, Instant}};
+use crate::{credentials, storage::AppPaths};
+use std::{fs, io, path::Path, sync::Mutex, time::{Duration, Instant}};
 
 struct LockState {
     unlocked: bool,
@@ -43,8 +43,61 @@ fn observe_pin(s: &mut LockState, exists: bool) -> Result<bool, String> {
     Ok(exists)
 }
 
+// An independent, non-secret presence marker survives vault loss and process
+// restart. Keep it outside cache/queue/state and the AES-GCM migration trees.
+const PIN_MARKER: &str = ".pin-configured-v1";
+
+fn marker_present(root: &Path) -> Result<bool, String> {
+    match fs::symlink_metadata(root) {
+        Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {}
+        Ok(_) => return Err("Diretório de proteção do PIN inválido.".into()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.to_string()),
+    }
+    match fs::symlink_metadata(root.join(PIN_MARKER)) {
+        Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() && meta.len() == 0 => Ok(true),
+        Ok(_) => Err("Marcador de proteção do PIN inválido.".into()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn sync_marker_directory(_root: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    fs::File::open(_root).and_then(|dir| dir.sync_all()).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn ensure_marker(root: &Path) -> Result<(), String> {
+    if marker_present(root)? { return Ok(()); }
+    fs::create_dir_all(root).map_err(|error| error.to_string())?;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    match options.open(root.join(PIN_MARKER)) {
+        Ok(file) => file.sync_all().map_err(|error| error.to_string())?,
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists && marker_present(root)? => {}
+        Err(error) => return Err(error.to_string()),
+    }
+    sync_marker_directory(root)
+}
+
+fn remove_marker(root: &Path) -> Result<(), String> {
+    if !marker_present(root)? { return Ok(()); }
+    fs::remove_file(root.join(PIN_MARKER)).map_err(|error| error.to_string())?;
+    sync_marker_directory(root)
+}
+
 fn configured_locked(s: &mut LockState) -> Result<bool, String> {
-    observe_pin(s, credentials::has_app_lock()?)
+    let root = AppPaths::data_root()?;
+    s.pin_observed |= marker_present(&root)?;
+    let exists = observe_pin(s, credentials::has_app_lock()?)?;
+    if exists { ensure_marker(&root)?; }
+    Ok(exists)
 }
 
 pub fn configured() -> Result<bool, String> {
@@ -150,6 +203,10 @@ pub fn configure(pin: &str, current_pin: Option<&str>) -> Result<(), String> {
     persist_retry(&mut s, 0)?;
     credentials::set_app_lock(pin)?;
     s.pin_observed = true;
+    // If persisting the marker fails, do not grant a session.
+    s.unlocked = false;
+    s.last_activity = None;
+    ensure_marker(&AppPaths::data_root()?)?;
     s.unlocked = true;
     s.last_activity = Some(Instant::now());
     Ok(())
@@ -161,7 +218,16 @@ pub fn disable(pin: &str) -> Result<(), String> {
     if configured_locked(&mut s)? && (!s.unlocked || !check_pin(&mut s, pin)?) {
         return Err("Confirme o PIN atual para desativar o bloqueio.".into());
     }
-    credentials::clear_app_lock()?;
+    // After authenticated disable, remove the marker first. If interrupted,
+    // the still-present vault entry re-arms it on the next invocation.
+    let root = AppPaths::data_root()?;
+    remove_marker(&root)?;
+    if let Err(error) = credentials::clear_app_lock() {
+        s.unlocked = false;
+        s.last_activity = None;
+        ensure_marker(&root)?;
+        return Err(error);
+    }
     s.pin_observed = false;
     s.unlocked = false;
     s.last_activity = None;
@@ -171,6 +237,30 @@ pub fn disable(pin: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn persistent_marker_rejects_missing_vault_after_restart() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        assert!(!marker_present(&root).unwrap());
+        ensure_marker(&root).unwrap();
+        ensure_marker(&root).unwrap();
+        let mut s = LockState { unlocked: false, pin_observed: marker_present(&root).unwrap(), last_activity: None, idle_minutes: 5, failures: 0, retry_loaded: false, retry_after: None };
+        assert!(observe_pin(&mut s, false).is_err());
+        assert!(!s.unlocked);
+        remove_marker(&root).unwrap();
+        assert!(!marker_present(&root).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn malformed_marker_is_not_treated_as_disabled_lock() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir_all(root.join(PIN_MARKER)).unwrap();
+        assert!(marker_present(&root).is_err());
+        assert!(ensure_marker(&root).is_err());
+        assert!(remove_marker(&root).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn disappearing_pin_revokes_existing_session() {
         let mut s = LockState { unlocked: true, pin_observed: false, last_activity: Some(Instant::now()), idle_minutes: 5, failures: 0, retry_loaded: false, retry_after: None };
