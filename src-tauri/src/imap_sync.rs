@@ -13,6 +13,39 @@ use mail_parser::{MessageParser, MimeHeaders};
 
 type SecureClient = Client<TlsStream<TcpStream>>;
 
+static ACTIVE_ACCOUNTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
+struct AccountOperationGuard(String);
+
+impl AccountOperationGuard {
+    fn acquire(account_id: &str) -> Result<Self, String> {
+        let mut active = ACTIVE_ACCOUNTS.lock().map_err(|_| "Bloqueio IMAP indisponível.".to_string())?;
+        if !active.insert(account_id.to_owned()) {
+            return Err("Já existe uma operação IMAP em andamento para esta conta.".into());
+        }
+        Ok(Self(account_id.to_owned()))
+    }
+}
+
+impl Drop for AccountOperationGuard {
+    fn drop(&mut self) {
+        if let Ok(mut active) = ACTIVE_ACCOUNTS.lock() {
+            active.remove(&self.0);
+        }
+    }
+}
+
+async fn bounded<T>(
+    account: &AccountProfile,
+    operation: &str,
+    future: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    let timeout = std::time::Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300));
+    async_std::future::timeout(timeout, future).await
+        .map_err(|_| format!("Tempo limite IMAP excedido: {operation}."))?
+}
+
 async fn connect(account: &AccountProfile) -> Result<SecureClient, String> {
     let settings = providers::settings_for(account);
     let address = format!("{}:{}", settings.imap_host, settings.imap_port);
@@ -165,6 +198,10 @@ impl async_imap::Authenticator for &OAuth2 {
 }
 
 async fn login(account: &AccountProfile) -> Result<async_imap::Session<TlsStream<TcpStream>>, String> {
+    bounded(account, "conexão e autenticação", login_inner(account)).await
+}
+
+async fn login_inner(account: &AccountProfile) -> Result<async_imap::Session<TlsStream<TcpStream>>, String> {
     let client = connect(account).await?;
     if !account.can("read") {
         return Err("A conta compartilhada não possui permissão de leitura.".to_string());
@@ -516,15 +553,14 @@ pub fn sync_folder(
     limit: u32,
 ) -> Result<usize, String> {
     let limit = limit.clamp(1, 200);
-    static SYNC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = SYNC_LOCK.lock().map_err(|_| "Falha ao bloquear sincronização IMAP.".to_string())?;
+    let _guard = AccountOperationGuard::acquire(&account.id)?;
 
     async_std::task::block_on(async {
         let mut session = login(account).await?;
-        let mailbox = session
-            .select(remote_folder)
-            .await
-            .map_err(|error| format!("Não foi possível abrir {remote_folder}: {error}"))?;
+        let mailbox = bounded(account, "SELECT", async {
+            session.select(remote_folder).await
+                .map_err(|error| format!("Não foi possível abrir {remote_folder}: {error}"))
+        }).await?;
 
         let uid_validity = validated_uid_validity(mailbox.uid_validity)?;
         storage::prepare_imap_generation(paths, &account.id, remote_folder, uid_validity)?;
@@ -536,36 +572,34 @@ pub fn sync_folder(
             return Ok(0);
         }
 
-        let remote_uids = session
-            .uid_search("ALL")
-            .await
-            .map_err(|error| format!("Falha ao consultar UIDs de {remote_folder}: {error}"))?;
+        let remote_uids = bounded(account, "UID SEARCH", async {
+            session.uid_search("ALL").await
+                .map_err(|error| format!("Falha ao consultar UIDs de {remote_folder}: {error}"))
+        }).await?;
         let cached_uids = storage::cached_remote_uids(paths, &account.id, remote_folder)?;
         // The persisted cache is the set of completed UIDs, not a high-water
         // mark. Missing older UIDs must remain eligible after every batch.
         let wanted = missing_uid_batch(&remote_uids, &cached_uids, limit as usize);
 
         let mut cached = 0usize;
-        if !wanted.is_empty() {
-            let sequence = wanted.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
-            let fetch_stream = session
-                .uid_fetch(sequence, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
-                .await
-                .map_err(|error| format!("Falha ao buscar novas mensagens: {error}"))?;
-            let fetched: Vec<_> = fetch_stream
-                .try_collect()
-                .await
-                .map_err(|error| format!("Falha ao receber novas mensagens: {error}"))?;
+        // Fetch bodies individually so a batch of large messages is not held in memory.
+        for uid in wanted {
+            let fetched: Vec<_> = bounded(account, "UID FETCH", async {
+                let stream = session.uid_fetch(uid.to_string(), "(UID FLAGS INTERNALDATE BODY.PEEK[])")
+                    .await.map_err(|error| format!("Falha ao buscar mensagem: {error}"))?;
+                stream.try_collect().await
+                    .map_err(|error| format!("Falha ao receber mensagem: {error}"))
+            }).await?;
 
             for item in &fetched {
+                if item.uid != Some(uid) { continue; }
                 if let Some(message) = parse_message(account, item, remote_folder, folder_label, uid_validity) {
-                    // Write the raw source first: a failed write must not
-                    // publish a cached UID whose original message is missing.
                     if let Some(raw) = item.body() {
                         storage::cache_raw_message(paths, &message.account_id, &message.id, raw)?;
+                        storage::cache_message(paths, &message)?;
+                        cached += 1;
+                        break;
                     }
-                    storage::cache_message(paths, &message)?;
-                    cached += 1;
                 }
             }
         }
@@ -577,16 +611,15 @@ pub fn sync_folder(
             .collect::<Vec<_>>();
         for batch in existing.chunks(limit as usize) {
             let sequence = batch.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
-            let flag_stream = session
-                .uid_fetch(sequence, "(UID FLAGS)")
-                .await
-                .map_err(|error| format!("Falha ao atualizar flags remotas: {error}"))?;
-            let flags: Vec<_> = flag_stream
-                .try_collect()
-                .await
-                .map_err(|error| format!("Falha ao receber flags remotas: {error}"))?;
+            let flags: Vec<_> = bounded(account, "UID FETCH FLAGS", async {
+                let stream = session.uid_fetch(sequence, "(UID FLAGS)").await
+                    .map_err(|error| format!("Falha ao atualizar flags remotas: {error}"))?;
+                stream.try_collect().await
+                    .map_err(|error| format!("Falha ao receber flags remotas: {error}"))
+            }).await?;
             for item in flags {
                 let Some(uid) = item.uid else { continue; };
+                if !batch.contains(&uid) { continue; }
                 let values: Vec<_> = item.flags().collect();
                 let is_read = values.iter().any(|flag| matches!(flag, Flag::Seen));
                 let is_flagged = values.iter().any(|flag| matches!(flag, Flag::Flagged));
@@ -809,6 +842,7 @@ pub fn delete_folder(account: &AccountProfile, path: &str) -> Result<(), String>
 }
 
 pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize, String> {
+    let _guard = AccountOperationGuard::acquire(&account.id)?;
     let Some(first) = storage::claim_next_mail_action(paths, &account.id)? else {
         return Ok(0);
     };
@@ -911,6 +945,16 @@ mod uid_batch_tests {
 #[cfg(test)]
 mod generation_tests {
     use super::*;
+
+    #[test]
+    fn operations_are_serialized_per_account_not_globally() {
+        let first = AccountOperationGuard::acquire("imap-test-account-a").unwrap();
+        assert!(AccountOperationGuard::acquire("imap-test-account-a").is_err());
+        let second = AccountOperationGuard::acquire("imap-test-account-b").unwrap();
+        drop(first);
+        assert!(AccountOperationGuard::acquire("imap-test-account-a").is_ok());
+        drop(second);
+    }
 
     #[test]
     fn recreated_mailbox_cannot_reuse_local_message_identity() {
