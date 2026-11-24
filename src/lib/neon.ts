@@ -94,6 +94,7 @@ export async function signOutCloud() {
   if (!neonClient) return;
   const result = await neonClient.auth.signOut();
   if (result.error) throw new Error(errorMessage(result.error));
+  versions.clear();
   clearCloudSyncError();
   window.dispatchEvent(new Event("seven-mail:cloud-session"));
 }
@@ -176,6 +177,54 @@ export async function pushCloudDocuments(documents: WorkspaceDocument[]): Promis
   if (failures.length) throw new Error("Um ou mais documentos não foram sincronizados.");
 }
 
+type MailTable = "desktop_mail_accounts" | "desktop_mail_messages";
+type VersionedRow = { id: string; updated_at: string };
+const versions = new Map<string, string>();
+const versionKey = (owner: string, table: MailTable, id: string) => JSON.stringify([owner, table, id]);
+
+function rememberVersions(owner: string, table: MailTable, rows: VersionedRow[]): void {
+  for (const row of rows) {
+    if (typeof row.updated_at === "string" && row.updated_at) {
+      versions.set(versionKey(owner, table, row.id), row.updated_at);
+    }
+  }
+}
+
+async function insertMailRows(table: MailTable, owner: string, rows: Array<Record<string, unknown> & {id:string}>): Promise<void> {
+  if (!neonClient || rows.length === 0) return;
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+  const result = await neonClient.from(table).upsert(rows, { onConflict: "id", ignoreDuplicates: true }).select("id,updated_at");
+  if (result.error) throw new Error(errorMessage(result.error));
+  rememberVersions(owner, table, (result.data ?? []) as unknown as VersionedRow[]);
+}
+
+async function updateMailRow(table: MailTable, owner: string, row: Record<string, unknown> & {id:string}): Promise<void> {
+  if (!neonClient) return;
+  const key = versionKey(owner, table, row.id);
+  const version = versions.get(key);
+  if (!version) {
+    await insertMailRows(table, owner, [row]);
+    if (!versions.has(key)) throw new Error("Registro existente sem versão local confirmada.");
+    return;
+  }
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+  const result = await neonClient.from(table).update(row)
+    .eq("owner_id", owner).eq("id", row.id).eq("updated_at", version)
+    .is("deleted_at", null).select("id,updated_at");
+  if (result.error) throw new Error(errorMessage(result.error));
+  const rows = (result.data ?? []) as unknown as VersionedRow[];
+  if (rows.length !== 1 || rows[0].id !== row.id) {
+    versions.delete(key);
+    throw new Error("Conflito de versão: sincronize o registro antes de editar.");
+  }
+  rememberVersions(owner, table, rows);
+}
+
+function sameProjection(local: Record<string, unknown>, remote: object): boolean {
+  const row = remote as Record<string, unknown>;
+  return Object.entries(local).every(([key, value]) => key === "owner_id" || JSON.stringify(value) === JSON.stringify(row[key]));
+}
+
 interface CloudAccountRow {
   id: string;
   display_name: string;
@@ -192,7 +241,7 @@ interface CloudAccountRow {
   updated_at: string;
 }
 
-export async function pullCloudAccounts(): Promise<AccountProfile[]> {
+export async function pullCloudAccounts(local: AccountProfile[] = []): Promise<AccountProfile[]> {
   if (!neonClient) return [];
   const owner = await getAuthorizedCloudOwner();
   if (!owner) return [];
@@ -205,7 +254,18 @@ export async function pullCloudAccounts(): Promise<AccountProfile[]> {
     .order("updated_at", { ascending: false });
 
   if (result.error) throw new Error(errorMessage(result.error));
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
   const rows = (result.data ?? []) as unknown as CloudAccountRow[];
+  const localById = new Map(local.map(account => [account.id, account]));
+  for (const row of rows) {
+    const account = localById.get(row.id);
+    if (account && sameProjection(accountToCloudRow(account, owner), row)) {
+      rememberVersions(owner, "desktop_mail_accounts", [row]);
+    } else if (account) {
+      versions.delete(versionKey(owner, "desktop_mail_accounts", row.id));
+      reportCloudSyncError(new Error("Conta com versões divergentes."), "accounts");
+    }
+  }
   return rows.map((row) => ({
     id: row.id,
     displayName: row.display_name,
@@ -222,12 +282,8 @@ export async function pullCloudAccounts(): Promise<AccountProfile[]> {
   }));
 }
 
-export async function pushCloudAccount(account: AccountProfile): Promise<void> {
-  if (!neonClient) return;
-  const owner = await getAuthorizedCloudOwner();
-  if (!owner) return;
-
-  const result = await neonClient.from("desktop_mail_accounts").upsert({
+function accountToCloudRow(account: AccountProfile, owner: string) {
+  return {
     owner_id: owner,
     id: account.id,
     display_name: account.displayName,
@@ -241,19 +297,27 @@ export async function pushCloudAccount(account: AccountProfile): Promise<void> {
     smtp_host: account.smtpHost ?? null,
     smtp_port: account.smtpPort ?? null,
     security_mode: account.securityMode ?? null,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "id" });
+  };
+}
 
-  if (result.error) throw new Error(errorMessage(result.error));
+export async function pushCloudAccount(account: AccountProfile): Promise<void> {
+  const owner = await getAuthorizedCloudOwner();
+  if (!owner) return;
+  try { await updateMailRow("desktop_mail_accounts", owner, accountToCloudRow(account, owner)); }
+  catch (error) { reportCloudSyncError(error, "accounts"); throw error; }
 }
 
 export async function pushCloudAccounts(accounts: AccountProfile[]): Promise<void> {
-  for (const account of accounts) {
-    await pushCloudAccount(account);
-  }
+  const owner = await getAuthorizedCloudOwner();
+  if (!owner) return;
+  try {
+    for (let offset = 0; offset < accounts.length; offset += 50) {
+      await insertMailRows("desktop_mail_accounts", owner, accounts.slice(offset, offset+50).map(account => accountToCloudRow(account, owner)));
+    }
+  } catch (error) { reportCloudSyncError(error, "accounts"); throw error; }
 }
 
-interface CloudMessageRow {
+interface CloudMessageRow extends VersionedRow {
   id: string;
   account_id: string;
   remote_id: string | null;
@@ -295,14 +359,14 @@ function cloudRowToMessage(row: CloudMessageRow): MailMessage {
   };
 }
 
-export async function pullCloudMessages(accountId: string, limit = 500): Promise<MailMessage[]> {
+export async function pullCloudMessages(accountId: string, limit = 500, local: MailMessage[] = []): Promise<MailMessage[]> {
   if (!neonClient) return [];
   const owner = await getAuthorizedCloudOwner();
   if (!owner) return [];
 
   const result = await neonClient
     .from("desktop_mail_messages")
-    .select("id, account_id, remote_id, remote_folder, folder, subject, preview, sender, recipients, received_at, is_read, is_flagged, is_pinned, has_attachments, body_html, body_text, categories")
+    .select("id, account_id, remote_id, remote_folder, folder, subject, preview, sender, recipients, received_at, is_read, is_flagged, is_pinned, has_attachments, body_html, body_text, categories, updated_at")
     .eq("owner_id", owner)
     .eq("account_id", accountId)
     .is("deleted_at", null)
@@ -310,7 +374,19 @@ export async function pullCloudMessages(accountId: string, limit = 500): Promise
     .limit(Math.max(1, Math.min(limit, 2000)));
 
   if (result.error) throw new Error(errorMessage(result.error));
-  return ((result.data ?? []) as unknown as CloudMessageRow[]).map(cloudRowToMessage);
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+  const rows = (result.data ?? []) as unknown as CloudMessageRow[];
+  const localById = new Map(local.map(message => [message.id, message]));
+  for (const row of rows) {
+    const message = localById.get(row.id);
+    if (message && sameProjection(messageToCloudRow(message, owner), row)) {
+      rememberVersions(owner, "desktop_mail_messages", [row]);
+    } else if (message) {
+      versions.delete(versionKey(owner, "desktop_mail_messages", row.id));
+      reportCloudSyncError(new Error("Mensagem com versões divergentes."), "messages");
+    }
+  }
+  return rows.map(cloudRowToMessage);
 }
 
 function messageToCloudRow(message: MailMessage, owner: string) {
@@ -333,12 +409,14 @@ function messageToCloudRow(message: MailMessage, owner: string) {
     body_html: message.bodyHtml ?? null,
     body_text: message.bodyText ?? null,
     categories: message.categories,
-    updated_at: new Date().toISOString(),
   };
 }
 
 export async function pushCloudMessage(message: MailMessage): Promise<void> {
-  await pushCloudMessages([message]);
+  const owner = await getAuthorizedCloudOwner();
+  if (!owner) return;
+  try { await updateMailRow("desktop_mail_messages", owner, messageToCloudRow(message, owner)); }
+  catch (error) { reportCloudSyncError(error, "messages"); throw error; }
 }
 
 export async function pushCloudMessages(messages: MailMessage[]): Promise<void> {
@@ -351,8 +429,8 @@ export async function pushCloudMessages(messages: MailMessage[]): Promise<void> 
   for (let offset = 0; offset < unique.length; offset += batchSize) {
     if (await getAuthorizedCloudOwner() !== owner) return;
     const rows = unique.slice(offset, offset + batchSize).map((message) => messageToCloudRow(message, owner));
-    const result = await neonClient.from("desktop_mail_messages").upsert(rows, { onConflict: "id" });
-    if (result.error) throw new Error(errorMessage(result.error));
+    try { await insertMailRows("desktop_mail_messages", owner, rows); }
+    catch (error) { reportCloudSyncError(error, "messages"); throw error; }
   }
 }
 
