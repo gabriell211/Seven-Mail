@@ -43,13 +43,21 @@ export async function getCloudSession() {
 
 // The local workspace is not a multi-user container. Do not attach it to a
 // second cloud account, even if Neon authentication itself succeeds.
-async function authorizedCloudOwner(): Promise<string | null> {
+export async function getAuthorizedCloudOwner(): Promise<string | null> {
   if (!neonClient) return null;
   const session = await getCloudSession();
   const owner = session?.session && session.user?.id;
   if (!owner) return null;
   const binding = await bridge.getCloudBinding();
   return binding?.enabled && binding.ownerId === owner ? owner : null;
+}
+
+export function reportCloudSyncError(error: unknown, scope: string): void {
+  // Report scope only; remote errors may contain message payloads or identifiers.
+  void error;
+  window.dispatchEvent(new CustomEvent("seven-mail:cloud-sync-error", {
+    detail: { scope, message: "A sincronização não foi concluída. Os dados locais foram preservados." },
+  }));
 }
 
 export async function setCloudSyncConsent(enabled: boolean): Promise<void> {
@@ -91,12 +99,13 @@ interface CloudWorkspaceRow<T> {
 
 export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<WorkspaceDocument<T>>> {
   if (!neonClient) return [];
-  const owner = await authorizedCloudOwner();
+  const owner = await getAuthorizedCloudOwner();
   if (!owner) return [];
 
   const rows: Array<CloudWorkspaceRow<T>> = [];
   const pageSize = 500;
   for (let offset = 0; ; offset += pageSize) {
+    if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
     const result = await neonClient
       .from("workspace_documents")
       .select("id, kind, payload, updated_at, deleted_at")
@@ -111,6 +120,7 @@ export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<
     if (page.length < pageSize) break;
   }
 
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
   return rows.map((row) => ({
     id: row.id,
     kind: row.kind,
@@ -122,46 +132,39 @@ export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<
   }));
 }
 
-export async function pushCloudDocument<T>(document: WorkspaceDocument<T>): Promise<void> {
+export async function pushCloudDocument<T>(document: WorkspaceDocument<T>, expectedOwner?: string): Promise<void> {
   if (!neonClient) return;
-  const owner = await authorizedCloudOwner();
+  const owner = await getAuthorizedCloudOwner();
+  if (expectedOwner && owner !== expectedOwner) throw new Error("Sessão Neon alterada.");
   if (!owner) return;
-
-  const result = await neonClient
-    .from("workspace_documents")
-    .upsert(
-      {
-        owner_id: owner,
-        id: document.id,
-        kind: document.kind,
-        payload: document.payload,
-        updated_at: document.updatedAt,
-        deleted_at: document.deletedAt ?? null,
-      },
-      { onConflict: "id" },
-    );
-
-  if (result.error) throw new Error(errorMessage(result.error));
+  try {
+    const result = await neonClient.from("workspace_documents").upsert({
+      owner_id: owner,
+      id: document.id,
+      kind: document.kind,
+      payload: document.payload,
+      updated_at: document.updatedAt,
+      deleted_at: document.deletedAt ?? null,
+    }, { onConflict: "id" });
+    if (result.error) throw new Error(errorMessage(result.error));
+  } catch (error) {
+    reportCloudSyncError(error, document.kind);
+    throw error;
+  }
 }
 
 export async function pushCloudDocuments(documents: WorkspaceDocument[]): Promise<void> {
   if (!neonClient || documents.length === 0) return;
-  const owner = await authorizedCloudOwner();
+  const owner = await getAuthorizedCloudOwner();
   if (!owner) return;
-
-  const rows = documents.map((document) => ({
-    id: document.id,
-    kind: document.kind,
-    payload: document.payload,
-    updated_at: document.updatedAt,
-    deleted_at: document.deletedAt ?? null,
-  }));
-
-  const result = await neonClient
-    .from("workspace_documents")
-    .upsert(rows, { onConflict: "id" });
-
-  if (result.error) throw new Error(errorMessage(result.error));
+  // Each record has its own conflict outcome. Do not roll back unrelated edits.
+  const failures: unknown[] = [];
+  for (const document of documents) {
+    if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+    try { await pushCloudDocument(document, owner); }
+    catch (error) { failures.push(error); }
+  }
+  if (failures.length) throw new Error("Um ou mais documentos não foram sincronizados.");
 }
 
 interface CloudAccountRow {
@@ -182,7 +185,7 @@ interface CloudAccountRow {
 
 export async function pullCloudAccounts(): Promise<AccountProfile[]> {
   if (!neonClient) return [];
-  const owner = await authorizedCloudOwner();
+  const owner = await getAuthorizedCloudOwner();
   if (!owner) return [];
 
   const result = await neonClient
@@ -212,7 +215,7 @@ export async function pullCloudAccounts(): Promise<AccountProfile[]> {
 
 export async function pushCloudAccount(account: AccountProfile): Promise<void> {
   if (!neonClient) return;
-  const owner = await authorizedCloudOwner();
+  const owner = await getAuthorizedCloudOwner();
   if (!owner) return;
 
   const result = await neonClient.from("desktop_mail_accounts").upsert({
@@ -285,7 +288,7 @@ function cloudRowToMessage(row: CloudMessageRow): MailMessage {
 
 export async function pullCloudMessages(accountId: string, limit = 500): Promise<MailMessage[]> {
   if (!neonClient) return [];
-  const owner = await authorizedCloudOwner();
+  const owner = await getAuthorizedCloudOwner();
   if (!owner) return [];
 
   const result = await neonClient
@@ -331,13 +334,13 @@ export async function pushCloudMessage(message: MailMessage): Promise<void> {
 
 export async function pushCloudMessages(messages: MailMessage[]): Promise<void> {
   if (!neonClient || messages.length === 0) return;
-  const owner = await authorizedCloudOwner();
+  const owner = await getAuthorizedCloudOwner();
   if (!owner) return;
   // Deduplicate IDs and bound requests by batch size.
   const unique = [...new Map(messages.map((message) => [message.id, message])).values()];
   const batchSize = 50;
   for (let offset = 0; offset < unique.length; offset += batchSize) {
-    if (await authorizedCloudOwner() !== owner) return;
+    if (await getAuthorizedCloudOwner() !== owner) return;
     const rows = unique.slice(offset, offset + batchSize).map((message) => messageToCloudRow(message, owner));
     const result = await neonClient.from("desktop_mail_messages").upsert(rows, { onConflict: "id" });
     if (result.error) throw new Error(errorMessage(result.error));
@@ -347,7 +350,7 @@ export async function pushCloudMessages(messages: MailMessage[]): Promise<void> 
 
 export async function deleteCloudAccount(accountId: string): Promise<void> {
   if (!neonClient) return;
-  const owner = await authorizedCloudOwner();
+  const owner = await getAuthorizedCloudOwner();
   if (!owner) return;
 
   const deletedAt = new Date().toISOString();
