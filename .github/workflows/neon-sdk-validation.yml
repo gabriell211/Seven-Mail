@@ -1,8 +1,12 @@
 name: Neon SDK dependency validation
 on:
-  # This workflow rewrites package.json and resolves an uncommitted candidate.
-  # It is not a test of the PR's committed dependencies. Run it explicitly
-  # before promoting any SDK upgrade; failures must block that promotion.
+  # The candidate is evaluated separately from committed dependencies.
+  # PR execution is necessary while this workflow is not yet on main.
+  pull_request:
+    paths:
+      - '.github/workflows/neon-sdk-validation.yml'
+      - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch:
 permissions:
   contents: read
