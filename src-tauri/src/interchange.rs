@@ -397,8 +397,9 @@ pub fn preview_message_attachment(
     let parsed = MessageParser::default()
         .parse(&raw)
         .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
+    let attachment_index = u32::try_from(index).map_err(|_| "Índice de anexo inválido.".to_string())?;
     let part = parsed
-        .attachment(index as u32)
+        .attachment(attachment_index)
         .ok_or_else(|| "Anexo não encontrado.".to_string())?;
 
     let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
@@ -469,6 +470,10 @@ pub fn preview_message_attachment(
 }
 
 fn cleanup_expired_attachment_exports(root: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(root).map_err(|error| error.to_string())?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("Pasta de anexos temporários inválida.".into());
+    }
     for entry in fs::read_dir(root).map_err(|error| error.to_string())? {
         let entry = entry.map_err(|error| error.to_string())?;
         if uuid::Uuid::parse_str(&entry.file_name().to_string_lossy()).is_err() {
@@ -502,8 +507,9 @@ pub fn cache_message_attachment(
     let parsed = MessageParser::default()
         .parse(&raw)
         .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
+    let attachment_index = u32::try_from(index).map_err(|_| "Índice de anexo inválido.".to_string())?;
     let part = parsed
-        .attachment(index as u32)
+        .attachment(attachment_index)
         .ok_or_else(|| "Anexo não encontrado.".to_string())?;
     let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
 
@@ -551,15 +557,16 @@ pub fn save_message_attachment(
     let parsed = MessageParser::default()
         .parse(&raw)
         .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
+    let attachment_index = u32::try_from(index).map_err(|_| "Índice de anexo inválido.".to_string())?;
     let part = parsed
-        .attachment(index as u32)
+        .attachment(attachment_index)
         .ok_or_else(|| "Anexo não encontrado.".to_string())?;
     let destination = Path::new(destination);
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| format!("Não foi possível preparar a pasta: {error}"))?;
     }
-    fs::write(destination, part.contents())
-        .map_err(|error| format!("Não foi possível salvar o anexo: {error}"))
+    write_new_attachment(destination, part.contents())
+        .map_err(|error| format!("Não foi possível salvar o anexo sem sobrescrever arquivos: {error}"))
 }
 
 pub fn stage_message_attachments(
@@ -603,6 +610,46 @@ pub fn stage_message_attachments(
     Ok(output)
 }
 
+// create_new performs the existence check and creation together, including dangling symlinks.
+fn write_new_attachment(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    if let Err(error) = file.write_all(bytes).and_then(|_| file.sync_all()) {
+        drop(file);
+        let _ = fs::remove_file(path);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn export_unique_attachment(directory: &Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
+    let original = Path::new(name);
+    let stem = original.file_stem().and_then(|value| value.to_str()).unwrap_or("anexo");
+    let ext = original.extension().and_then(|value| value.to_str()).unwrap_or("");
+    for suffix in 0..1000 {
+        let candidate = if suffix == 0 {
+            name.to_owned()
+        } else if ext.is_empty() {
+            format!("{stem}-{suffix}")
+        } else {
+            format!("{stem}-{suffix}.{ext}")
+        };
+        match write_new_attachment(&directory.join(candidate), bytes) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "Limite de nomes de anexo atingido"))
+}
+
 pub fn save_all_message_attachments(
     paths: &AppPaths,
     account_id: &str,
@@ -620,18 +667,7 @@ pub fn save_all_message_attachments(
     for index in 0..parsed.attachment_count() {
         let Some(part) = parsed.attachment(index as u32) else { continue; };
         let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
-        let mut path = directory.join(&name);
-        if path.exists() {
-            let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("anexo");
-            let ext = path.extension().and_then(|value| value.to_str()).unwrap_or("");
-            let next = if ext.is_empty() {
-                format!("{stem}-{}", index + 1)
-            } else {
-                format!("{stem}-{}.{}", index + 1, ext)
-            };
-            path = directory.join(next);
-        }
-        fs::write(path, part.contents())
+        export_unique_attachment(directory, &name, part.contents())
             .map_err(|error| format!("Não foi possível salvar o anexo {name}: {error}"))?;
         saved += 1;
     }
@@ -842,4 +878,35 @@ pub fn export_pst(paths: &AppPaths, account_id: Option<&str>, destination: &str)
     }
 
     Ok(messages.len())
+}
+
+#[cfg(test)]
+mod attachment_export_safety_tests {
+    use super::*;
+
+    #[test]
+    fn exporting_does_not_overwrite_original_or_previous_collision() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("report.pdf"), b"original").unwrap();
+        fs::write(root.join("report-1.pdf"), b"previous").unwrap();
+        assert!(write_new_attachment(&root.join("report.pdf"), b"replacement").is_err());
+        export_unique_attachment(&root, "report.pdf", b"new").unwrap();
+        assert_eq!(fs::read(root.join("report.pdf")).unwrap(), b"original");
+        assert_eq!(fs::read(root.join("report-1.pdf")).unwrap(), b"previous");
+        assert_eq!(fs::read(root.join("report-2.pdf")).unwrap(), b"new");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_is_not_followed_when_exporting() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&root).unwrap();
+        let target = root.join("target");
+        std::os::unix::fs::symlink(&target, root.join("link")).unwrap();
+        assert!(write_new_attachment(&root.join("link"), b"data").is_err());
+        assert!(!target.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
 }
