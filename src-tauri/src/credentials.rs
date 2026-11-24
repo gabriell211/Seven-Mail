@@ -107,22 +107,80 @@ pub fn has_app_lock() -> Result<bool, String> {
     }
 }
 
+// PBKDF2-HMAC-SHA256 with a fresh 128-bit salt. OpenSSL is already a
+// dependency of the native client, so no new dependency or lockfile is needed.
+const PIN_ITERATIONS: usize = 600_000;
+const PIN_PREFIX: &str = "pbkdf2-sha256-v1";
+const PIN_SALT_LEN: usize = 16;
+const PIN_HASH_LEN: usize = 32;
+
+fn derive_pin(pin: &str, salt: &[u8; PIN_SALT_LEN]) -> Result<[u8; PIN_HASH_LEN], String> {
+    let mut hash = [0u8; PIN_HASH_LEN];
+    openssl::pkcs5::pbkdf2_hmac(
+        pin.as_bytes(), salt, PIN_ITERATIONS, openssl::hash::MessageDigest::sha256(), &mut hash,
+    ).map_err(|_| "Falha ao proteger o PIN.".to_string())?;
+    Ok(hash)
+}
+
+fn encode_pin(pin: &str) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    let mut salt = [0u8; PIN_SALT_LEN];
+    openssl::rand::rand_bytes(&mut salt).map_err(|_| "Falha ao gerar salt do PIN.".to_string())?;
+    let hash = derive_pin(pin, &salt)?;
+    Ok(format!("{PIN_PREFIX}${}${}${}", PIN_ITERATIONS, BASE64.encode(salt), BASE64.encode(hash)))
+}
+
+/// Return (matched, legacy). Legacy values were at most 64 bytes and are
+/// upgraded only after successful verification. The new format exceeds 64 bytes.
+fn verify_pin_record(record: &str, pin: &str) -> Result<(bool, bool), String> {
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    if pin.len() > 64 { return Ok((false, false)); }
+    if record.len() <= 64 {
+        if record.len() < 4 || record.trim() != record {
+            return Err("Registro de PIN legado inválido.".into());
+        }
+        let matched = record.len() == pin.len() && openssl::memcmp::eq(record.as_bytes(), pin.as_bytes());
+        return Ok((matched, true));
+    }
+    if record.len() > 256 { return Err("Registro de PIN inválido.".into()); }
+    let mut fields = record.split('$');
+    if fields.next() != Some(PIN_PREFIX) || fields.next() != Some("600000") {
+        return Err("Formato de PIN não suportado.".into());
+    }
+    let salt: [u8; PIN_SALT_LEN] = BASE64.decode(fields.next().unwrap_or_default())
+        .ok().and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| "Salt do PIN inválido.".to_string())?;
+    let hash: [u8; PIN_HASH_LEN] = BASE64.decode(fields.next().unwrap_or_default())
+        .ok().and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| "Hash do PIN inválido.".to_string())?;
+    if fields.next().is_some() { return Err("Registro de PIN inválido.".into()); }
+    let actual = derive_pin(pin, &salt)?;
+    Ok((openssl::memcmp::eq(&hash, &actual), false))
+}
+
 pub fn set_app_lock(pin: &str) -> Result<(), String> {
     let value = pin.trim();
     if value.len() < 4 || value.len() > 64 {
         return Err("O PIN deve ter entre 4 e 64 caracteres.".to_string());
     }
     entry(APP_LOCK_ID)?
-        .set_password(value)
-        .map_err(|error| error.to_string())
+        .set_password(&encode_pin(value)?)
+        .map_err(|_| "Não foi possível persistir o PIN protegido.".to_string())
 }
 
 pub fn verify_app_lock(pin: &str) -> Result<bool, String> {
-    match entry(APP_LOCK_ID)?.get_password() {
-        Ok(stored) => Ok(stored.as_bytes() == pin.as_bytes()),
-        Err(keyring::Error::NoEntry) => Ok(true),
-        Err(error) => Err(error.to_string()),
+    let vault = entry(APP_LOCK_ID)?;
+    let stored = match vault.get_password() {
+        Ok(stored) => stored,
+        Err(keyring::Error::NoEntry) => return Err("Registro de PIN indisponível durante a verificação.".into()),
+        Err(_) => return Err("Cofre do PIN indisponível.".into()),
+    };
+    let (matched, legacy) = verify_pin_record(&stored, pin)?;
+    if matched && legacy {
+        vault.set_password(&encode_pin(pin)?)
+            .map_err(|_| "Não foi possível migrar o PIN existente.".to_string())?;
     }
+    Ok(matched)
 }
 
 pub fn clear_app_lock() -> Result<(), String> {
@@ -182,5 +240,35 @@ mod namespace_tests {
         assert!(scoped_id("oauth__other", "account").is_err());
         assert!(scoped_id("oauth/other", "account").is_err());
         assert!(scoped_id("oauth", &"a".repeat(180)).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod pin_tests {
+    use super::*;
+
+    #[test]
+    fn hashes_are_salted_and_verify_only_correct_pin() {
+        let first = encode_pin("1234").unwrap();
+        let second = encode_pin("1234").unwrap();
+        assert_ne!(first, second);
+        assert!(first.len() > 64);
+        assert_eq!(verify_pin_record(&first, "1234").unwrap(), (true, false));
+        assert_eq!(verify_pin_record(&first, "4321").unwrap(), (false, false));
+    }
+
+    #[test]
+    fn legacy_pin_can_be_verified_before_upgrade() {
+        assert_eq!(verify_pin_record("1234", "1234").unwrap(), (true, true));
+        assert_eq!(verify_pin_record("1234", "12345").unwrap(), (false, true));
+        assert_eq!(verify_pin_record("1234", "4321").unwrap(), (false, true));
+    }
+
+    #[test]
+    fn malformed_records_and_unbounded_iterations_are_rejected() {
+        let record = encode_pin("1234").unwrap();
+        assert!(verify_pin_record(&record.replace("$600000$", "$999999999$"), "1234").is_err());
+        assert!(verify_pin_record(&format!("{record}$extra"), "1234").is_err());
+        assert!(verify_pin_record(&"x".repeat(257), "1234").is_err());
     }
 }
