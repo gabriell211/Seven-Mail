@@ -44,13 +44,28 @@ export async function getCloudSession() {
 
 // The local workspace is not a multi-user container. Do not attach it to a
 // second cloud account, even if Neon authentication itself succeeds.
+let protocolProof: { owner: string; expires: number } | null = null;
+async function requireCloudProtocol(owner: string): Promise<void> {
+  if (protocolProof?.owner === owner && protocolProof.expires > Date.now()) return;
+  const result = await requireClient().from("seven_mail_sync_capabilities").select("protocol_version").limit(1);
+  const rows = (result.data ?? []) as unknown as Array<{protocol_version:number}>;
+  if (result.error || rows[0]?.protocol_version !== 2) {
+    const error = new Error("O banco Neon precisa da migration de sincronização v2.");
+    reportCloudSyncError(error, "migration");
+    throw error;
+  }
+  protocolProof = { owner, expires: Date.now() + 60_000 };
+}
+
 export async function getAuthorizedCloudOwner(): Promise<string | null> {
   if (!neonClient) return null;
   const session = await getCloudSession();
   const owner = session?.session && session.user?.id;
   if (!owner) return null;
   const binding = await bridge.getCloudBinding();
-  return binding?.enabled && binding.ownerId === owner ? owner : null;
+  if (!binding?.enabled || binding.ownerId !== owner) return null;
+  await requireCloudProtocol(owner);
+  return owner;
 }
 
 let lastCloudSyncError: { scope: string; message: string } | null = null;
@@ -65,7 +80,7 @@ export function clearCloudSyncError(): void {
 export function reportCloudSyncError(error: unknown, scope: string): void {
   // Report scope only; remote errors may contain message payloads or identifiers.
   void error;
-  lastCloudSyncError = { scope, message: "A sincronização não foi concluída. Os dados locais foram preservados." };
+  lastCloudSyncError = { scope, message: scope === "migration" ? "O banco Neon precisa da migration de sincronização v2. A sincronização está suspensa." : "A sincronização não foi concluída. Os dados locais foram preservados." };
   window.dispatchEvent(new Event("seven-mail:cloud-sync-error"));
 }
 
@@ -74,6 +89,8 @@ export async function setCloudSyncConsent(enabled: boolean): Promise<void> {
   const owner = session?.session && session.user?.id;
   if (!owner) throw new Error("Entre na conta Neon antes de configurar a sincronização.");
   await bridge.setCloudBinding(owner, enabled);
+  protocolProof = null;
+  versions.clear();
   window.dispatchEvent(new Event("seven-mail:cloud-session"));
 }
 
@@ -95,6 +112,7 @@ export async function signOutCloud() {
   if (!neonClient) return;
   const result = await neonClient.auth.signOut();
   if (result.error) throw new Error(errorMessage(result.error));
+  protocolProof = null;
   versions.clear();
   clearCloudSyncError();
   window.dispatchEvent(new Event("seven-mail:cloud-session"));
