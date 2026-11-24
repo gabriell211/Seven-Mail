@@ -251,7 +251,11 @@ fn attachment_mime(name: &str) -> &'static str {
     }
 }
 
-fn redirect_queued(account: &AccountProfile, operation: &QueueOperation) -> Result<Vec<u8>, String> {
+fn redirect_queued(
+    account: &AccountProfile,
+    operation: &QueueOperation,
+    before_submission: impl FnOnce() -> Result<(), String>,
+) -> Result<Vec<u8>, String> {
     if !account.can("send") {
         return Err("A conta não possui permissão de envio.".to_string());
     }
@@ -281,15 +285,25 @@ fn redirect_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
     let mut raw = resent.into_bytes();
     raw.extend_from_slice(&original);
 
-    smtp_transport(account)?
+    let transport = smtp_transport(account)?;
+    before_submission()?;
+    transport
         .send_raw(&envelope, &raw)
         .map_err(|error| format!("Falha ao redirecionar mensagem: {error}"))?;
     Ok(raw)
 }
 
 pub fn send_queued_raw(account: &AccountProfile, operation: &QueueOperation) -> Result<Vec<u8>, String> {
+    send_queued_raw_with_checkpoint(account, operation, || Ok(()))
+}
+
+pub fn send_queued_raw_with_checkpoint(
+    account: &AccountProfile,
+    operation: &QueueOperation,
+    before_submission: impl FnOnce() -> Result<(), String>,
+) -> Result<Vec<u8>, String> {
     if operation.kind == "redirect" {
-        return redirect_queued(account, operation);
+        return redirect_queued(account, operation, before_submission);
     }
     if operation.kind != "send" {
         return Err("Operação de fila não é um envio SMTP.".to_string());
@@ -496,6 +510,8 @@ pub fn send_queued_raw(account: &AccountProfile, operation: &QueueOperation) -> 
         message.formatted()
     };
 
+    // Persist the submission boundary before calling the transport.
+    before_submission()?;
     transport
         .send_raw(message.envelope(), &raw)
         .map_err(|error| error.to_string())?;
