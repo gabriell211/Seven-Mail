@@ -92,11 +92,47 @@ jobs:
           rm package-lock.json
           npm install --package-lock-only --strict-peer-deps 2>&1 | tee /tmp/npm-resolution.log
           npm ci --strict-peer-deps 2>&1 | tee /tmp/npm-install.log
-          if grep -Ei 'npm warn (ERESOLVE|deprecated)|DeprecationWarning' /tmp/npm-resolution.log /tmp/npm-install.log; then
+          # Collect actual advisories before applying the promotion gates.
+          # npm audit exits nonzero for vulnerabilities; preserve its report and status.
+          audit_status=0
+          npm audit --json > /tmp/neon-audit.json || audit_status=$?
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const report=JSON.parse(fs.readFileSync('/tmp/neon-audit.json','utf8'));
+          if (!report.metadata?.vulnerabilities || !report.vulnerabilities) {
+            throw new Error('Missing npm audit data; cannot validate dependency security');
+          }
+          for (const [name, issue] of Object.entries(report.vulnerabilities)) {
+            console.log(JSON.stringify({
+              name, severity:issue.severity, range:issue.range,
+              via:issue.via, effects:issue.effects, fixAvailable:issue.fixAvailable
+            }));
+          }
+          console.log(JSON.stringify(report.metadata.vulnerabilities));
+          JS
+          dependency_status=0
+          npm ls --all > /tmp/neon-dependency-tree.txt 2>&1 || dependency_status=$?
+          failed=0
+          if grep -Ei 'npm warn|DeprecationWarning' /tmp/npm-resolution.log /tmp/npm-install.log; then
             echo 'Dependency warnings still present; do not promote candidate.'
-            exit 1
+            failed=1
           fi
-          npm ls --all >/dev/null
+          if [ "$audit_status" -ne 0 ] || [ "$dependency_status" -ne 0 ]; then
+            echo 'Security audit or dependency tree failed; do not promote candidate.'
+            failed=1
+          fi
+          exit "$failed"
+      - name: Upload dependency diagnostics even on failure
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: neon-sdk-diagnostics-${{ matrix.candidate }}
+          path: |
+            /tmp/neon-audit.json
+            /tmp/neon-dependency-tree.txt
+            /tmp/npm-resolution.log
+            /tmp/npm-install.log
+          if-no-files-found: warn
       - run: npm test
       - name: Build candidate and reject frontend warnings
         shell: bash
