@@ -992,6 +992,9 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            if let Ok(paths) = AppPaths::resolve() {
+                let _ = interchange::cleanup_attachment_exports(&paths);
+            }
             use tauri::{
                 menu::{Menu, MenuItem},
                 tray::TrayIconBuilder,
