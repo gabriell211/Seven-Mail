@@ -112,6 +112,7 @@ export interface QueueOperation {
 
 export interface OutboxFlushResult {
   sent: number;
+  sentOperationIds?: string[];
   sentAccountIds: string[];
   sentCopyWarnings: string[];
   deliveryWarnings?: string[];
