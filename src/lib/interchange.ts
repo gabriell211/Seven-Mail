@@ -78,7 +78,7 @@ function recurrenceRule(event: CalendarEvent): string | null {
 function eventIcsLines(event: CalendarEvent, organizer?: string): string[] {
   const lines=[
     "BEGIN:VEVENT",
-    "UID:"+event.id+"@seven-mail.local",
+    "UID:"+escapeText(event.davUid??(event.id+"@seven-mail.local")),
     "DTSTAMP:"+icsDate(new Date().toISOString()),
     event.allDay ? "DTSTART;VALUE=DATE:"+icsDate(event.startAt,true) : "DTSTART:"+icsDate(event.startAt),
     event.allDay ? "DTEND;VALUE=DATE:"+icsDate(event.endAt,true) : "DTEND:"+icsDate(event.endAt),
@@ -187,6 +187,7 @@ export function eventsFromIcs(raw: string): CalendarEvent[] {
         .filter(([email])=>Boolean(email)));
       events.push({
         id: (current.UID?.[0] ?? crypto.randomUUID()).split("@")[0] || crypto.randomUUID(),
+        davUid: current.UID?.[0] ? unescapeText(current.UID[0]) : undefined,
         title: unescapeText(current.SUMMARY?.[0] ?? "Evento importado"),
         description: unescapeText(current.DESCRIPTION?.[0] ?? ""),
         location: unescapeText(current.LOCATION?.[0] ?? ""),
@@ -232,6 +233,7 @@ export function contactsToVcard(contacts: ContactItem[]): string {
   return contacts.map((contact) => [
     "BEGIN:VCARD",
     "VERSION:3.0",
+    `UID:${escapeText(contact.davUid??contact.id)}`,
     `FN:${escapeText(contact.displayName)}`,
     contact.email ? `EMAIL;TYPE=INTERNET:${contact.email}` : "",
     contact.phone ? `TEL;TYPE=CELL:${contact.phone}` : "",
@@ -257,6 +259,7 @@ export function contactsFromVcard(raw: string): ContactItem[] {
       const stableId = `carddav-${rawId.toLocaleLowerCase("pt-BR").replace(/[^a-z0-9._-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,90) || crypto.randomUUID()}`;
       contacts.push({
         id: stableId,
+        davUid: current.UID ? unescapeText(current.UID) : undefined,
         displayName: unescapeText(current.FN || current.N || current.EMAIL || "Contato importado"),
         email: current.EMAIL || "",
         phone: current.TEL || "",
