@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        candidate: ['new-sdk-clean']
+        candidate: ['matched-neon-auth-ui']
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -28,17 +28,39 @@ jobs:
           CANDIDATE: ${{ matrix.candidate }}
         run: |
           set -euo pipefail
-          npm view @neondatabase/neon-js@0.9.0-beta dependencies --json
-          if [ "$CANDIDATE" = new-sdk-clean ]; then
-            npm pkg set 'dependencies.@neondatabase/neon-js=0.9.0-beta'
-            # The actual ERESOLVE report requires React ^19.3.0 through
-            # optional Drizzle/React Native peers. Pin both packages exactly.
-            REACT_VERSION=19.3.1
-            npm view "react@$REACT_VERSION" version
-            npm view "react-dom@$REACT_VERSION" version
-            npm pkg set "dependencies.react=$REACT_VERSION" "dependencies.react-dom=$REACT_VERSION"
-            npm view @neondatabase/auth@0.7.0-beta dependencies peerDependencies --json
-          fi
+          # auth-ui 0.4.0-beta has an exact auth 0.6.0-beta peer.
+          # Do not force auth 0.7 into that contract (upstream issue #274).
+          npm view @neondatabase/neon-js@0.8.0-beta dependencies --json > /tmp/neon-sdk.json
+          npm view @neondatabase/auth@0.6.0-beta dependencies --json > /tmp/neon-auth.json
+          npm view @neondatabase/auth-ui@0.4.0-beta peerDependencies dependencies --json > /tmp/neon-ui.json
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const read = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
+          const sdk = read('/tmp/neon-sdk.json');
+          const auth = read('/tmp/neon-auth.json');
+          const ui = read('/tmp/neon-ui.json');
+          console.log(JSON.stringify({sdk,auth,ui},null,2));
+          if (sdk['@neondatabase/auth'] !== '0.6.0-beta' ||
+              ui.peerDependencies?.['@neondatabase/auth'] !== '0.6.0-beta' ||
+              auth['@neondatabase/auth-ui'] !== '0.4.0-beta') {
+            throw new Error('Published SDK/auth/UI versions do not form the expected compatible set');
+          }
+          const pkg = read('package.json');
+          Object.assign(pkg.dependencies,{
+            '@neondatabase/neon-js':'0.8.0-beta',
+            react:'19.3.1',
+            'react-dom':'19.3.1'
+          });
+          // Pin the shared peer dependencies to the exact versions declared by
+          // the SDK, avoiding npm selecting a newer incompatible peer.
+          for (const name of ['better-auth','better-call','@better-auth/core','@better-auth/utils','@better-fetch/fetch']) {
+            const version = auth[name] ?? ui.dependencies?.[name];
+            if (typeof version === 'string' && /^\d+\.\d+\.\d+$/.test(version)) {
+              pkg.dependencies[name] = version;
+            }
+          }
+          fs.writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\n');
+          JS
           rm package-lock.json
           npm install --package-lock-only --strict-peer-deps 2>&1 | tee /tmp/npm-resolution.log
           npm ci --strict-peer-deps 2>&1 | tee /tmp/npm-install.log
