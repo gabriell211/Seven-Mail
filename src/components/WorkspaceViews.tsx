@@ -288,7 +288,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
       color: COLORS[0],
       participants: [],
       calendarId:calendarList.find((item)=>item.visible!==false)?.id??calendarList[0]?.id??"local",
-      accountId:(calendarList.find((item)=>item.visible!==false)?.accountId)??accounts.find((account)=>account.isDefault)?.id??accounts[0]?.id,
+      accountId:calendarList.find((item)=>item.visible!==false)?.accountId??calendarList[0]?.accountId,
       requiredParticipants:[],
       optionalParticipants:[],
       resources:[],
@@ -437,8 +437,13 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
   async function removeCalendar(calendar:CalendarListItem) {
     if(calendar.id==="local") return;
     if(!window.confirm(`Excluir o calendário "${calendar.name}"? Os eventos permanecerão locais e serão movidos para Local.`)) return;
-    for(const event of store.items.filter((item)=>item.calendarId===calendar.id)){
-      await saveCalendarEvent({...event,calendarId:"local"});
+    const events=store.items.filter((item)=>item.calendarId===calendar.id);
+    if(events.some((event)=>event.davResource)){
+      window.alert("Este calendário contém recursos DAV. A remoção exige uma operação remota específica.");
+      return;
+    }
+    for(const event of events){
+      await saveCalendarEvent({...event,calendarId:"local",accountId:undefined});
     }
     await calendars.remove(calendar.id);
   }
@@ -454,6 +459,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
     const nextEnd=new Date(nextStart.getTime()+duration);
 
     if(source.recurrence&&source.recurrence!=="none"&&occurrence.occurrenceOriginalStart){
+      if(source.davResource){window.alert("Alterações parciais de séries DAV ainda não são suportadas com segurança.");return;}
       const {series,exception}=exceptionOccurrence(source,occurrence.occurrenceOriginalStart,{
         ...occurrence,
         id:undefined as never,
@@ -473,6 +479,10 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
   async function pasteCalendarEvent(targetDate?:Date) {
     if(!eventClipboard) return;
     const source=eventClipboard.event;
+    if(eventClipboard.mode==="cut"&&source.davResource){
+      window.alert("Recortar recursos DAV ainda não é suportado com segurança.");
+      return;
+    }
     const originalStart=new Date(source.startAt);
     const duration=Math.max(15*60_000,new Date(source.endAt).getTime()-originalStart.getTime());
     const nextStart=targetDate?new Date(targetDate):new Date(originalStart.getTime()+24*60*60_000);
@@ -481,6 +491,8 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
       ...source,
       id:crypto.randomUUID(),
       title:eventClipboard.mode==="copy"?`${source.title} (cópia)`:source.title,
+      davResource:undefined,
+      davUid:undefined,
       startAt:nextStart.toISOString(),
       endAt:new Date(nextStart.getTime()+duration).toISOString(),
       recurrenceParentId:undefined,
@@ -500,6 +512,8 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
       ...event,
       id:crypto.randomUUID(),
       title:`${event.title} (cópia)`,
+      davResource:undefined,
+      davUid:undefined,
       status:"confirmed",
       reminderNotifiedAt:undefined,
       recurrenceParentId:undefined,
@@ -522,6 +536,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
     if(!editing||!editingOccurrence) return;
     const source=store.items.find((item)=>item.id===editingOccurrence.sourceId);
     if(!source) return;
+    if(source.davResource){window.alert("Alterações parciais de séries DAV ainda não são suportadas com segurança.");return;}
     const {series,exception}=exceptionOccurrence(source,editingOccurrence.originalStart,{
       ...editing,
       id:undefined as never,
@@ -538,6 +553,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
     if(!editing||!editingOccurrence) return;
     const source=store.items.find((item)=>item.id===editingOccurrence.sourceId);
     if(!source) return;
+    if(source.davResource){window.alert("Alterações parciais de séries DAV ainda não são suportadas com segurança.");return;}
     const {previous,following}=splitRecurringSeries(source,editingOccurrence.originalStart,{
       ...editing,
       id:undefined as never,
@@ -550,24 +566,32 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
 
   function eventAccount(event:CalendarEvent):AccountProfile|undefined {
     const calendar=calendarList.find((item)=>item.id===(event.calendarId??"local"));
-    return accounts.find((item)=>item.id===(event.accountId??calendar?.accountId))
-      ?? accounts.find((item)=>item.isDefault)
-      ?? accounts[0];
+    const accountId=event.davResource?event.accountId:calendar?.accountId;
+    return accountId?accounts.find((item)=>item.id===accountId):undefined;
   }
 
   async function saveCalendarEvent(event:CalendarEvent) {
+    const previous=store.items.find((item)=>item.id===event.id);
+    const calendar=calendarList.find((item)=>item.id===(event.calendarId??"local"));
+    if(previous?.davResource && (event.calendarId??"local")!==(previous.calendarId??"local")){
+      throw new Error("Mover um recurso DAV entre calendários requer uma operação remota específica.");
+    }
+    if(previous?.davResource && (!event.davResource || previous.accountId!==event.accountId ||
+      previous.davResource.href!==event.davResource.href)){
+      throw new Error("A identidade remota do evento não pode ser alterada.");
+    }
     const account=eventAccount(event);
+    if(calendar?.accountId&&!account) throw new Error("Conta do calendário indisponível.");
     if(!account?.caldavUrl?.trim()){
       if(event.davResource) throw new Error("Conta DAV original indisponível.");
-      await store.save(event);
+      await store.save({...event,accountId:calendar?.accountId});
       return;
     }
-    const previous=store.items.find((item)=>item.id===event.id);
     try{
       if(event.davResource?.readOnly || previous?.davResource?.readOnly) throw new Error("Objeto DAV composto: edição ainda não suportada com segurança.");
       if(previous?.accountId && previous.accountId!==account.id) throw new Error("Não é permitido alterar a conta de um recurso DAV existente.");
       if(!previous && event.davResource) throw new Error("Não é permitido reutilizar a identidade DAV em um novo evento.");
-      const resource=await bridge.putDavCalendar(account.id,event.id,eventsToIcs([event]),event.davResource,!previous&&!event.davResource);
+      const resource=await bridge.putDavCalendar(account.id,event.id,eventsToIcs([event]),event.davResource,!event.davResource&&!previous?.davResource);
       await store.save({...event,accountId:account.id,davUid:event.davUid??(event.id+"@seven-mail.local"),davResource:resource});
     }catch(error){
       window.alert(error instanceof Error?error.message:String(error));
@@ -581,7 +605,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
     try{
       if(event?.davResource?.readOnly) throw new Error("Objeto DAV composto: exclusão individual não suportada com segurança.");
       if(event?.davResource && !account?.caldavUrl?.trim()) throw new Error("Conta DAV original indisponível.");
-      if(account?.caldavUrl?.trim()) await bridge.deleteDavCalendar(account.id,event?.davResource);
+      if(event?.davResource && account?.caldavUrl?.trim()) await bridge.deleteDavCalendar(account.id,event.davResource);
       await store.remove(id);
     }catch(error){
       window.alert(error instanceof Error?error.message:String(error));
@@ -618,7 +642,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
   }
 
   async function sendMeeting(event:CalendarEvent,method:"REQUEST"|"CANCEL") {
-    const account=eventAccount(event);
+    const account=eventAccount(event)??(!event.davResource?accounts.find((item)=>item.isDefault)??accounts[0]:undefined);
     if(!account) {
       window.alert("Associe o calendário a uma conta de e-mail antes de enviar convites.");
       return;
@@ -690,7 +714,7 @@ export function PersistentCalendarView({ accounts = [], settings }: { accounts?:
   }
 
   async function respondMeeting(event:CalendarEvent,response:NonNullable<CalendarEvent["attendeeResponse"]>) {
-    const account=eventAccount(event);
+    const account=eventAccount(event)??(!event.davResource?accounts.find((item)=>item.isDefault)??accounts[0]:undefined);
     if(!account||!event.organizer) return;
     const updated={
       ...event,
@@ -1041,7 +1065,7 @@ export function PersistentPeopleView({ query = "", accounts = [] }: { query?: st
     try{
       if(contact.davResource?.readOnly) throw new Error("Objeto DAV composto: exclusão individual não suportada com segurança.");
       if(contact.davResource && !account?.carddavUrl?.trim()) throw new Error("Conta DAV original indisponível.");
-      if(account?.carddavUrl?.trim()) await bridge.deleteDavContact(account.id,contact.davResource);
+      if(contact.davResource && account?.carddavUrl?.trim()) await bridge.deleteDavContact(account.id,contact.davResource);
       await store.remove(contact.id);
     }catch(error){
       window.alert(error instanceof Error?error.message:String(error));
