@@ -274,11 +274,21 @@ fn read_staged_mail_file(
     max_bytes: u64,
 ) -> Result<Vec<u8>, String> {
     let paths = AppPaths::resolve()?;
+    crate::storage::staging_directory(&paths.queue_attachments)?;
     let root = paths.queue_attachments.canonicalize().map_err(|error| error.to_string())?;
     let candidate = std::path::Path::new(path);
+    let parent = candidate.parent().ok_or_else(|| "Caminho de anexo inválido.".to_string())?;
+    crate::storage::staging_directory(parent)?;
     let metadata = fs::symlink_metadata(candidate).map_err(|error| error.to_string())?;
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err("Anexo não é um arquivo regular.".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("Anexo contém ponto de reanálise.".into());
+        }
     }
     let canonical = candidate.canonicalize().map_err(|error| error.to_string())?;
     let relative = canonical.strip_prefix(&root)

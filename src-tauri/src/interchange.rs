@@ -612,9 +612,6 @@ pub fn stage_message_attachments(
     if uuid::Uuid::parse_str(operation_id).is_err() {
         return Err("Identificador de operação de anexo inválido.".to_string());
     }
-    let directory = paths.queue_attachments.join(operation_id);
-    fs::create_dir_all(&directory).map_err(|error| format!("Não foi possível preparar anexos: {error}"))?;
-
     if parsed.attachment_count() > 256 {
         return Err("Quantidade de anexos acima do limite.".into());
     }
@@ -627,6 +624,7 @@ pub fn stage_message_attachments(
             return Err("Anexos excedem o limite de 64 MB por arquivo ou 100 MB no total.".into());
         }
     }
+    let directory = storage::prepare_attachment_directory(&paths.queue_attachments, operation_id)?;
     let mut output: Vec<crate::models::QueuedAttachment> = Vec::new();
     for index in 0..parsed.attachment_count() {
         let Some(part) = parsed.attachment(index as u32) else { continue; };
