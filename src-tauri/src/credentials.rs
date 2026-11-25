@@ -143,66 +143,7 @@ fn verify_pin_record(record: &str, pin: &str) -> Result<(bool, bool), String> {
         return Ok((matched, true));
     }
     if record.len() > 256 { return Err("Registro de PIN inválido.".into()); }
-    let mut fields = record.split('
-    match entry(APP_LOCK_ID)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(error) => Err(error.to_string()),
-    }
-}
-
-
-pub fn load_local_storage_key() -> Result<Option<String>, String> {
-    #[cfg(test)]
-    if std::env::var("SEVEN_MAIL_PROTOCOL_E2E").ok().as_deref() == Some("1") {
-        // Fixed 32-byte key used only by the isolated CI protocol test.
-        return Ok(Some("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=".to_string()));
-    }
-
-    match entry(LOCAL_STORAGE_KEY_ID)?.get_password() {
-        Ok(value) => Ok(Some(value)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(error) => Err(error.to_string()),
-    }
-}
-
-pub fn store_local_storage_key(value: &str) -> Result<(), String> {
-    #[cfg(test)]
-    if std::env::var("SEVEN_MAIL_PROTOCOL_E2E").ok().as_deref() == Some("1") {
-        return Ok(());
-    }
-
-    if value.trim().is_empty() {
-        return Err("Chave de armazenamento local inválida.".to_string());
-    }
-    entry(LOCAL_STORAGE_KEY_ID)?
-        .set_password(value)
-        .map_err(|error| error.to_string())
-}
-
-#[cfg(test)]
-mod native_backend_tests {
-    #[test]
-    #[ignore = "requires an unlocked native OS credential store"]
-    fn native_backend_roundtrip() {
-        // Never use the real application's service or credential names.
-        let id = uuid::Uuid::new_v4().to_string();
-        let service = "Seven Mail CI storage smoke";
-        let entry = keyring::Entry::new(service, &id).expect("native entry");
-        struct Cleanup(keyring::Entry);
-        impl Drop for Cleanup {
-            fn drop(&mut self) { let _ = self.0.delete_credential(); }
-        }
-        let cleanup = Cleanup(entry);
-        assert!(matches!(cleanup.0.get_password(), Err(keyring::Error::NoEntry)));
-        let secret = uuid::Uuid::new_v4().to_string();
-        cleanup.0.set_password(&secret).expect("native write");
-        let reopened = keyring::Entry::new(service, &id).expect("reopen native entry");
-        assert_eq!(reopened.get_password().expect("native read"), secret);
-        reopened.delete_credential().expect("native delete");
-        assert!(matches!(cleanup.0.get_password(), Err(keyring::Error::NoEntry)));
-    }
-}
-);
+    let mut fields = record.split('$');
     if fields.next() != Some(PIN_PREFIX) || fields.next() != Some("600000") {
         return Err("Formato de PIN não suportado.".into());
     }
@@ -279,30 +220,6 @@ pub fn store_local_storage_key(value: &str) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod native_backend_tests {
-    #[test]
-    #[ignore = "requires an unlocked native OS credential store"]
-    fn native_backend_roundtrip() {
-        // Never use the real application's service or credential names.
-        let id = uuid::Uuid::new_v4().to_string();
-        let service = "Seven Mail CI storage smoke";
-        let entry = keyring::Entry::new(service, &id).expect("native entry");
-        struct Cleanup(keyring::Entry);
-        impl Drop for Cleanup {
-            fn drop(&mut self) { let _ = self.0.delete_credential(); }
-        }
-        let cleanup = Cleanup(entry);
-        assert!(matches!(cleanup.0.get_password(), Err(keyring::Error::NoEntry)));
-        let secret = uuid::Uuid::new_v4().to_string();
-        cleanup.0.set_password(&secret).expect("native write");
-        let reopened = keyring::Entry::new(service, &id).expect("reopen native entry");
-        assert_eq!(reopened.get_password().expect("native read"), secret);
-        reopened.delete_credential().expect("native delete");
-        assert!(matches!(cleanup.0.get_password(), Err(keyring::Error::NoEntry)));
-    }
-}
-
-#[cfg(test)]
 mod namespace_tests {
     use super::*;
 
@@ -353,5 +270,29 @@ mod pin_tests {
         assert!(verify_pin_record(&record.replace("$600000$", "$999999999$"), "1234").is_err());
         assert!(verify_pin_record(&format!("{record}$extra"), "1234").is_err());
         assert!(verify_pin_record(&"x".repeat(257), "1234").is_err());
+    }
+}
+
+#[cfg(test)]
+mod native_backend_tests {
+    #[test]
+    #[ignore = "requires an unlocked native OS credential store"]
+    fn native_backend_roundtrip() {
+        // Never use the real application's service or credential names.
+        let id = uuid::Uuid::new_v4().to_string();
+        let service = "Seven Mail CI storage smoke";
+        let entry = keyring::Entry::new(service, &id).expect("native entry");
+        struct Cleanup(keyring::Entry);
+        impl Drop for Cleanup {
+            fn drop(&mut self) { let _ = self.0.delete_credential(); }
+        }
+        let cleanup = Cleanup(entry);
+        assert!(matches!(cleanup.0.get_password(), Err(keyring::Error::NoEntry)));
+        let secret = uuid::Uuid::new_v4().to_string();
+        cleanup.0.set_password(&secret).expect("native write");
+        let reopened = keyring::Entry::new(service, &id).expect("reopen native entry");
+        assert_eq!(reopened.get_password().expect("native read"), secret);
+        reopened.delete_credential().expect("native delete");
+        assert!(matches!(cleanup.0.get_password(), Err(keyring::Error::NoEntry)));
     }
 }
