@@ -487,7 +487,15 @@ pub fn preview_message_attachment(
 }
 
 fn cleanup_expired_attachment_exports(root: &Path) -> Result<(), String> {
-    let metadata = fs::symlink_metadata(root).map_err(|error| error.to_string())?;
+    cleanup_attachment_exports_at(root, std::time::SystemTime::now())
+}
+
+fn cleanup_attachment_exports_at(root: &Path, now: std::time::SystemTime) -> Result<(), String> {
+    let metadata = match fs::symlink_metadata(root) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return Err("Pasta de anexos temporários inválida.".into());
     }
@@ -496,9 +504,14 @@ fn cleanup_expired_attachment_exports(root: &Path) -> Result<(), String> {
         if uuid::Uuid::parse_str(&entry.file_name().to_string_lossy()).is_err() {
             continue;
         }
-        let metadata = fs::symlink_metadata(entry.path()).map_err(|error| error.to_string())?;
+        let metadata = match fs::symlink_metadata(entry.path()) {
+            Ok(metadata) => metadata,
+            // Another cleanup may already have removed this directory.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.to_string()),
+        };
         if metadata.is_dir() && !metadata.file_type().is_symlink() &&
-            metadata.modified().ok().and_then(|time| time.elapsed().ok())
+            metadata.modified().ok().and_then(|time| now.duration_since(time).ok())
                 .map(|age| age >= std::time::Duration::from_secs(3600)).unwrap_or(false)
         {
             // A file may still be in use by an external application on Windows.
@@ -510,8 +523,7 @@ fn cleanup_expired_attachment_exports(root: &Path) -> Result<(), String> {
 
 pub fn cleanup_attachment_exports(paths: &AppPaths) -> Result<(), String> {
     let root = paths.root.join("attachment-exports");
-    if root.exists() { cleanup_expired_attachment_exports(&root)?; }
-    Ok(())
+    cleanup_expired_attachment_exports(&root)
 }
 
 pub fn cache_message_attachment(
@@ -921,6 +933,29 @@ mod attachment_export_safety_tests {
         let long = safe_attachment_name(&format!("{}.pdf", "á".repeat(200)), 0);
         assert!(long.len() <= 160);
         assert!(long.ends_with(".pdf"));
+    }
+
+    #[test]
+    fn cleanup_only_removes_expired_uuid_directories() {
+        use std::time::{Duration, SystemTime};
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&root).unwrap();
+        let expired = root.join(uuid::Uuid::new_v4().to_string());
+        let unrelated = root.join("keep");
+        let file = root.join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&expired).unwrap();
+        fs::create_dir(&unrelated).unwrap();
+        fs::write(&file, b"keep").unwrap();
+        fs::write(expired.join("attachment.txt"), b"temporary").unwrap();
+        let modified = fs::metadata(&expired).unwrap().modified().unwrap();
+        cleanup_attachment_exports_at(&root, SystemTime::now()).unwrap();
+        assert!(expired.is_dir());
+        cleanup_attachment_exports_at(&root, modified + Duration::from_secs(3600)).unwrap();
+        assert!(!expired.exists());
+        assert!(unrelated.is_dir());
+        assert!(file.is_file());
+        fs::remove_dir_all(&root).unwrap();
+        assert!(cleanup_attachment_exports_at(&root, SystemTime::now()).is_ok());
     }
 
     #[test]

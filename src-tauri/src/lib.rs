@@ -1150,6 +1150,13 @@ pub fn run() {
             }
 
             tray.build(app)?;
+            // The worker uses the already resolved paths, never triggering cache migration.
+            std::thread::Builder::new()
+                .name("attachment-export-cleanup".into())
+                .spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(15 * 60));
+                    let _ = interchange::cleanup_attachment_exports(&paths);
+                })?;
             Ok(())
         })
         .on_window_event(|window, event| {
