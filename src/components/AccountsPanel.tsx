@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Icon } from "../icons";
 import { bridge } from "../lib/bridge";
 import { oauthPreset, startOAuthAuthorization } from "../lib/oauth-client";
-import { deleteCloudAccount, pushCloudAccount, pushCloudAccounts } from "../lib/neon";
+import { deleteCloudAccount, pushCloudAccount } from "../lib/neon";
 import type { AccountProfile } from "../types";
 
 export function AccountsPanel({
@@ -83,7 +83,8 @@ export function AccountsPanel({
     try {
       const next = await bridge.setDefaultAccount(accountId);
       onChange(next);
-      void pushCloudAccounts(next).catch(() => undefined);
+      const changed = next.filter(item => accounts.find(previous => previous.id === item.id)?.isDefault !== item.isDefault);
+      await Promise.allSettled(changed.map(item => pushCloudAccount(item)));
     } finally {
       setBusyId(undefined);
     }
@@ -93,9 +94,13 @@ export function AccountsPanel({
     if (!window.confirm(`Remover ${account.email} deste dispositivo? O cache local e a fila desta conta também serão removidos.`)) return;
     setBusyId(account.id);
     try {
+      // A failed conditional cloud deletion must not silently remove the
+      // local account and then import it again on the next cloud pull.
+      await deleteCloudAccount(account.id);
       const next = await bridge.deleteAccount(account.id);
       onChange(next);
-      void deleteCloudAccount(account.id).catch(() => undefined);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
     } finally {
       setBusyId(undefined);
     }

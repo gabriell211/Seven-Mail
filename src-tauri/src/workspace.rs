@@ -61,16 +61,60 @@ pub fn list(paths: &AppPaths, kind: &str) -> Result<Vec<WorkspaceDocument>, Stri
         .collect())
 }
 
+static WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn document_version(document: &WorkspaceDocument) -> Result<chrono::DateTime<chrono::FixedOffset>, String> {
+    let parse = |value: &str| chrono::DateTime::parse_from_rfc3339(value)
+        .map_err(|_| "Versão de documento inválida.".to_string());
+    let updated = parse(&document.updated_at)?;
+    match document.deleted_at.as_deref() {
+        Some(deleted) => Ok(updated.max(parse(deleted)?)),
+        None => Ok(updated),
+    }
+}
+
+fn check_replacement(previous: &WorkspaceDocument, next: &WorkspaceDocument) -> Result<bool, String> {
+    if previous.id != next.id || previous.kind != next.kind {
+        return Err("Identidade de documento divergente.".into());
+    }
+    let old_version = document_version(previous)?;
+    let new_version = document_version(next)?;
+    match (previous.deleted_at.is_some(), next.deleted_at.is_some()) {
+        (true, false) => return Err("Documento excluído não pode ser restaurado implicitamente.".into()),
+        (false, true) => return Ok(true),
+        _ => {}
+    }
+    if new_version < old_version {
+        return Err("Versão local mais recente preservada.".into());
+    }
+    if new_version == old_version {
+        if previous.deleted_at.is_some() || previous.payload == next.payload {
+            return Ok(false);
+        }
+        return Err("Conflito entre documentos com a mesma versão.".into());
+    }
+    Ok(true)
+}
+
 pub fn upsert(paths: &AppPaths, document: WorkspaceDocument) -> Result<WorkspaceDocument, String> {
+    let _guard = WRITE_LOCK.lock().map_err(|_| "Armazenamento de documentos indisponível.".to_string())?;
+    document_version(&document)?;
     safe_component(&document.id)?;
     safe_component(&document.kind)?;
     let dir = kind_dir(paths, &document.kind)?;
     let path = dir.join(format!("{}.json", document.id));
+    if path.try_exists().map_err(io_error)? {
+        let previous = read_document(&path)?;
+        if !check_replacement(&previous, &document)? {
+            return Ok(previous);
+        }
+    }
     write_document(&path, &document)?;
     Ok(document)
 }
 
 pub fn delete(paths: &AppPaths, kind: &str, id: &str) -> Result<WorkspaceDocument, String> {
+    let _guard = WRITE_LOCK.lock().map_err(|_| "Armazenamento de documentos indisponível.".to_string())?;
     safe_component(kind)?;
     safe_component(id)?;
     let path = kind_dir(paths, kind)?.join(format!("{id}.json"));
@@ -86,6 +130,9 @@ pub fn delete(paths: &AppPaths, kind: &str, id: &str) -> Result<WorkspaceDocumen
             deleted_at: None,
         }
     };
+    if document.deleted_at.is_some() {
+        return Ok(document);
+    }
     document.updated_at = deleted_at.clone();
     document.deleted_at = Some(deleted_at);
     write_document(&path, &document)?;
@@ -164,4 +211,36 @@ pub fn import_all(paths: &AppPaths, documents: Vec<WorkspaceDocument>) -> Result
         imported += 1;
     }
     Ok(imported)
+}
+
+#[cfg(test)]
+mod reconciliation_tests {
+    use super::*;
+
+    fn document(version: &str, deleted: bool, payload: i32) -> WorkspaceDocument {
+        WorkspaceDocument {
+            id: "doc".into(), kind: "note".into(), updated_at: version.into(),
+            payload: serde_json::json!({"value": payload}),
+            deleted_at: if deleted { Some(version.into()) } else { None },
+        }
+    }
+
+    #[test]
+    fn stale_or_conflicting_writes_cannot_replace_local_data() {
+        let old = document("2026-11-24T10:00:00Z", false, 1);
+        let new = document("2026-11-24T10:01:00Z", false, 2);
+        assert!(check_replacement(&new, &old).is_err());
+        assert!(check_replacement(&old, &new).unwrap());
+        assert!(!check_replacement(&new, &new).unwrap());
+        let conflict = document("2026-11-24T10:01:00Z", false, 3);
+        assert!(check_replacement(&new, &conflict).is_err());
+    }
+
+    #[test]
+    fn tombstone_wins_over_newer_live_copy() {
+        let deleted = document("2026-11-24T10:00:00Z", true, 1);
+        let live = document("2026-11-24T10:01:00Z", false, 2);
+        assert!(check_replacement(&deleted, &live).is_err());
+        assert!(check_replacement(&live, &deleted).unwrap());
+    }
 }

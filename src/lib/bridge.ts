@@ -8,7 +8,14 @@ async function command<T>(name: string, args?: Record<string, unknown>): Promise
   return invoke<T>(name, args);
 }
 
+export interface CloudBinding {
+  ownerId: string;
+  enabled: boolean;
+}
+
 export const bridge = {
+  getCloudBinding: (): Promise<CloudBinding | null> => command("get_cloud_binding"),
+  setCloudBinding: (ownerId: string, enabled: boolean): Promise<CloudBinding> => command("set_cloud_binding", { ownerId, enabled }),
   initialOpenRequests: (): Promise<string[]> => command("initial_open_requests"),
   runtimeInfo: async (): Promise<RuntimeInfo> => hasTauri()
     ? command<RuntimeInfo>("runtime_info")
