@@ -92,11 +92,20 @@ fn io_error(error: io::Error) -> String {
 }
 
 fn safe_component(value: &str) -> Result<&str, String> {
+    let device = value.split('.').next().unwrap_or("").trim_end().to_ascii_uppercase();
+    let reserved = matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
+        || ["COM", "LPT"].iter().any(|prefix| {
+            device.strip_prefix(*prefix).is_some_and(|suffix| {
+                matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³")
+            })
+        });
     if value.is_empty()
         || value.len() > 180
-        || value.contains('/')
-        || value.contains(char::from(92))
+        || value.trim() != value
+        || value.ends_with('.')
         || value.contains("..")
+        || value.chars().any(|ch| ch.is_control() || matches!(ch, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        || reserved
     {
         return Err("Identificador inválido para armazenamento local.".to_string());
     }
@@ -402,6 +411,51 @@ pub fn list_cached_messages(paths: &AppPaths, account_id: Option<&str>) -> Resul
     Ok(messages)
 }
 
+/// Detach unverified or stale remote identities before accepting a new
+/// mailbox generation. Keep the original metadata and raw source locally.
+pub fn prepare_imap_generation(
+    paths: &AppPaths,
+    account_id: &str,
+    remote_folder: &str,
+    validity: u32,
+) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    safe_component(account_id)?;
+    if validity == 0 {
+        return Err("UIDVALIDITY inválido.".to_string());
+    }
+    let folder = if remote_folder.eq_ignore_ascii_case("INBOX") { "INBOX" } else { remote_folder };
+    let key = format!("{:x}", Sha256::digest(folder.as_bytes()));
+    let state = paths.root.join("state").join("imap").join(account_id);
+    let recovery = state.join("recovery").join(&key);
+    for mut message in list_cached_messages(paths, Some(account_id))? {
+        let same_folder = message.remote_folder.as_deref().map(|value| {
+            value == folder || (folder == "INBOX" && value.eq_ignore_ascii_case("INBOX"))
+        }).unwrap_or(false);
+        if !same_folder { continue; }
+        let Some(uid) = message.remote_id.as_deref().and_then(|value| value.parse::<u32>().ok()) else {
+            continue;
+        };
+        if message.id == crate::imap_sync::remote_message_id(account_id, folder, validity, uid) {
+            continue;
+        }
+        safe_component(&message.id)?;
+        let backup = recovery.join(format!("{}.json", message.id));
+        if !backup.exists() {
+            write_json(&backup, &message)?;
+        }
+        // Never let a stale local message retain a live remote UID.
+        // Keep the original ID so the existing encrypted raw source remains available.
+        message.remote_id = None;
+        message.remote_folder = None;
+        message.folder = "Recuperados IMAP".to_string();
+        cache_message(paths, &message)?;
+    }
+    write_json(&state.join(format!("{key}.json")), &serde_json::json!({
+        "mailbox": folder, "uidValidity": validity,
+    }))
+}
+
 pub fn cached_remote_uids(
     paths: &AppPaths,
     account_id: &str,
@@ -421,21 +475,32 @@ pub fn update_cached_remote_flags(
     paths: &AppPaths,
     account_id: &str,
     remote_folder: &str,
+    uid_validity: u32,
     uid: u32,
     is_read: bool,
     is_flagged: bool,
 ) -> Result<bool, String> {
-    let remote_id = uid.to_string();
-    let Some(mut message) = list_cached_messages(paths, Some(account_id))?
-        .into_iter()
-        .find(|message| {
-            message.remote_folder.as_deref() == Some(remote_folder)
-                && message.remote_id.as_deref() == Some(remote_id.as_str())
-        })
-    else {
-        return Ok(false);
-    };
-
+    safe_component(account_id)?;
+    if uid_validity == 0 || uid == 0 {
+        return Err("Identidade IMAP inválida.".into());
+    }
+    let id = crate::imap_sync::remote_message_id(account_id, remote_folder, uid_validity, uid);
+    safe_component(&id)?;
+    let path = paths.message_cache.join(account_id).join(format!("{id}.json"));
+    // Resolve the exact generation-scoped record instead of decrypting and
+    // sorting the entire account cache for each returned UID.
+    match fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => {}
+        Ok(_) => return Err("Arquivo de mensagem IMAP inválido.".into()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(io_error(error)),
+    }
+    let mut message: MailMessage = read_json(&path)?;
+    if message.id != id || message.account_id != account_id ||
+        message.remote_folder.as_deref() != Some(remote_folder) ||
+        message.remote_id.as_deref() != Some(uid.to_string().as_str()) {
+        return Err("Identidade da mensagem IMAP diverge do arquivo.".into());
+    }
     if message.is_read == is_read && message.is_flagged == is_flagged {
         return Ok(true);
     }
@@ -484,11 +549,20 @@ pub fn reconcile_remote_uids(
     Ok(removed)
 }
 
+// Serialize the state transitions of the single-instance queue. Never hold
+// this mutex across a network call, SMTP submission, or IMAP operation.
+static QUEUE_TRANSITIONS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+fn queue_guard() -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    QUEUE_TRANSITIONS.lock().map_err(|_| "Fila local indisponível após falha interna.".to_string())
+}
+
 pub fn queue_operation(paths: &AppPaths, operation: &QueueOperation) -> Result<(), String> {
+    let _guard = queue_guard()?;
     safe_component(&operation.id)?;
     safe_component(&operation.account_id)?;
     let path = paths.pending.join(format!("{}.json", operation.id));
-    if path.exists() {
+    let name = format!("{}.json", operation.id);
+    if path.exists() || [&paths.processing, &paths.completed, &paths.failed].iter().any(|dir| dir.join(&name).exists()) {
         return Err("Operação já existe na fila.".to_string());
     }
     write_json(&path, operation)
@@ -515,7 +589,11 @@ fn list_operations(dir: &Path) -> Result<Vec<QueueOperation>, String> {
 }
 
 pub fn list_queue(paths: &AppPaths) -> Result<Vec<QueueOperation>, String> {
-    list_operations(&paths.pending)
+    let mut operations = list_operations(&paths.pending)?;
+    // Failed items remain inspectable. They are never selected by the worker.
+    operations.extend(list_operations(&paths.failed)?);
+    operations.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    Ok(operations)
 }
 
 pub fn claim_next_send_due(paths: &AppPaths) -> Result<Option<QueueOperation>, String> {
@@ -551,6 +629,33 @@ fn dangerous_attachment(path: &Path) -> bool {
     )
 }
 
+// Read at most one byte beyond the authorized limit, even if a source grows
+// after its metadata was inspected.
+fn read_attachment_bounded(mut reader: impl io::Read, limit: u64) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    (&mut reader).take(limit + 1).read_to_end(&mut bytes).map_err(io_error)?;
+    if bytes.len() as u64 > limit {
+        return Err("Anexo excede o limite autorizado de armazenamento.".into());
+    }
+    Ok(bytes)
+}
+
+fn staging_directory(path: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(io_error)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("Diretório de anexos inválido.".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("Diretório de anexos contém ponto de reanálise.".into());
+        }
+    }
+    Ok(())
+}
+
 pub fn stage_attachments(
     paths: &AppPaths,
     operation_id: &str,
@@ -559,56 +664,52 @@ pub fn stage_attachments(
     max_total_mb: u64,
 ) -> Result<Vec<QueuedAttachment>, String> {
     safe_component(operation_id)?;
+    if sources.len() > 256 { return Err("Quantidade de anexos acima do limite.".into()); }
+    staging_directory(&paths.queue_attachments)?;
     let destination = paths.queue_attachments.join(operation_id);
     fs::create_dir_all(&destination).map_err(io_error)?;
-
-    let mut output = Vec::new();
+    staging_directory(&destination)?;
+    let max_file = max_file_mb.clamp(1, 250) * 1024 * 1024;
+    let max_total = max_total_mb.clamp(max_file_mb.clamp(1, 250), 500) * 1024 * 1024;
+    let mut output: Vec<QueuedAttachment> = Vec::new();
     let mut total = 0u64;
-    let offset = fs::read_dir(&destination)
-        .map_err(io_error)?
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().is_file())
-        .count();
 
-    for (index, source) in sources.iter().enumerate() {
-        let source_path = Path::new(source);
-        if !source_path.is_file() {
-            return Err(format!("Anexo não encontrado: {}", source_path.display()));
+    let result = (|| -> Result<(), String> {
+        for source in sources {
+            let source_path = Path::new(source);
+            if dangerous_attachment(source_path) {
+                return Err("Extensão de anexo bloqueada por segurança.".into());
+            }
+            let metadata = fs::symlink_metadata(source_path).map_err(io_error)?;
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err("Anexo deve ser um arquivo regular.".into());
+            }
+            let file = fs::File::open(source_path).map_err(io_error)?;
+            let remaining = max_total.saturating_sub(total).min(max_file);
+            if file.metadata().map_err(io_error)?.len() > remaining {
+                return Err("Anexo excede o limite individual ou total.".into());
+            }
+            let source_bytes = read_attachment_bounded(file, remaining)?;
+            let size = source_bytes.len() as u64;
+            total += size;
+            let original_name = source_path.file_name().and_then(|value| value.to_str()).unwrap_or("arquivo");
+            let name = safe_attachment_name(original_name);
+            // Names do not depend on the number of existing entries, which
+            // may change during concurrent staging or attachment removal.
+            let staged_path = destination.join(format!("{}-{name}", uuid::Uuid::new_v4()));
+            local_crypto::write(&staged_path, &source_bytes)?;
+            output.push(QueuedAttachment {
+                name, path: staged_path.display().to_string(), size,
+                inline: false, content_id: None,
+            });
         }
-        if dangerous_attachment(source_path) {
-            return Err(format!("Extensão de anexo bloqueada por segurança: {}", source_path.display()));
-        }
-
-        let metadata = fs::metadata(source_path).map_err(io_error)?;
-        let max_file = max_file_mb.clamp(1, 250) * 1024 * 1024;
-        let max_total = max_total_mb.clamp(max_file_mb.clamp(1, 250), 500) * 1024 * 1024;
-        if metadata.len() > max_file {
-            return Err(format!("Cada anexo deve ter no máximo {max_file_mb} MB."));
-        }
-        total = total.saturating_add(metadata.len());
-        if total > max_total {
-            return Err(format!("O total de anexos desta mensagem não pode exceder {max_total_mb} MB."));
-        }
-
-        let original_name = source_path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("arquivo");
-        let name = safe_attachment_name(original_name);
-        let staged_name = format!("{:03}-{name}", offset + index);
-        let staged_path = destination.join(staged_name);
-        let source_bytes = fs::read(source_path).map_err(io_error)?;
-        local_crypto::write(&staged_path, &source_bytes)?;
-
-        output.push(QueuedAttachment {
-            name,
-            path: staged_path.display().to_string(),
-            size: metadata.len(),
-            inline: false,
-            content_id: None,
-        });
+        Ok(())
+    })();
+    if let Err(error) = result {
+        // Remove only files created by this invocation; preserve earlier drafts.
+        for attachment in &output { let _ = fs::remove_file(&attachment.path); }
+        return Err(error);
     }
-
     Ok(output)
 }
 
@@ -635,7 +736,9 @@ pub fn stage_message_as_eml(
     if !base.to_ascii_lowercase().ends_with(".eml") {
         base.push_str(".eml");
     }
-    let staged_path = destination.join(format!("000-{base}"));
+    staging_directory(&paths.queue_attachments)?;
+    staging_directory(&destination)?;
+    let staged_path = destination.join(format!("{}-{base}", uuid::Uuid::new_v4()));
     local_crypto::write(&staged_path, &raw)?;
 
     Ok(QueuedAttachment {
@@ -648,20 +751,25 @@ pub fn stage_message_as_eml(
 }
 
 pub fn cancel_operation(paths: &AppPaths, operation_id: &str) -> Result<bool, String> {
+    let _guard = queue_guard()?;
     safe_component(operation_id)?;
     let pending = paths.pending.join(format!("{operation_id}.json"));
-    let existed = pending.exists();
-
-    if existed {
-        fs::remove_file(&pending).map_err(io_error)?;
+    // Removing the pending entry is the cancellation decision. If the
+    // sender has already claimed it, leave its attachments untouched.
+    match fs::remove_file(&pending) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(io_error(error)),
     }
 
     let attachments = paths.queue_attachments.join(operation_id);
-    if attachments.exists() {
-        fs::remove_dir_all(attachments).map_err(io_error)?;
+    match fs::remove_dir_all(attachments) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(io_error(error)),
     }
 
-    Ok(existed)
+    Ok(true)
 }
 
 pub fn claim_next_mail_action(paths: &AppPaths, account_id: &str) -> Result<Option<QueueOperation>, String> {
@@ -676,6 +784,7 @@ fn claim_next_matching(
     paths: &AppPaths,
     predicate: impl Fn(&QueueOperation) -> bool,
 ) -> Result<Option<QueueOperation>, String> {
+    let _guard = queue_guard()?;
     let now = chrono::Utc::now();
     let Some(operation) = list_operations(&paths.pending)?
         .into_iter()
@@ -696,17 +805,28 @@ fn claim_next_matching(
     safe_component(&operation.id)?;
     let source = paths.pending.join(format!("{}.json", operation.id));
     let destination = paths.processing.join(format!("{}.json", operation.id));
-    fs::rename(source, destination).map_err(io_error)?;
-    Ok(Some(operation))
+    if destination.exists() {
+        return Err("Operação duplicada em processamento; recuperação necessária.".into());
+    }
+    // A cancellation or another process may have won the atomic claim.
+    match fs::rename(source, destination) {
+        Ok(()) => Ok(Some(operation)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(io_error(error)),
+    }
 }
 
 pub fn complete(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
+    let _guard = queue_guard()?;
     safe_component(operation_id)?;
     let source = paths.processing.join(format!("{}.json", operation_id));
     if !source.exists() {
         return Ok(());
     }
     let destination = paths.completed.join(format!("{}.json", operation_id));
+    if destination.exists() {
+        return Err("Operação concluída já existe; recuperação necessária.".into());
+    }
     fs::rename(source, destination).map_err(io_error)?;
     let attachments = paths.queue_attachments.join(operation_id);
     if attachments.exists() {
@@ -715,18 +835,81 @@ pub fn complete(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn fail(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
+fn fail_locked(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     safe_component(operation_id)?;
     let source = paths.processing.join(format!("{}.json", operation_id));
     if !source.exists() {
         return Ok(());
     }
     let destination = paths.failed.join(format!("{}.json", operation_id));
+    if destination.exists() {
+        return Err("Operação já existe na fila de falhas.".to_string());
+    }
     fs::rename(source, destination).map_err(io_error)
 }
 
 
+const MAX_QUEUE_ATTEMPTS: u32 = 8;
+
+fn set_delivery_state(operation: &mut QueueOperation, state: &str) -> Result<(), String> {
+    let payload = operation.payload.as_object_mut()
+        .ok_or_else(|| "Operação de fila possui payload inválido.".to_string())?;
+    payload.insert("_deliveryState".into(), serde_json::Value::String(state.into()));
+    Ok(())
+}
+
+pub fn mark_smtp_submission(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
+    let _guard = queue_guard()?;
+    safe_component(operation_id)?;
+    let source = paths.processing.join(format!("{operation_id}.json"));
+    let mut operation = read_json::<QueueOperation>(&source)?;
+    set_delivery_state(&mut operation, "submitting")?;
+    write_json(&source, &operation)
+}
+
+pub fn quarantine_operation(paths: &AppPaths, operation_id: &str, state: &str) -> Result<(), String> {
+    let _guard = queue_guard()?;
+    safe_component(operation_id)?;
+    let source = paths.processing.join(format!("{operation_id}.json"));
+    let destination = paths.failed.join(format!("{operation_id}.json"));
+    if destination.exists() {
+        return Err("Operação já existe na fila de falhas; recuperação manual necessária.".to_string());
+    }
+    let mut operation = read_json::<QueueOperation>(&source)?;
+    set_delivery_state(&mut operation, state)?;
+    write_json(&source, &operation)?;
+    fs::rename(source, destination).map_err(io_error)
+}
+
+/// Run once during single-instance startup, before accepting queue commands.
+/// Legacy processing records cannot prove whether the provider accepted them.
+pub fn recover_interrupted_operations(paths: &AppPaths) -> Result<(), String> {
+    for entry in fs::read_dir(&paths.processing).map_err(io_error)? {
+        let path = entry.map_err(io_error)?.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let operation = read_json::<QueueOperation>(&path)?;
+        safe_component(&operation.id)?;
+        let name = format!("{}.json", operation.id);
+        if path.file_name().and_then(|value| value.to_str()) != Some(name.as_str()) {
+            return Err("Identificador da operação interrompida não corresponde ao arquivo.".to_string());
+        }
+        let pending = paths.pending.join(&name);
+        if pending.exists() {
+            // Preserve duplicate records left by an older interrupted retry,
+            // but remove them from the active queue before recovery.
+            let conflicts = paths.queue.join("recovery-conflicts");
+            fs::create_dir_all(&conflicts).map_err(io_error)?;
+            fs::rename(&pending, conflicts.join(format!("{}-{}", uuid::Uuid::new_v4(), name))).map_err(io_error)?;
+        }
+        quarantine_operation(paths, &operation.id, "delivery_unknown")?;
+    }
+    Ok(())
+}
+
 pub fn retry_later(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
+    let _guard = queue_guard()?;
     safe_component(operation_id)?;
     let source = paths.processing.join(format!("{}.json", operation_id));
     if !source.exists() {
@@ -735,6 +918,12 @@ pub fn retry_later(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
 
     let mut operation = read_json::<QueueOperation>(&source)?;
     operation.attempts = operation.attempts.saturating_add(1);
+    if operation.attempts >= MAX_QUEUE_ATTEMPTS {
+        set_delivery_state(&mut operation, "retry_exhausted")?;
+        write_json(&source, &operation)?;
+        return fail_locked(paths, operation_id);
+    }
+    set_delivery_state(&mut operation, "retry_pending")?;
     let exponent = operation.attempts.min(8);
     let delay_seconds = (5u64.saturating_mul(1u64 << exponent)).min(15 * 60);
     let next = chrono::Utc::now() + chrono::Duration::seconds(delay_seconds as i64);
@@ -746,8 +935,13 @@ pub fn retry_later(paths: &AppPaths, operation_id: &str) -> Result<(), String> {
     }
 
     let destination = paths.pending.join(format!("{}.json", operation_id));
-    write_json(&destination, &operation)?;
-    fs::remove_file(source).map_err(io_error)
+    if destination.exists() {
+        return Err("Operação pendente duplicada; recuperação necessária.".into());
+    }
+    // Update the claimed record first, then move it back into pending.
+    // There must never be two live copies of the same operation.
+    write_json(&source, &operation)?;
+    fs::rename(source, destination).map_err(io_error)
 }
 
 
@@ -787,12 +981,12 @@ pub fn apply_message_action(
 
     write_json(&path, &message)?;
 
-    if matches!(action, "pin" | "unpin") || message.remote_folder.as_deref() == Some("POP3") {
+    if matches!(action, "pin" | "unpin") || message.remote_id.is_none() || message.remote_folder.as_deref() == Some("POP3") {
         return Ok(message);
     }
 
     let mailbox = message.remote_folder.clone().unwrap_or_else(|| "INBOX".to_string());
-    let (kind, payload) = match action {
+    let (kind, mut payload) = match action {
         "read" => ("read", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "read": true})),
         "unread" => ("read", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "read": false})),
         "flag" => ("flag", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "flagged": true})),
@@ -804,6 +998,7 @@ pub fn apply_message_action(
         _ => unreachable!(),
     };
 
+    payload["messageId"] = serde_json::Value::String(message.id.clone());
     queue_operation(
         paths,
         &QueueOperation {
@@ -907,8 +1102,13 @@ pub fn move_message_to_folder(
     let mut message = read_json::<MailMessage>(&path)?;
     let source_mailbox = message.remote_folder.clone().unwrap_or_else(|| "INBOX".to_string());
 
+    if message.remote_id.is_none() || message.remote_folder.as_deref() == Some("POP3") {
+        return Err("A mensagem não possui uma identidade IMAP remota confirmada.".to_string());
+    }
+
+    // The source folder remains authoritative until the server applies the move.
+    // Updating the remote folder optimistically would bind its UID to a different mailbox.
     message.folder = target_label.trim().to_string();
-    message.remote_folder = Some(target_path.trim().to_string());
     write_json(&path, &message)?;
 
     queue_operation(
@@ -922,6 +1122,7 @@ pub fn move_message_to_folder(
             payload: serde_json::json!({
                 "remoteId": message.remote_id,
                 "mailbox": source_mailbox,
+                "messageId": message.id.clone(),
                 "targetMailbox": target_path.trim(),
             }),
         },
@@ -931,7 +1132,18 @@ pub fn move_message_to_folder(
 }
 
 fn overwrite_and_remove(path: &Path) -> Result<(), String> {
-    if path.is_dir() {
+    let metadata = fs::symlink_metadata(path).map_err(io_error)?;
+    if metadata.file_type().is_symlink() {
+        return Err("Limpeza interrompida: link simbólico inesperado.".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("Limpeza interrompida: ponto de reanálise inesperado.".into());
+        }
+    }
+    if metadata.is_dir() {
         for entry in fs::read_dir(path).map_err(io_error)? {
             overwrite_and_remove(&entry.map_err(io_error)?.path())?;
         }
@@ -939,8 +1151,15 @@ fn overwrite_and_remove(path: &Path) -> Result<(), String> {
         return Ok(());
     }
 
-    if path.is_file() {
-        let len = fs::metadata(path).map_err(io_error)?.len();
+    if metadata.is_file() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if metadata.nlink() != 1 {
+                return Err("Limpeza interrompida: arquivo com links físicos adicionais.".into());
+            }
+        }
+        let len = metadata.len();
         let mut file = fs::OpenOptions::new().write(true).open(path).map_err(io_error)?;
         let zeros = vec![0u8; 64 * 1024];
         let mut remaining = len;
@@ -987,6 +1206,8 @@ pub fn prune_message_cache(paths: &AppPaths, retention_days: u32) -> Result<usiz
             continue;
         }
 
+        safe_component(&message.account_id)?;
+        safe_component(&message.id)?;
         let message_path = paths
             .message_cache
             .join(&message.account_id)
@@ -1024,11 +1245,110 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
+    #[ignore = "requires isolated protocol CI key"]
+    fn interrupted_smtp_queue_preserves_data_without_automatic_replay() {
+        assert_eq!(std::env::var("SEVEN_MAIL_PROTOCOL_E2E").as_deref(), Ok("1"));
+        let root = std::env::temp_dir().join(format!("seven-mail-queue-{}", uuid::Uuid::new_v4()));
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+        }
+        let _cleanup = Cleanup(root.clone());
+        let paths = AppPaths {
+            config: root.join("config"), cache: root.join("cache"),
+            message_cache: root.join("cache/messages"), search_index: root.join("cache/search-index"),
+            attachment_cache: root.join("cache/attachments"), queue: root.join("queue"),
+            queue_attachments: root.join("queue/attachments"), pending: root.join("queue/pending"),
+            processing: root.join("queue/processing"), completed: root.join("queue/completed"),
+            failed: root.join("queue/failed"), root,
+        };
+        paths.ensure().unwrap();
+        let operation = QueueOperation {
+            id: uuid::Uuid::new_v4().to_string(), kind: "send".into(),
+            account_id: "ci-account".into(), created_at: chrono::Utc::now().to_rfc3339(),
+            attempts: 0, payload: serde_json::json!({"subject":"original"}),
+        };
+        let name = format!("{}.json", operation.id);
+        let attachment_dir = paths.queue_attachments.join(&operation.id);
+        fs::create_dir(&attachment_dir).unwrap();
+        local_crypto::write(&attachment_dir.join("attachment"), b"preserved").unwrap();
+        queue_operation(&paths, &operation).unwrap();
+        assert!(queue_operation(&paths, &operation).is_err());
+        assert_eq!(claim_next_send_due(&paths).unwrap().unwrap().id, operation.id);
+        assert!(!cancel_operation(&paths, &operation.id).unwrap());
+        mark_smtp_submission(&paths, &operation.id).unwrap();
+        // A legacy retry may have left a second pending record before crash.
+        fs::copy(paths.processing.join(&name), paths.pending.join(&name)).unwrap();
+        recover_interrupted_operations(&paths).unwrap();
+        assert!(claim_next_send_due(&paths).unwrap().is_none());
+        assert!(!paths.processing.join(&name).exists());
+        assert!(!paths.pending.join(&name).exists());
+        let failed = read_json::<QueueOperation>(&paths.failed.join(&name)).unwrap();
+        assert_eq!(failed.payload["_deliveryState"], "delivery_unknown");
+        assert_eq!(failed.payload["subject"], "original");
+        assert_eq!(local_crypto::read(&attachment_dir.join("attachment")).unwrap(), b"preserved");
+        assert_eq!(fs::read_dir(paths.queue.join("recovery-conflicts")).unwrap().count(), 1);
+        assert!(queue_operation(&paths, &operation).is_err());
+        recover_interrupted_operations(&paths).unwrap();
+        assert!(claim_next_send_due(&paths).unwrap().is_none());
+    }
+
+    #[test]
+    fn attachment_reader_checks_actual_bytes_and_exact_boundary() {
+        assert_eq!(read_attachment_bounded(&b"1234"[..], 4).unwrap(), b"1234");
+        assert!(read_attachment_bounded(&b"12345"[..], 4).is_err());
+        assert!(read_attachment_bounded(&b"1"[..], 0).is_err());
+        assert!(read_attachment_bounded(&b""[..], 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn queue_transition_lock_excludes_competing_workers() {
+        let guard = queue_guard().unwrap();
+        let other = std::thread::spawn(|| {
+            assert!(matches!(QUEUE_TRANSITIONS.try_lock(), Err(std::sync::TryLockError::WouldBlock)));
+        });
+        other.join().unwrap();
+        drop(guard);
+        assert!(queue_guard().is_ok());
+    }
+
+    #[test]
+    fn delivery_state_requires_an_object_and_preserves_message_payload() {
+        let mut operation = QueueOperation {
+            id: "op".into(), kind: "send".into(), account_id: "account".into(),
+            created_at: "2026-01-01T00:00:00Z".into(), attempts: 0,
+            payload: serde_json::json!({"subject": "original"}),
+        };
+        set_delivery_state(&mut operation, "delivery_unknown").unwrap();
+        assert_eq!(operation.payload["subject"], "original");
+        assert_eq!(operation.payload["_deliveryState"], "delivery_unknown");
+        operation.payload = serde_json::Value::Null;
+        assert!(set_delivery_state(&mut operation, "submitting").is_err());
+    }
+
+    #[test]
     fn security_rejects_path_traversal_components() {
-        for value in ["../segredo", "conta/fora", r"conta\fora", "..", ""] {
+        for value in ["../segredo", "conta/fora", r"conta\fora", "..", "", ".", "C:", "arquivo:stream", "NUL.txt", "COM1", "lpt²", "conta.", "conta ", "a\n", "a\0"] {
             assert!(safe_component(value).is_err(), "{value} deveria ser rejeitado");
         }
         assert!(safe_component("account-123_ABC").is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn secure_cleanup_does_not_follow_links_to_external_files() {
+        let root = std::env::temp_dir().join(format!("seven-mail-cleanup-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let original = root.join("original");
+        fs::write(&original, b"preserve").unwrap();
+        let symlink = root.join("symlink");
+        std::os::unix::fs::symlink(&original, &symlink).unwrap();
+        assert!(overwrite_and_remove(&symlink).is_err());
+        let hardlink = root.join("hardlink");
+        fs::hard_link(&original, &hardlink).unwrap();
+        assert!(overwrite_and_remove(&hardlink).is_err());
+        assert_eq!(fs::read(&original).unwrap(), b"preserve");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

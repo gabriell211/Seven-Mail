@@ -1,3 +1,4 @@
+mod app_lock;
 mod credentials;
 mod dav_sync;
 mod imap_sync;
@@ -40,16 +41,19 @@ fn check_for_update() -> Result<updater::UpdateInfo, String> {
 
 #[tauri::command]
 fn download_update(info: updater::UpdateInfo) -> Result<String, String> {
+    app_lock::require_unlocked()?;
     updater::download(&info)
 }
 
 #[tauri::command]
 fn install_update(path: String) -> Result<String, String> {
+    app_lock::require_unlocked()?;
     updater::install(&path)
 }
 
 #[tauri::command]
 fn open_default_mail_settings() -> Result<String, String> {
+    app_lock::require_unlocked()?;
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer.exe")
@@ -107,22 +111,30 @@ fn set_close_to_tray(enabled: bool, state: tauri::State<'_, DesktopState>) -> Re
 
 #[tauri::command]
 fn list_accounts() -> Result<Vec<AccountProfile>, String> {
+    app_lock::require_unlocked()?;
     storage::list_accounts(&AppPaths::resolve()?)
 }
 
 #[tauri::command]
 fn save_account(account: AccountProfile) -> Result<(), String> {
+    app_lock::require_unlocked()?;
+    credentials::validate_account_id(&account.id)?;
+    credentials::validate_account_id(account.credential_account_id())?;
+    oauth::validate_account_endpoints(&account)?;
     storage::save_account(&AppPaths::resolve()?, account)
 }
 
 #[tauri::command]
 fn set_default_account(account_id: String) -> Result<Vec<AccountProfile>, String> {
+    app_lock::require_unlocked()?;
     storage::set_default_account(&AppPaths::resolve()?, &account_id)
 }
 
 #[tauri::command]
 fn delete_account(account_id: String) -> Result<Vec<AccountProfile>, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
+    credentials::validate_account_id(&account_id)?;
     let accounts = storage::delete_account(&paths, &account_id)?;
     credentials::delete(&account_id)?;
     Ok(accounts)
@@ -130,27 +142,43 @@ fn delete_account(account_id: String) -> Result<Vec<AccountProfile>, String> {
 
 #[tauri::command]
 fn store_secret(account_id: String, secret: String) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     credentials::store(&account_id, &secret)
 }
 
 #[tauri::command]
 fn has_app_lock() -> Result<bool, String> {
-    credentials::has_app_lock()
+    app_lock::configured()
 }
 
 #[tauri::command]
-fn set_app_lock(pin: String) -> Result<(), String> {
-    credentials::set_app_lock(&pin)
+fn set_app_lock(pin: String, current_pin: Option<String>) -> Result<(), String> {
+    app_lock::configure(&pin, current_pin.as_deref())
 }
 
 #[tauri::command]
 fn verify_app_lock(pin: String) -> Result<bool, String> {
-    credentials::verify_app_lock(&pin)
+    app_lock::unlock(&pin)
 }
 
 #[tauri::command]
-fn clear_app_lock() -> Result<(), String> {
-    credentials::clear_app_lock()
+fn clear_app_lock(pin: String) -> Result<(), String> {
+    app_lock::disable(&pin)
+}
+
+#[tauri::command]
+fn is_app_locked() -> Result<bool, String> {
+    app_lock::is_locked()
+}
+
+#[tauri::command]
+fn lock_app() -> Result<(), String> {
+    app_lock::lock()
+}
+
+#[tauri::command]
+fn app_lock_activity(minutes: Option<u64>) -> Result<bool, String> {
+    app_lock::activity(minutes)
 }
 
 #[tauri::command]
@@ -159,13 +187,14 @@ fn oauth_exchange_code(
     code: String,
     verifier: String,
     redirect_uri: Option<String>,
-) -> Result<oauth::OAuthTokenState, String> {
+) -> Result<oauth::OAuthAuthorizationStatus, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    oauth::exchange_code(&account, &code, &verifier, redirect_uri.as_deref())
+    oauth::exchange_code(&account, &code, &verifier, redirect_uri.as_deref()).map(Into::into)
 }
 
 #[tauri::command]
@@ -174,42 +203,48 @@ fn provider_oauth_exchange_code(
     code: String,
     verifier: String,
     redirect_uri: Option<String>,
-) -> Result<oauth::OAuthTokenState, String> {
+) -> Result<oauth::OAuthAuthorizationStatus, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    oauth::provider_exchange_code(&account, &code, &verifier, redirect_uri.as_deref())
+    oauth::provider_exchange_code(&account, &code, &verifier, redirect_uri.as_deref()).map(Into::into)
 }
 
 #[tauri::command]
 fn provider_oauth_status(account_id: String) -> Result<bool, String> {
+    app_lock::require_unlocked()?;
     oauth::provider_status(&account_id)
 }
 
 #[tauri::command]
 fn provider_oauth_clear(account_id: String) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     oauth::provider_clear(&account_id)
 }
 
 #[tauri::command]
-fn oauth_refresh(account_id: String) -> Result<oauth::OAuthTokenState, String> {
+fn oauth_refresh(account_id: String) -> Result<oauth::OAuthAuthorizationStatus, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    oauth::refresh(&account)
+    oauth::refresh(&account).map(Into::into)
 }
 
 #[tauri::command]
 fn oauth_status(account_id: String) -> Result<bool, String> {
+    app_lock::require_unlocked()?;
     oauth::status(&account_id)
 }
 
 #[tauri::command]
 fn oauth_clear(account_id: String) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     oauth::clear(&account_id)
 }
 
@@ -220,6 +255,7 @@ fn discover_provider(email: String) -> ProviderSettings {
 
 #[tauri::command]
 fn provider_capabilities(account_id: String) -> Result<provider_native::ProviderCapabilities, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -230,6 +266,7 @@ fn provider_capabilities(account_id: String) -> Result<provider_native::Provider
 
 #[tauri::command]
 fn provider_corporate_catalog(account_id: String) -> Result<serde_json::Value, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -240,6 +277,7 @@ fn provider_corporate_catalog(account_id: String) -> Result<serde_json::Value, S
 
 #[tauri::command]
 fn provider_sensitivity_rights(account_id: String, label_id: String, owner_email: Option<String>) -> Result<serde_json::Value, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -250,6 +288,7 @@ fn provider_sensitivity_rights(account_id: String, label_id: String, owner_email
 
 #[tauri::command]
 fn provider_message_policy(account_id: String, message_id: String) -> Result<provider_native::MessagePolicy, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -260,6 +299,7 @@ fn provider_message_policy(account_id: String, message_id: String) -> Result<pro
 
 #[tauri::command]
 fn send_message_reaction(account_id: String, message_id: String, emoji: String) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let accounts = storage::list_accounts(&paths)?;
     let account = accounts
@@ -282,6 +322,7 @@ fn send_message_reaction(account_id: String, message_id: String, emoji: String) 
 
 #[tauri::command]
 fn provider_recall_message(account_id: String, message_id: String) -> Result<String, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -292,6 +333,7 @@ fn provider_recall_message(account_id: String, message_id: String) -> Result<Str
 
 #[tauri::command]
 fn sync_ldap(account_id: String) -> Result<Vec<DirectoryContact>, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -302,6 +344,7 @@ fn sync_ldap(account_id: String) -> Result<Vec<DirectoryContact>, String> {
 
 #[tauri::command]
 fn test_ldap_connection(account_id: String) -> Result<bool, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -312,6 +355,7 @@ fn test_ldap_connection(account_id: String) -> Result<bool, String> {
 
 #[tauri::command]
 fn sync_dav(account_id: String) -> Result<DavSyncResult, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -322,6 +366,7 @@ fn sync_dav(account_id: String) -> Result<DavSyncResult, String> {
 
 #[tauri::command]
 fn test_dav_connection(account_id: String) -> Result<bool, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -332,6 +377,7 @@ fn test_dav_connection(account_id: String) -> Result<bool, String> {
 
 #[tauri::command]
 fn put_dav_calendar(account_id: String, event_id: String, ics: String) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -342,6 +388,7 @@ fn put_dav_calendar(account_id: String, event_id: String, ics: String) -> Result
 
 #[tauri::command]
 fn delete_dav_calendar(account_id: String, event_id: String) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -352,6 +399,7 @@ fn delete_dav_calendar(account_id: String, event_id: String) -> Result<(), Strin
 
 #[tauri::command]
 fn put_dav_contact(account_id: String, contact_id: String, vcard: String) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -362,6 +410,7 @@ fn put_dav_contact(account_id: String, contact_id: String, vcard: String) -> Res
 
 #[tauri::command]
 fn delete_dav_contact(account_id: String, contact_id: String) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -376,6 +425,7 @@ fn import_smime_identity(
     path: String,
     password: String,
 ) -> Result<smime::SmimeIdentityStatus, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     if !storage::list_accounts(&paths)?.iter().any(|item| item.id == account_id) {
         return Err("Conta não encontrada.".to_string());
@@ -385,31 +435,37 @@ fn import_smime_identity(
 
 #[tauri::command]
 fn smime_identity_status(account_id: String) -> Result<smime::SmimeIdentityStatus, String> {
+    app_lock::require_unlocked()?;
     smime::identity_status(&AppPaths::resolve()?, &account_id)
 }
 
 #[tauri::command]
 fn remove_smime_identity(account_id: String) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     smime::remove_identity(&AppPaths::resolve()?, &account_id)
 }
 
 #[tauri::command]
 fn import_smime_recipient_certificate(email: String, path: String) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     smime::import_recipient_certificate(&AppPaths::resolve()?, &email, &path)
 }
 
 #[tauri::command]
 fn has_smime_recipient_certificate(email: String) -> Result<bool, String> {
+    app_lock::require_unlocked()?;
     Ok(smime::has_recipient_certificate(&AppPaths::resolve()?, &email))
 }
 
 #[tauri::command]
 fn inspect_smime_message(account_id: String, message_id: String) -> Result<smime::SmimeInspection, String> {
+    app_lock::require_unlocked()?;
     smime::inspect_message(&AppPaths::resolve()?, &account_id, &message_id)
 }
 
 #[tauri::command]
 fn test_smtp_connection(account_id: String) -> Result<bool, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -420,6 +476,7 @@ fn test_smtp_connection(account_id: String) -> Result<bool, String> {
 
 #[tauri::command]
 fn test_imap_connection(account_id: String) -> Result<bool, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -438,6 +495,7 @@ async fn wait_for_mail_push(
     folder_path: Option<String>,
     timeout_seconds: Option<u64>,
 ) -> Result<bool, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -453,6 +511,7 @@ async fn wait_for_mail_push(
 
 #[tauri::command]
 fn sync_inbox(account_id: String, limit: Option<u32>) -> Result<usize, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -467,6 +526,7 @@ fn sync_inbox(account_id: String, limit: Option<u32>) -> Result<usize, String> {
 
 #[tauri::command]
 fn list_mail_folders(account_id: String) -> Result<Vec<MailFolder>, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -490,6 +550,7 @@ fn sync_mail_folder(
     label: String,
     limit: Option<u32>,
 ) -> Result<usize, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -508,6 +569,7 @@ fn sync_mail_folder(
 
 #[tauri::command]
 fn create_mail_folder(account_id: String, name: String) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -523,6 +585,7 @@ fn rename_mail_folder(
     label: String,
     name: String,
 ) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -539,6 +602,7 @@ fn delete_mail_folder(
     path: String,
     label: String,
 ) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -551,6 +615,7 @@ fn delete_mail_folder(
 
 #[tauri::command]
 fn flush_mail_actions(account_id: String) -> Result<usize, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -565,21 +630,25 @@ fn flush_mail_actions(account_id: String) -> Result<usize, String> {
 
 #[tauri::command]
 fn list_cached_messages(account_id: Option<String>) -> Result<Vec<MailMessage>, String> {
+    app_lock::require_unlocked()?;
     storage::list_cached_messages(&AppPaths::resolve()?, account_id.as_deref())
 }
 
 #[tauri::command]
 fn search_cached_message_ids(account_id: Option<String>, query: String) -> Result<Vec<String>, String> {
+    app_lock::require_unlocked()?;
     storage::search_cached_message_ids(&AppPaths::resolve()?, account_id.as_deref(), &query)
 }
 
 #[tauri::command]
 fn cache_message(message: MailMessage) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     storage::cache_message(&AppPaths::resolve()?, &message)
 }
 
 #[tauri::command]
 fn queue_operation(operation: QueueOperation) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     storage::queue_operation(&AppPaths::resolve()?, &operation)
 }
 
@@ -590,6 +659,7 @@ fn stage_attachments(
     max_file_mb: Option<u64>,
     max_total_mb: Option<u64>,
 ) -> Result<Vec<QueuedAttachment>, String> {
+    app_lock::require_unlocked()?;
     storage::stage_attachments(
         &AppPaths::resolve()?,
         &operation_id,
@@ -606,6 +676,7 @@ fn stage_message_as_eml(
     message_id: String,
     suggested_name: String,
 ) -> Result<QueuedAttachment, String> {
+    app_lock::require_unlocked()?;
     storage::stage_message_as_eml(
         &AppPaths::resolve()?,
         &operation_id,
@@ -617,21 +688,26 @@ fn stage_message_as_eml(
 
 #[tauri::command]
 fn cancel_operation(operation_id: String) -> Result<bool, String> {
+    app_lock::require_unlocked()?;
     storage::cancel_operation(&AppPaths::resolve()?, &operation_id)
 }
 
 #[tauri::command]
 fn list_queue() -> Result<Vec<QueueOperation>, String> {
+    app_lock::require_unlocked()?;
     storage::list_queue(&AppPaths::resolve()?)
 }
 
 #[tauri::command]
 fn flush_outbox() -> Result<OutboxFlushResult, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let accounts = storage::list_accounts(&paths)?;
     let mut sent = 0usize;
+    let mut sent_operation_ids = Vec::new();
     let mut sent_account_ids = Vec::new();
     let mut sent_copy_warnings = Vec::new();
+    let mut delivery_warnings = Vec::new();
 
     loop {
         let Some(operation) = storage::claim_next_send_due(&paths)? else {
@@ -639,16 +715,23 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
         };
 
         let Some(account) = accounts.iter().find(|item| item.id == operation.account_id) else {
-            storage::fail(&paths, &operation.id)?;
+            storage::quarantine_operation(&paths, &operation.id, "account_missing")?;
+            delivery_warnings.push(format!("{}: conta de envio não encontrada.", operation.id));
             continue;
         };
 
-        match providers::send_queued_raw(account, &operation) {
+        let submission_started = std::cell::Cell::new(false);
+        match providers::send_queued_raw_with_checkpoint(account, &operation, || {
+            storage::mark_smtp_submission(&paths, &operation.id)?;
+            submission_started.set(true);
+            Ok(())
+        }) {
             Ok(raw) => {
                 // SMTP success is final for the queue item. A failure to mirror
                 // the copy into IMAP Sent must never trigger a duplicate resend.
                 storage::complete(&paths, &operation.id)?;
                 sent += 1;
+                sent_operation_ids.push(operation.id.clone());
                 if !sent_account_ids.iter().any(|value| value == &account.id) {
                     sent_account_ids.push(account.id.clone());
                 }
@@ -666,24 +749,32 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
                 }
             }
             Err(error) => {
-                storage::retry_later(&paths, &operation.id)?;
-                if sent == 0 {
-                    return Err(error);
+                if submission_started.get() {
+                    // A transport failure after submission might mean the SMTP
+                    // server accepted the message but its response was lost.
+                    storage::quarantine_operation(&paths, &operation.id, "delivery_unknown")?;
+                    delivery_warnings.push(format!("{}: entrega não confirmada; confira Enviados antes de reenviar.", operation.id));
+                } else {
+                    storage::retry_later(&paths, &operation.id)?;
+                    delivery_warnings.push(format!("{}: envio não iniciado: {error}", operation.id));
                 }
-                break;
+                // Continue draining other due messages, even when one fails.
             }
         }
     }
 
     Ok(OutboxFlushResult {
         sent,
+        sent_operation_ids,
         sent_account_ids,
         sent_copy_warnings,
+        delivery_warnings,
     })
 }
 
 #[tauri::command]
 fn message_action(account_id: String, message_id: String, action: String) -> Result<MailMessage, String> {
+    app_lock::require_unlocked()?;
     storage::apply_message_action(&AppPaths::resolve()?, &account_id, &message_id, &action)
 }
 
@@ -694,6 +785,7 @@ fn move_message_to_folder(
     target_path: String,
     target_label: String,
 ) -> Result<MailMessage, String> {
+    app_lock::require_unlocked()?;
     storage::move_message_to_folder(
         &AppPaths::resolve()?,
         &account_id,
@@ -710,6 +802,7 @@ fn move_message_to_account(
     target_account_id: String,
     target_mailbox: Option<String>,
 ) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     if source_account_id == target_account_id {
         return Err("Escolha uma conta diferente para mover a mensagem.".to_string());
     }
@@ -735,41 +828,49 @@ fn move_message_to_account(
 
 #[tauri::command]
 fn clear_cache() -> Result<(), String> {
+    app_lock::require_unlocked()?;
     storage::clear_cache(&AppPaths::resolve()?)
 }
 
 #[tauri::command]
 fn prune_message_cache(retention_days: u32) -> Result<usize, String> {
+    app_lock::require_unlocked()?;
     storage::prune_message_cache(&AppPaths::resolve()?, retention_days)
 }
 
 #[tauri::command]
 fn secure_clear_local_data() -> Result<(), String> {
+    app_lock::require_unlocked()?;
     storage::secure_clear_local_data(&AppPaths::resolve()?)
 }
 
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
+    app_lock::require_unlocked()?;
     interchange::read_text_file(&path)
 }
 
 #[tauri::command]
 fn read_file_data_url(path: String) -> Result<String, String> {
+    app_lock::require_unlocked()?;
     interchange::read_file_data_url(&path)
 }
 
 #[tauri::command]
 fn write_text_file(path: String, content: String) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     interchange::write_text_file(&path, &content)
 }
 
 #[tauri::command]
 fn export_pst(account_id: Option<String>, path: String) -> Result<usize, String> {
+    app_lock::require_unlocked()?;
     interchange::export_pst(&AppPaths::resolve()?, account_id.as_deref(), &path)
 }
 
 #[tauri::command]
 fn import_pst(account_id: String, path: String) -> Result<usize, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -780,6 +881,7 @@ fn import_pst(account_id: String, path: String) -> Result<usize, String> {
 
 #[tauri::command]
 fn import_eml(account_id: String, path: String) -> Result<MailMessage, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -790,6 +892,7 @@ fn import_eml(account_id: String, path: String) -> Result<MailMessage, String> {
 
 #[tauri::command]
 fn import_msg(account_id: String, path: String) -> Result<MailMessage, String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
@@ -800,6 +903,7 @@ fn import_msg(account_id: String, path: String) -> Result<MailMessage, String> {
 
 #[tauri::command]
 fn read_oft_template(path: String) -> Result<serde_json::Value, String> {
+    app_lock::require_unlocked()?;
     interchange::read_oft_template(&path)
 }
 
@@ -809,6 +913,7 @@ fn save_original_message(
     message_id: String,
     destination: String,
 ) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     interchange::save_original_message(
         &AppPaths::resolve()?,
         &account_id,
@@ -819,11 +924,13 @@ fn save_original_message(
 
 #[tauri::command]
 fn read_message_source(account_id: String, message_id: String) -> Result<String, String> {
+    app_lock::require_unlocked()?;
     interchange::read_message_source(&AppPaths::resolve()?, &account_id, &message_id)
 }
 
 #[tauri::command]
 fn list_message_attachments(account_id: String, message_id: String) -> Result<Vec<MailAttachmentInfo>, String> {
+    app_lock::require_unlocked()?;
     interchange::list_message_attachments(&AppPaths::resolve()?, &account_id, &message_id)
 }
 
@@ -833,6 +940,7 @@ fn preview_message_attachment(
     message_id: String,
     index: usize,
 ) -> Result<MailAttachmentPreview, String> {
+    app_lock::require_unlocked()?;
     interchange::preview_message_attachment(
         &AppPaths::resolve()?,
         &account_id,
@@ -847,6 +955,7 @@ fn stage_message_attachments(
     account_id: String,
     message_id: String,
 ) -> Result<Vec<QueuedAttachment>, String> {
+    app_lock::require_unlocked()?;
     interchange::stage_message_attachments(
         &AppPaths::resolve()?,
         &operation_id,
@@ -861,6 +970,7 @@ fn cache_message_attachment(
     message_id: String,
     index: usize,
 ) -> Result<String, String> {
+    app_lock::require_unlocked()?;
     interchange::cache_message_attachment(&AppPaths::resolve()?, &account_id, &message_id, index)
 }
 
@@ -871,6 +981,7 @@ fn save_message_attachment(
     index: usize,
     destination: String,
 ) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     interchange::save_message_attachment(&AppPaths::resolve()?, &account_id, &message_id, index, &destination)
 }
 
@@ -880,6 +991,7 @@ fn save_all_message_attachments(
     message_id: String,
     directory: String,
 ) -> Result<usize, String> {
+    app_lock::require_unlocked()?;
     interchange::save_all_message_attachments(&AppPaths::resolve()?, &account_id, &message_id, &directory)
 }
 
@@ -893,6 +1005,7 @@ fn update_message_metadata(
     is_phishing: Option<bool>,
     is_important: Option<bool>,
 ) -> Result<MailMessage, String> {
+    app_lock::require_unlocked()?;
     storage::update_message_metadata(
         &AppPaths::resolve()?,
         &account_id,
@@ -911,13 +1024,17 @@ fn copy_message_to_folder(
     message_id: String,
     target_path: String,
 ) -> Result<(), String> {
+    app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let message = storage::list_cached_messages(&paths, Some(&account_id))?
         .into_iter()
         .find(|item| item.id == message_id)
         .ok_or_else(|| "Mensagem não encontrada.".to_string())?;
+    if message.remote_folder.as_deref() == Some("POP3") {
+        return Err("A mensagem não possui uma identidade IMAP remota confirmada.".to_string());
+    }
     let remote_id = message.remote_id.ok_or_else(|| "Mensagem local não possui UID remoto.".to_string())?;
-    let mailbox = message.remote_folder.unwrap_or_else(|| "INBOX".to_string());
+    let mailbox = message.remote_folder.ok_or_else(|| "Pasta IMAP remota não confirmada.".to_string())?;
     storage::queue_operation(&paths, &QueueOperation {
         id: uuid::Uuid::new_v4().to_string(),
         kind: "copy".to_string(),
@@ -927,6 +1044,7 @@ fn copy_message_to_folder(
         payload: serde_json::json!({
             "remoteId": remote_id,
             "mailbox": mailbox,
+            "messageId": message_id,
             "targetMailbox": target_path,
         }),
     })
@@ -934,36 +1052,43 @@ fn copy_message_to_folder(
 
 #[tauri::command]
 fn list_workspace(kind: String) -> Result<Vec<WorkspaceDocument>, String> {
+    app_lock::require_unlocked()?;
     workspace::list(&AppPaths::resolve()?, &kind)
 }
 
 #[tauri::command]
 fn list_workspace_for_sync(kind: String) -> Result<Vec<WorkspaceDocument>, String> {
+    app_lock::require_unlocked()?;
     workspace::list_for_sync(&AppPaths::resolve()?, &kind)
 }
 
 #[tauri::command]
 fn upsert_workspace(document: WorkspaceDocument) -> Result<WorkspaceDocument, String> {
+    app_lock::require_unlocked()?;
     workspace::upsert(&AppPaths::resolve()?, document)
 }
 
 #[tauri::command]
 fn delete_workspace(kind: String, id: String) -> Result<WorkspaceDocument, String> {
+    app_lock::require_unlocked()?;
     workspace::delete(&AppPaths::resolve()?, &kind, &id)
 }
 
 #[tauri::command]
 fn search_workspace(query: String) -> Result<Vec<WorkspaceDocument>, String> {
+    app_lock::require_unlocked()?;
     workspace::search(&AppPaths::resolve()?, &query)
 }
 
 #[tauri::command]
 fn export_workspace() -> Result<Vec<WorkspaceDocument>, String> {
+    app_lock::require_unlocked()?;
     workspace::export_all(&AppPaths::resolve()?)
 }
 
 #[tauri::command]
 fn import_workspace(documents: Vec<WorkspaceDocument>) -> Result<usize, String> {
+    app_lock::require_unlocked()?;
     workspace::import_all(&AppPaths::resolve()?, documents)
 }
 
@@ -994,11 +1119,12 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            // Single-instance forwarding remains active before setup; the
-            // first instance holds the file lock until the application exits.
+            // Hold the storage lock before any cache migration or recovery.
             let root = AppPaths::data_root().map_err(std::io::Error::other)?;
             let guard = storage_guard::StorageGuard::desktop(&root).map_err(std::io::Error::other)?;
             app.manage(guard);
+            let paths = AppPaths::resolve().map_err(std::io::Error::other)?;
+            storage::recover_interrupted_operations(&paths).map_err(std::io::Error::other)?;
             use tauri::{
                 menu::{Menu, MenuItem},
                 tray::TrayIconBuilder,
@@ -1063,6 +1189,9 @@ pub fn run() {
             set_app_lock,
             verify_app_lock,
             clear_app_lock,
+            is_app_locked,
+            lock_app,
+            app_lock_activity,
             oauth_exchange_code,
             provider_oauth_exchange_code,
             provider_oauth_status,

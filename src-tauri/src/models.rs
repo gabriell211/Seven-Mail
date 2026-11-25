@@ -98,12 +98,15 @@ pub struct AccountProfile {
 
 impl AccountProfile {
     pub fn credential_account_id(&self) -> &str {
-        self.shared_owner_account_id.as_deref().unwrap_or(&self.id)
+        if self.is_shared_mailbox {
+            self.shared_owner_account_id.as_deref().filter(|id| !id.trim().is_empty()).unwrap_or(&self.id)
+        } else {
+            &self.id
+        }
     }
 
     pub fn can(&self, permission: &str) -> bool {
         !self.is_shared_mailbox
-            || self.shared_permissions.is_empty()
             || self.shared_permissions.iter().any(|value| value == permission)
     }
 }
@@ -218,9 +221,13 @@ pub struct QueueOperation {
 #[serde(rename_all = "camelCase")]
 pub struct OutboxFlushResult {
     pub sent: usize,
+    #[serde(default)]
+    pub sent_operation_ids: Vec<String>,
     pub sent_account_ids: Vec<String>,
     #[serde(default)]
     pub sent_copy_warnings: Vec<String>,
+    #[serde(default)]
+    pub delivery_warnings: Vec<String>,
 }
 
 
@@ -341,6 +348,21 @@ mod tests {
         assert!(account.can("read"));
         assert!(account.can("send"));
         assert!(!account.can("manage-calendar"));
+    }
+
+    #[test]
+    fn empty_shared_permissions_deny_access_and_personal_accounts_use_own_credentials() {
+        let mut account = shared();
+        account.shared_permissions.clear();
+        for permission in ["read", "send", "edit", "calendar", "manage-calendar"] {
+            assert!(!account.can(permission));
+        }
+        account.is_shared_mailbox = false;
+        assert_eq!(account.credential_account_id(), account.id.as_str());
+        assert!(account.can("read"));
+        account.is_shared_mailbox = true;
+        account.shared_owner_account_id = Some(" ".into());
+        assert_eq!(account.credential_account_id(), account.id.as_str());
     }
 
     #[test]

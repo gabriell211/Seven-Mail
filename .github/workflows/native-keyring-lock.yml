@@ -1,0 +1,146 @@
+name: Native keyring lockfile verification
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/Cargo.toml'
+      - 'src-tauri/Cargo.lock'
+      - 'src-tauri/src/credentials.rs'
+      - 'src-tauri/src/local_crypto.rs'
+      - 'src-tauri/src/storage.rs'
+      - '.github/workflows/native-keyring-lock.yml'
+      - 'src-tauri/scripts/prepare-msvc-openssl.ps1'
+permissions:
+  contents: read
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve native keyring feature graph
+        working-directory: src-tauri
+        run: |
+          cargo metadata --locked --format-version 1 > /dev/null
+      - uses: actions/upload-artifact@v6
+        with:
+          name: native-keyring-cargo-lock
+          path: src-tauri/Cargo.lock
+          if-no-files-found: error
+  native-vault-linux:
+    needs: lock
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Tauri and Secret Service dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential libssl-dev dbus-x11 gnome-keyring
+      - run: npm ci --strict-peer-deps --strict-allow-scripts
+      - run: npm run icons
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - name: Build storage tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --no-run
+      - name: Exercise actual Linux Secret Service in an isolated session
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+          export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+          export HOME="$(mktemp -d)"
+          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          chmod 700 "$HOME" "$XDG_RUNTIME_DIR"
+          trap 'rm -rf "$HOME" "$XDG_RUNTIME_DIR"' EXIT
+          # Preserve the runner toolchains while isolating the OS vault.
+          dbus-run-session -- bash -euo pipefail -c '
+            eval "$(printf %s seven-mail-ci-only | gnome-keyring-daemon --unlock --components=secrets)"
+            cargo test --locked --manifest-path src-tauri/Cargo.toml --lib credentials::native_backend_tests::native_backend_roundtrip -- --ignored --exact
+          '
+
+  native-vault-desktop:
+    needs: lock
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci --strict-peer-deps --strict-allow-scripts
+      - run: npm run icons
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - name: Build storage tests
+        if: runner.os != 'Windows'
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --no-run
+      - name: Prepare Windows native dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install strawberryperl nasm -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "C:\Strawberry\perl\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Exercise Windows Credential Manager without linker warnings
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PATH = "C:\Strawberry\perl\bin;C:\Strawberry\c\bin;$env:PATH"
+          ./src-tauri/scripts/prepare-msvc-openssl.ps1
+          $log = Join-Path $env:RUNNER_TEMP 'seven-mail-native-vault-windows.log'
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib credentials::native_backend_tests::native_backend_roundtrip -- --ignored --exact 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Select-String -Path $log -Pattern 'warning LNK[0-9]+|(^|\s)warning:') {
+            throw 'Rust compiler or native linker warnings detected.'
+          }
+      - name: Upload Windows vault diagnostics
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-vault-windows-diagnostics
+          path: ${{ runner.temp }}/seven-mail-native-vault-windows.log
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Exercise macOS Keychain in an isolated temporary vault
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/seven-mail-ci-$(uuidgen).keychain-db"
+          password="$(openssl rand -hex 32)"
+          original_default="$(security default-keychain -d user | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//')"
+          original_list=()
+          while IFS= read -r item; do
+            if [[ -n "$item" ]]; then original_list+=("$item"); fi
+          done < <(security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//')
+          cleanup() {
+            if [[ -n "$original_default" ]]; then
+              security default-keychain -d user -s "$original_default" || true
+            fi
+            if [[ ${#original_list[@]} -gt 0 ]]; then
+              security list-keychains -d user -s "${original_list[@]}" || true
+            fi
+            security delete-keychain "$keychain" || true
+          }
+          trap cleanup EXIT
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib credentials::native_backend_tests::native_backend_roundtrip -- --ignored --exact
