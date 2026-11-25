@@ -157,6 +157,12 @@ fn rights_list(value: &Value) -> Vec<String> {
     }
 }
 
+fn restricted_rights(rights: &[String]) -> (bool, bool) {
+    let can_forward = rights.iter().any(|value| value == "forward");
+    let can_copy = rights.iter().any(|value| value == "extract");
+    (can_forward, can_copy)
+}
+
 pub fn message_policy(paths: &AppPaths, account: &AccountProfile, local_message_id: &str) -> Result<MessagePolicy, String> {
     let raw = storage::read_raw_message(paths, &account.id, local_message_id)?;
     let source = String::from_utf8_lossy(&raw);
@@ -186,9 +192,9 @@ pub fn message_policy(paths: &AppPaths, account: &AccountProfile, local_message_
     } else {
         Vec::new()
     };
-    let restricted = !rights.is_empty();
-    let can_forward = !restricted || rights.iter().any(|value| value == "forward");
-    let can_copy = !restricted || rights.iter().any(|value| matches!(value.as_str(), "extract" | "objmodel" | "edit" | "docedit"));
+    // A labeled message is restricted until rights have been positively granted.
+    // Missing permissions, an empty response and network failures must fail closed.
+    let (can_forward, can_copy) = restricted_rights(&rights);
 
     Ok(MessagePolicy {
         sensitivity_label_id: Some(label_id),
@@ -265,5 +271,18 @@ mod tests {
         assert!(scope_granted(&scopes, "SensitivityLabel.Read"));
         assert!(scope_granted(&scopes, "RecordsManagement.Read.All"));
         assert!(!scope_granted(&scopes, "Mail.Send"));
+    }
+}
+
+#[cfg(test)]
+mod policy_security_tests {
+    use super::restricted_rights;
+
+    #[test]
+    fn missing_rights_never_grant_forward_or_copy() {
+        assert_eq!(restricted_rights(&[]), (false, false));
+        assert_eq!(restricted_rights(&["edit".into()]), (false, false));
+        assert_eq!(restricted_rights(&["forward".into()]), (true, false));
+        assert_eq!(restricted_rights(&["extract".into()]), (false, true));
     }
 }

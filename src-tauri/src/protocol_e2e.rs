@@ -149,6 +149,37 @@ fn smtp_imap_pop3_roundtrip() {
         "SMTP accepted the message, but Seven Mail could not observe it through POP3. Last error: {}",
         pop3_error.unwrap_or_else(|| "none".to_string())
     );
+
+    // Repeated UIDL sync must not duplicate downloads. A separate local
+    // cache must still retrieve the original message from the server.
+    let before = storage::list_cached_messages(&paths, Some(&pop3_account.id))
+        .expect("read POP3 cache");
+    let original = before.iter().find(|message| message.subject == subject)
+        .expect("POP3 message exists");
+    let uid = original.remote_id.as_deref().expect("POP3 UIDL must be stored");
+    assert!(!uid.is_empty());
+    let raw_before = storage::read_raw_message(&paths, &pop3_account.id, &original.id)
+        .expect("original POP3 source is available");
+    for _ in 0..3 {
+        assert_eq!(pop3_sync::sync_latest(&paths, &pop3_account, 25)
+            .expect("repeated POP3 sync"), 0);
+        let after = storage::list_cached_messages(&paths, Some(&pop3_account.id))
+            .expect("read repeated POP3 cache");
+        assert_eq!(after.len(), before.len());
+        assert_eq!(after.iter().filter(|message| message.remote_id.as_deref() == Some(uid)).count(), 1);
+        assert_eq!(storage::read_raw_message(&paths, &pop3_account.id, &original.id)
+            .expect("POP3 source remains readable"), raw_before);
+    }
+    let second_account = test_account("ci-protocol-pop3-fresh", "pop3");
+    assert!(pop3_sync::sync_latest(&paths, &second_account, 25)
+        .expect("fresh POP3 synchronization") > 0);
+    let fresh = storage::list_cached_messages(&paths, Some(&second_account.id))
+        .expect("fresh POP3 cache");
+    let same = fresh.iter().find(|message| message.remote_id.as_deref() == Some(uid))
+        .expect("message remains on server");
+    assert_eq!(same.subject, subject);
+    assert_eq!(storage::read_raw_message(&paths, &second_account.id, &same.id)
+        .expect("fresh source"), raw_before);
 }
 
 
