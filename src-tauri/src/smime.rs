@@ -10,7 +10,7 @@ use openssl::{
     pkcs12::Pkcs12,
     stack::Stack,
     symm::Cipher,
-    x509::X509,
+    x509::{store::X509StoreBuilder, X509},
 };
 use serde::Serialize;
 use std::{
@@ -320,12 +320,23 @@ fn inspect_entity(paths: &AppPaths, account_id: &str, raw: &[u8]) -> SmimeInspec
     match CmsContentInfo::from_der(&der) {
         Ok(mut cms) => {
             let mut output = Vec::new();
+            let store = match X509StoreBuilder::new().and_then(|mut builder| {
+                builder.set_default_paths()?;
+                Ok(builder.build())
+            }) {
+                Ok(store) => store,
+                Err(error) => {
+                    result.signature_valid = Some(false);
+                    result.error = Some(format!("Não foi possível carregar certificados confiáveis: {error}"));
+                    return result;
+                }
+            };
             match cms.verify(
                 None,
-                None,
+                Some(&store),
                 None,
                 Some(&mut output),
-                CMSOptions::NOVERIFY | CMSOptions::BINARY,
+                CMSOptions::BINARY,
             ) {
                 Ok(()) => {
                     result.signature_valid = Some(true);
