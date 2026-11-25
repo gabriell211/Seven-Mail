@@ -39,6 +39,7 @@ zip = { version = "4.6", default-features = false, features = ["deflate"] }
 aes-gcm = "0.10"
 reqwest = { version = "0.13", features = ["blocking", "form", "json", "query"] }
 regex = "1"
+quick-xml = "=0.42.0"
 sha2 = "0.10.9"
 ldap3 = "0.12.1"
 openssl = { version = "0.10", features = ["vendored"] }
