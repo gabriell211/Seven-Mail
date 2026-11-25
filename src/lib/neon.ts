@@ -2,7 +2,7 @@ import { NeonPostgrestClient, fetchWithToken } from "@neondatabase/postgrest-js"
 import { createNeonHttpAuth, validatedHttpsEndpoint } from "./neon-auth-http";
 import type { AccountProfile, MailMessage, WorkspaceDocument, WorkspaceKind } from "../types";
 import { bridge } from "./bridge";
-import { sameProjection } from "./cloud-reconciliation";
+import { compareVersionTimestamps, sameProjection } from "./cloud-reconciliation";
 
 const authUrl = import.meta.env.VITE_NEON_AUTH_URL?.trim();
 const dataApiUrl = import.meta.env.VITE_NEON_DATA_API_URL?.trim();
@@ -166,7 +166,7 @@ export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<
     id: row.id,
     kind: row.kind,
     payload: row.payload,
-    updatedAt: row.deleted_at && Date.parse(row.deleted_at) > Date.parse(row.updated_at)
+    updatedAt: row.deleted_at && compareVersionTimestamps(row.deleted_at, row.updated_at) > 0
       ? row.deleted_at
       : row.updated_at,
     deletedAt: row.deleted_at,
