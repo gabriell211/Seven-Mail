@@ -63,6 +63,11 @@ async function startAuthorization(
   if (!account.oauthClientId?.trim()) throw new Error("Informe o Client ID OAuth.");
   if (!account.oauthAuthorizationUrl?.trim()) throw new Error("Informe a URL de autorização OAuth.");
 
+  const url = new URL(account.oauthAuthorizationUrl);
+  if (url.protocol !== "https:" || !url.hostname || url.username || url.password || url.hash) {
+    throw new Error("A autorização OAuth exige uma URL HTTPS válida, sem credenciais ou fragmentos.");
+  }
+
   const verifier = randomToken(48);
   const state = randomToken(24);
   const redirectUri = account.oauthRedirectUri?.trim() || "seven-mail://oauth/callback";
@@ -75,7 +80,6 @@ async function startAuthorization(
   };
   sessionStorage.setItem(PENDING_PREFIX + state, JSON.stringify(pending));
 
-  const url = new URL(account.oauthAuthorizationUrl);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", account.oauthClientId);
   url.searchParams.set("redirect_uri", redirectUri);
@@ -91,7 +95,12 @@ async function startAuthorization(
     url.searchParams.set("prompt", "select_account");
   }
 
-  await openUrl(url.toString());
+  try {
+    await openUrl(url.toString());
+  } catch (error) {
+    sessionStorage.removeItem(PENDING_PREFIX + state);
+    throw error;
+  }
 }
 
 export function startOAuthAuthorization(account: AccountProfile): Promise<void> {
@@ -124,7 +133,9 @@ export function takePendingOAuth(state: string): PendingOAuth | null {
       !pending.verifier ||
       !pending.redirectUri ||
       !pending.createdAt ||
-      Date.now() - new Date(pending.createdAt).getTime() > 15 * 60_000
+      !Number.isFinite(Date.parse(pending.createdAt)) ||
+      Date.parse(pending.createdAt) > Date.now() ||
+      Date.now() - Date.parse(pending.createdAt) > 15 * 60_000
     ) return null;
 
     return {

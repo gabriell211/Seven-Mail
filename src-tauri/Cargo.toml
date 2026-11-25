@@ -17,15 +17,15 @@ tauri = { version = "2.11.5", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-notification = "2"
-tauri-plugin-deep-link = "2"
+tauri-plugin-deep-link = "=2.4.10"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
-tauri-plugin-opener = "2"
+tauri-plugin-opener = "=2.5.5"
 tauri-plugin-drag = "2.1.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 dirs = "6"
-keyring = "3"
+keyring = { version = "=3.6.3", default-features = false, features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust", "vendored"] }
 lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "rustls", "ring", "webpki-roots"] }
 async-imap = "0.11.3"
 async-native-tls = "0.6.0"
@@ -37,7 +37,6 @@ chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
 base64 = "0.22"
 zip = { version = "4.6", default-features = false, features = ["deflate"] }
 aes-gcm = "0.10"
-rand = "0.8"
 reqwest = { version = "0.13", features = ["blocking", "form", "json", "query"] }
 regex = "1"
 quick-xml = "=0.42.0"
