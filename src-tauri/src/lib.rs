@@ -930,8 +930,11 @@ fn copy_message_to_folder(
         .into_iter()
         .find(|item| item.id == message_id)
         .ok_or_else(|| "Mensagem não encontrada.".to_string())?;
+    if message.remote_folder.as_deref() == Some("POP3") {
+        return Err("A mensagem não possui uma identidade IMAP remota confirmada.".to_string());
+    }
     let remote_id = message.remote_id.ok_or_else(|| "Mensagem local não possui UID remoto.".to_string())?;
-    let mailbox = message.remote_folder.unwrap_or_else(|| "INBOX".to_string());
+    let mailbox = message.remote_folder.ok_or_else(|| "Pasta IMAP remota não confirmada.".to_string())?;
     storage::queue_operation(&paths, &QueueOperation {
         id: uuid::Uuid::new_v4().to_string(),
         kind: "copy".to_string(),
@@ -941,6 +944,7 @@ fn copy_message_to_folder(
         payload: serde_json::json!({
             "remoteId": remote_id,
             "mailbox": mailbox,
+            "messageId": message_id,
             "targetMailbox": target_path,
         }),
     })

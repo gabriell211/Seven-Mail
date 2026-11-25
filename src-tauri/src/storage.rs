@@ -406,6 +406,51 @@ pub fn list_cached_messages(paths: &AppPaths, account_id: Option<&str>) -> Resul
     Ok(messages)
 }
 
+/// Detach unverified or stale remote identities before accepting a new
+/// mailbox generation. Keep the original metadata and raw source locally.
+pub fn prepare_imap_generation(
+    paths: &AppPaths,
+    account_id: &str,
+    remote_folder: &str,
+    validity: u32,
+) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    safe_component(account_id)?;
+    if validity == 0 {
+        return Err("UIDVALIDITY inválido.".to_string());
+    }
+    let folder = if remote_folder.eq_ignore_ascii_case("INBOX") { "INBOX" } else { remote_folder };
+    let key = format!("{:x}", Sha256::digest(folder.as_bytes()));
+    let state = paths.root.join("state").join("imap").join(account_id);
+    let recovery = state.join("recovery").join(&key);
+    for mut message in list_cached_messages(paths, Some(account_id))? {
+        let same_folder = message.remote_folder.as_deref().map(|value| {
+            value == folder || (folder == "INBOX" && value.eq_ignore_ascii_case("INBOX"))
+        }).unwrap_or(false);
+        if !same_folder { continue; }
+        let Some(uid) = message.remote_id.as_deref().and_then(|value| value.parse::<u32>().ok()) else {
+            continue;
+        };
+        if message.id == crate::imap_sync::remote_message_id(account_id, folder, validity, uid) {
+            continue;
+        }
+        safe_component(&message.id)?;
+        let backup = recovery.join(format!("{}.json", message.id));
+        if !backup.exists() {
+            write_json(&backup, &message)?;
+        }
+        // Never let a stale local message retain a live remote UID.
+        // Keep the original ID so the existing encrypted raw source remains available.
+        message.remote_id = None;
+        message.remote_folder = None;
+        message.folder = "Recuperados IMAP".to_string();
+        cache_message(paths, &message)?;
+    }
+    write_json(&state.join(format!("{key}.json")), &serde_json::json!({
+        "mailbox": folder, "uidValidity": validity,
+    }))
+}
+
 pub fn cached_remote_uids(
     paths: &AppPaths,
     account_id: &str,
@@ -425,21 +470,32 @@ pub fn update_cached_remote_flags(
     paths: &AppPaths,
     account_id: &str,
     remote_folder: &str,
+    uid_validity: u32,
     uid: u32,
     is_read: bool,
     is_flagged: bool,
 ) -> Result<bool, String> {
-    let remote_id = uid.to_string();
-    let Some(mut message) = list_cached_messages(paths, Some(account_id))?
-        .into_iter()
-        .find(|message| {
-            message.remote_folder.as_deref() == Some(remote_folder)
-                && message.remote_id.as_deref() == Some(remote_id.as_str())
-        })
-    else {
-        return Ok(false);
-    };
-
+    safe_component(account_id)?;
+    if uid_validity == 0 || uid == 0 {
+        return Err("Identidade IMAP inválida.".into());
+    }
+    let id = crate::imap_sync::remote_message_id(account_id, remote_folder, uid_validity, uid);
+    safe_component(&id)?;
+    let path = paths.message_cache.join(account_id).join(format!("{id}.json"));
+    // Resolve the exact generation-scoped record instead of decrypting and
+    // sorting the entire account cache for each returned UID.
+    match fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => {}
+        Ok(_) => return Err("Arquivo de mensagem IMAP inválido.".into()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(io_error(error)),
+    }
+    let mut message: MailMessage = read_json(&path)?;
+    if message.id != id || message.account_id != account_id ||
+        message.remote_folder.as_deref() != Some(remote_folder) ||
+        message.remote_id.as_deref() != Some(uid.to_string().as_str()) {
+        return Err("Identidade da mensagem IMAP diverge do arquivo.".into());
+    }
     if message.is_read == is_read && message.is_flagged == is_flagged {
         return Ok(true);
     }
@@ -920,12 +976,12 @@ pub fn apply_message_action(
 
     write_json(&path, &message)?;
 
-    if matches!(action, "pin" | "unpin") || message.remote_folder.as_deref() == Some("POP3") {
+    if matches!(action, "pin" | "unpin") || message.remote_id.is_none() || message.remote_folder.as_deref() == Some("POP3") {
         return Ok(message);
     }
 
     let mailbox = message.remote_folder.clone().unwrap_or_else(|| "INBOX".to_string());
-    let (kind, payload) = match action {
+    let (kind, mut payload) = match action {
         "read" => ("read", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "read": true})),
         "unread" => ("read", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "read": false})),
         "flag" => ("flag", serde_json::json!({"remoteId": message.remote_id, "mailbox": mailbox, "flagged": true})),
@@ -937,6 +993,7 @@ pub fn apply_message_action(
         _ => unreachable!(),
     };
 
+    payload["messageId"] = serde_json::Value::String(message.id.clone());
     queue_operation(
         paths,
         &QueueOperation {
@@ -1040,8 +1097,13 @@ pub fn move_message_to_folder(
     let mut message = read_json::<MailMessage>(&path)?;
     let source_mailbox = message.remote_folder.clone().unwrap_or_else(|| "INBOX".to_string());
 
+    if message.remote_id.is_none() || message.remote_folder.as_deref() == Some("POP3") {
+        return Err("A mensagem não possui uma identidade IMAP remota confirmada.".to_string());
+    }
+
+    // The source folder remains authoritative until the server applies the move.
+    // Updating the remote folder optimistically would bind its UID to a different mailbox.
     message.folder = target_label.trim().to_string();
-    message.remote_folder = Some(target_path.trim().to_string());
     write_json(&path, &message)?;
 
     queue_operation(
@@ -1055,6 +1117,7 @@ pub fn move_message_to_folder(
             payload: serde_json::json!({
                 "remoteId": message.remote_id,
                 "mailbox": source_mailbox,
+                "messageId": message.id.clone(),
                 "targetMailbox": target_path.trim(),
             }),
         },
