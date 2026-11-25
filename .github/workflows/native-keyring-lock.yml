@@ -92,9 +92,41 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install strawberryperl nasm -y --no-progress
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          "C:\Strawberry\perl\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $ErrorActionPreference = 'Stop'
+          function Install-WithRetry([string] $Package) {
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              choco install $Package -y --no-progress
+              if ($LASTEXITCODE -eq 0) { return }
+              if ($attempt -lt 3) {
+                Write-Host "Retrying $Package after package source failure ($attempt/3)."
+                Start-Sleep -Seconds (10 * $attempt)
+              }
+            }
+            throw "Unable to install $Package after three attempts."
+          }
+          $perl = 'C:\Strawberry\perl\bin\perl.exe'
+          if (-not (Test-Path -LiteralPath $perl -PathType Leaf)) {
+            Install-WithRetry 'strawberryperl'
+          }
+          if (-not (Test-Path -LiteralPath $perl -PathType Leaf)) {
+            throw 'Native Strawberry Perl executable missing.'
+          }
+          & $perl -MLocale::Maketext::Simple -MIPC::Cmd -e 'print "Native Perl ready\n"'
+          if ($LASTEXITCODE -ne 0) { throw 'Native Perl prerequisites missing.' }
+
+          # Prefer tools already available on the runner; avoid unnecessary feed requests.
+          $env:PATH = "$env:PATH;" + [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+          $nasm = Get-Command nasm.exe -CommandType Application -ErrorAction SilentlyContinue
+          if (-not $nasm) {
+            Install-WithRetry 'nasm'
+            $env:PATH = "$env:PATH;" + [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+            $nasm = Get-Command nasm.exe -CommandType Application -ErrorAction SilentlyContinue
+          }
+          if (-not $nasm) { throw 'NASM executable missing after installation.' }
+          & $nasm.Source -v
+          if ($LASTEXITCODE -ne 0) { throw 'NASM version check failed.' }
+          @('C:\Strawberry\perl\bin', 'C:\Strawberry\c\bin', (Split-Path -Parent $nasm.Source)) |
+            Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - name: Exercise Windows Credential Manager without linker warnings
         if: runner.os == 'Windows'
         shell: pwsh
