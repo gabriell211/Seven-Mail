@@ -1,0 +1,24 @@
+[package]
+name = "seven-mail-sqlite-store"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+default = []
+native-vault = ["dep:keyring", "dep:base64", "dep:zeroize", "dep:aes-gcm"]
+
+[dependencies]
+rusqlite = { version = "=0.43.0", features = ["bundled-sqlcipher-vendored-openssl"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+sha2 = "0.10"
+
+keyring = { version = "=3.6.3", default-features = false, features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust", "vendored"], optional = true }
+base64 = { version = "0.22", optional = true }
+zeroize = { version = "1", optional = true }
+aes-gcm = { version = "0.10", optional = true }
+
+[dev-dependencies]
+aes-gcm = "0.10"

@@ -1,0 +1,126 @@
+name: Encrypted SQLite foundation
+
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/sqlite-store/**'
+      - 'src-tauri/storage_guard.rs'
+      - '.github/workflows/sqlite-store.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src-tauri/sqlite-store/**'
+      - 'src-tauri/storage_guard.rs'
+      - '.github/workflows/sqlite-store.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-tauri/sqlite-store
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve canonical lockfile
+        shell: bash
+        run: |
+          cargo metadata --locked --all-features --format-version 1 > /dev/null
+
+  sqlcipher:
+    needs: lockfile
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: '-D warnings'
+    defaults:
+      run:
+        working-directory: src-tauri/sqlite-store
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Windows OpenSSL build prerequisites
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install strawberryperl nasm -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'OpenSSL prerequisites installation failed' }
+          $perl = 'C:\Strawberry\perl\bin\perl.exe'
+          if (-not (Test-Path $perl)) { throw 'Native Strawberry Perl missing' }
+          & $perl -MLocale::Maketext::Simple -MIPC::Cmd -e 'print "OpenSSL Perl prerequisites OK\n"'
+          if ($LASTEXITCODE -ne 0) { throw 'OpenSSL Perl modules missing' }
+          "C:\Strawberry\perl\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "C:\Strawberry\c\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Test and check without native linker warnings (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Git Bash prepends its own incomplete MSYS Perl to PATH.
+          $env:PATH = "C:\Strawberry\perl\bin;C:\Strawberry\c\bin;$env:PATH"
+          $perl = Get-Command perl.exe -ErrorAction Stop
+          if ($perl.Source -ne 'C:\Strawberry\perl\bin\perl.exe') { throw "Unexpected Perl: $($perl.Source)" }
+          & perl.exe -MLocale::Maketext::Simple -MIPC::Cmd -e 'print "Native Perl ready\n"'
+          if ($LASTEXITCODE -ne 0) { throw 'Native Perl check failed' }
+          ./scripts/prepare-msvc-openssl.ps1
+          cargo test --locked --all-features --color never 2>&1 | Tee-Object -FilePath cargo-test.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo check --locked --all-features --color never 2>&1 | Tee-Object -FilePath cargo-check.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $warnings = Select-String -Path cargo-test.log,cargo-check.log -Pattern '(^|\s)warning:|warning LNK[0-9]+'
+          if ($warnings) {
+            $warnings | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
+            throw 'Compiler or linker warning detected.'
+          }
+      - name: Test and check without native linker warnings (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --all-features --color never 2>&1 | tee cargo-test.log
+          cargo check --locked --all-features --color never 2>&1 | tee cargo-check.log
+          if grep -Ei '(^|[[:space:]])warning:|warning LNK[0-9]+' cargo-test.log cargo-check.log; then
+            echo 'Compiler or linker warning detected.'
+            exit 1
+          fi
+      - name: Native credential vault smoke (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Strawberry\perl\bin;C:\Strawberry\c\bin;$env:PATH"
+          $env:CARGO_HOME = Join-Path $env:RUNNER_TEMP 'seven-mail-sqlcipher-cargo'
+          cargo test --locked --all-features --lib native_vault::tests::native_vault_round_trip_isolated -- --ignored --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Native credential vault smoke (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/seven-mail-ci-$(uuidgen).keychain-db"
+          password="$(uuidgen)"
+          # Keep the runner's original default and search list intact after testing.
+          original_default="$(security default-keychain -d user | sed 's/^[[:space:]]*"//;s/"[[:space:]]*$//')"
+          original_search=()
+          while IFS= read -r line; do
+            entry="$(printf '%s' "$line" | sed 's/^[[:space:]]*"//;s/"[[:space:]]*$//')"
+            if [[ -n "$entry" ]]; then original_search+=("$entry"); fi
+          done < <(security list-keychains -d user)
+          cleanup() {
+            security default-keychain -d user -s "$original_default" || true
+            if [[ ${#original_search[@]} -gt 0 ]]; then
+              security list-keychains -d user -s "${original_search[@]}" || true
+            fi
+            security delete-keychain "$keychain" || true
+          }
+          trap cleanup EXIT
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          cargo test --locked --all-features --lib native_vault::tests::native_vault_round_trip_isolated -- --ignored --exact --nocapture

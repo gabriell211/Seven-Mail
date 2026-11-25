@@ -13,6 +13,8 @@ mod provider_native;
 mod providers;
 mod smime;
 mod storage;
+#[path = "../storage_guard.rs"]
+pub mod storage_guard;
 mod updater;
 mod workspace;
 
@@ -1118,6 +1120,10 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            // Hold the storage lock before any cache migration or recovery.
+            let root = AppPaths::data_root().map_err(std::io::Error::other)?;
+            let guard = storage_guard::StorageGuard::desktop(&root).map_err(std::io::Error::other)?;
+            app.manage(guard);
             let paths = AppPaths::resolve().map_err(std::io::Error::other)?;
             storage::recover_interrupted_operations(&paths).map_err(std::io::Error::other)?;
             use tauri::{
