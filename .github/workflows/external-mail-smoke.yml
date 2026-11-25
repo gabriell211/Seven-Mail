@@ -13,6 +13,9 @@ on:
       - "src-tauri/src/protocol_e2e.rs"
       - "src-tauri/src/imap_sync.rs"
       - "src-tauri/src/pop3_sync.rs"
+      - "src-tauri/src/app_lock.rs"
+      - "src-tauri/src/credentials.rs"
+      - "src-tauri/src/local_crypto.rs"
 
 jobs:
   external-smtp:
@@ -51,11 +54,11 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Install Tauri dependencies
+      - name: Install Tauri and Secret Service dependencies
         if: steps.credentials.outputs.configured == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential curl wget file libssl-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential curl wget file libssl-dev dbus-x11 gnome-keyring
 
       - uses: actions/setup-node@v6
         if: steps.credentials.outputs.configured == 'true'
@@ -78,20 +81,29 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
-      - name: Send Seven Mail internet smoke message
+      - name: Exercise external SMTP, outbox/Sent and IMAP/POP3 in an isolated native vault
         if: steps.credentials.outputs.configured == 'true'
         env:
           SEVEN_MAIL_EXTERNAL_SMOKE: "1"
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml protocol_e2e::external_smtp_smoke -- --nocapture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Keep the installed toolchain while isolating the test's vault and cache.
+          export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+          export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+          export HOME="$(mktemp -d)"
+          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          chmod 700 "$HOME" "$XDG_RUNTIME_DIR"
+          trap 'rm -rf "$HOME" "$XDG_RUNTIME_DIR"' EXIT
 
-      - name: Confirm Seven Mail queue and Gmail Sent
-        if: steps.credentials.outputs.configured == 'true'
-        env:
-          SEVEN_MAIL_EXTERNAL_SMOKE: "1"
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml protocol_e2e::external_outbox_sent_smoke -- --nocapture
-
-      - name: Receive with Seven Mail over Gmail IMAP + POP3
-        if: steps.credentials.outputs.configured == 'true'
-        env:
-          SEVEN_MAIL_EXTERNAL_SMOKE: "1"
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml protocol_e2e::external_receive_smoke -- --nocapture
+          # The native PIN guard queries Secret Service even when no PIN is set.
+          # Run every smoke test in the same unlocked, disposable D-Bus session.
+          dbus-run-session -- bash -euo pipefail -c '
+            eval "$(printf %s seven-mail-ci-only | gnome-keyring-daemon --unlock --components=secrets)"
+            cargo test --locked --manifest-path src-tauri/Cargo.toml --lib credentials::native_backend_tests::native_backend_roundtrip -- --ignored --exact
+            cargo test --locked --manifest-path src-tauri/Cargo.toml --lib protocol_e2e::external_smtp_smoke -- --nocapture
+            cargo test --locked --manifest-path src-tauri/Cargo.toml --lib protocol_e2e::external_outbox_sent_smoke -- --nocapture
+            cargo test --locked --manifest-path src-tauri/Cargo.toml --lib protocol_e2e::external_receive_smoke -- --nocapture
+          '
