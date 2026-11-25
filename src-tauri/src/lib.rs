@@ -628,8 +628,10 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
     let paths = AppPaths::resolve()?;
     let accounts = storage::list_accounts(&paths)?;
     let mut sent = 0usize;
+    let mut sent_operation_ids = Vec::new();
     let mut sent_account_ids = Vec::new();
     let mut sent_copy_warnings = Vec::new();
+    let mut delivery_warnings = Vec::new();
 
     loop {
         let Some(operation) = storage::claim_next_send_due(&paths)? else {
@@ -637,16 +639,23 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
         };
 
         let Some(account) = accounts.iter().find(|item| item.id == operation.account_id) else {
-            storage::fail(&paths, &operation.id)?;
+            storage::quarantine_operation(&paths, &operation.id, "account_missing")?;
+            delivery_warnings.push(format!("{}: conta de envio não encontrada.", operation.id));
             continue;
         };
 
-        match providers::send_queued_raw(account, &operation) {
+        let submission_started = std::cell::Cell::new(false);
+        match providers::send_queued_raw_with_checkpoint(account, &operation, || {
+            storage::mark_smtp_submission(&paths, &operation.id)?;
+            submission_started.set(true);
+            Ok(())
+        }) {
             Ok(raw) => {
                 // SMTP success is final for the queue item. A failure to mirror
                 // the copy into IMAP Sent must never trigger a duplicate resend.
                 storage::complete(&paths, &operation.id)?;
                 sent += 1;
+                sent_operation_ids.push(operation.id.clone());
                 if !sent_account_ids.iter().any(|value| value == &account.id) {
                     sent_account_ids.push(account.id.clone());
                 }
@@ -664,19 +673,26 @@ fn flush_outbox() -> Result<OutboxFlushResult, String> {
                 }
             }
             Err(error) => {
-                storage::retry_later(&paths, &operation.id)?;
-                if sent == 0 {
-                    return Err(error);
+                if submission_started.get() {
+                    // A transport failure after submission might mean the SMTP
+                    // server accepted the message but its response was lost.
+                    storage::quarantine_operation(&paths, &operation.id, "delivery_unknown")?;
+                    delivery_warnings.push(format!("{}: entrega não confirmada; confira Enviados antes de reenviar.", operation.id));
+                } else {
+                    storage::retry_later(&paths, &operation.id)?;
+                    delivery_warnings.push(format!("{}: envio não iniciado: {error}", operation.id));
                 }
-                break;
+                // Continue draining other due messages, even when one fails.
             }
         }
     }
 
     Ok(OutboxFlushResult {
         sent,
+        sent_operation_ids,
         sent_account_ids,
         sent_copy_warnings,
+        delivery_warnings,
     })
 }
 
@@ -914,8 +930,11 @@ fn copy_message_to_folder(
         .into_iter()
         .find(|item| item.id == message_id)
         .ok_or_else(|| "Mensagem não encontrada.".to_string())?;
+    if message.remote_folder.as_deref() == Some("POP3") {
+        return Err("A mensagem não possui uma identidade IMAP remota confirmada.".to_string());
+    }
     let remote_id = message.remote_id.ok_or_else(|| "Mensagem local não possui UID remoto.".to_string())?;
-    let mailbox = message.remote_folder.unwrap_or_else(|| "INBOX".to_string());
+    let mailbox = message.remote_folder.ok_or_else(|| "Pasta IMAP remota não confirmada.".to_string())?;
     storage::queue_operation(&paths, &QueueOperation {
         id: uuid::Uuid::new_v4().to_string(),
         kind: "copy".to_string(),
@@ -993,6 +1012,8 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            let paths = AppPaths::resolve().map_err(std::io::Error::other)?;
+            storage::recover_interrupted_operations(&paths).map_err(std::io::Error::other)?;
             use tauri::{
                 menu::{Menu, MenuItem},
                 tray::TrayIconBuilder,

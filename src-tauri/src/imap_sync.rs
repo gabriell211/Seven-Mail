@@ -283,7 +283,7 @@ fn action_matches_generation(
     validity: u32,
 ) -> bool {
     let uid = operation.payload.get("remoteId").and_then(|value| value.as_str())
-        .and_then(|value| value.parse::<u32>().ok()).filter(|value| *value != 0);
+        .and_then(|value| value.parse::<u32>().ok().filter(|uid| *uid != 0 && uid.to_string() == value));
     let Some(uid) = uid else { return false; };
     let expected = remote_message_id(&operation.account_id, folder, validity, uid);
     operation.payload.get("messageId").and_then(|value| value.as_str()) == Some(expected.as_str())
@@ -892,7 +892,7 @@ pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize
             };
             if !action_matches_generation(&operation, source_mailbox, validity) {
                 // Legacy or stale actions must never affect a reused UID.
-                storage::fail(paths, &operation.id)?;
+                storage::quarantine_operation(paths, &operation.id, "imap_identity_unverified")?;
                 let _ = session.logout().await;
                 return Err("A ação IMAP foi preservada na fila de falhas: identidade da mensagem não confirmada. Sincronize a pasta novamente.".to_string());
             }
@@ -906,7 +906,7 @@ pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize
                     // COPY/MOVE can have completed on the server before the
                     // connection failed. Never blindly replay them.
                     if matches!(operation.kind.as_str(), "copy" | "move" | "delete") {
-                        storage::fail(paths, &operation.id)?;
+                        storage::quarantine_operation(paths, &operation.id, "delivery_unknown")?;
                     } else {
                         storage::retry_later(paths, &operation.id)?;
                     }
@@ -987,7 +987,7 @@ mod generation_tests {
         assert!(action_matches_generation(&operation, "INBOX", 11));
         assert!(!action_matches_generation(&operation, "INBOX", 12));
         assert!(!action_matches_generation(&operation, "Other", 11));
-        for invalid in ["0", "1:2", "*", "1,2", "4294967296"] {
+        for invalid in ["0", "01", "+1", "1:2", "*", "1,2", "4294967296"] {
             operation.payload["remoteId"] = serde_json::json!(invalid);
             assert!(!action_matches_generation(&operation, "INBOX", 11));
         }
