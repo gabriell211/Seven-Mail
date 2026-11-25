@@ -1,0 +1,96 @@
+name: Neon SDK dependency validation
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/neon-sdk-validation.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/lib/neon*.ts'
+      - 'tests/neon*.test.mts'
+      - 'database/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dependency-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Validate committed dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --strict-peer-deps --strict-allow-scripts 2>&1 | tee /tmp/npm-install.log
+          npm audit --json > /tmp/neon-audit.json
+          npm ls --all > /tmp/neon-dependency-tree.txt
+          if grep -Ei 'npm warn|DeprecationWarning' /tmp/npm-install.log; then
+            echo 'Dependency warnings present.'
+            exit 1
+          fi
+      - name: Test frontend
+        run: npm test
+      - name: Build frontend without warnings
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build 2>&1 | tee /tmp/frontend-build.log
+          if grep -Ei '(^|[[:space:]])warning:|\[warn\]|DeprecationWarning|\(!\)' /tmp/frontend-build.log; then
+            echo 'Frontend emitted warnings.'
+            exit 1
+          fi
+      - name: Upload dependency diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: neon-sdk-diagnostics
+          path: |
+            /tmp/npm-install.log
+            /tmp/neon-audit.json
+            /tmp/neon-dependency-tree.txt
+            /tmp/frontend-build.log
+          if-no-files-found: warn
+  postgres-migration-regression:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: seven-mail-ci-only
+          POSTGRES_DB: seven_mail_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: seven-mail-ci-only
+      PGDATABASE: seven_mail_ci
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install PostgreSQL client
+        run: |
+          if ! command -v psql >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          fi
+      - name: Apply all migrations to disposable database
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -f database/tests/ci-auth.sql
+          for migration in database/migrations/*.sql; do
+            echo "Applying $migration"
+            psql -X -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Verify RLS, identity and tombstone behavior
+        run: psql -X -v ON_ERROR_STOP=1 -f database/tests/tombstone-regression.sql

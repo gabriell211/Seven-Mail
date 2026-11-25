@@ -4574,6 +4574,7 @@ dependencies = [
  "msg_parser",
  "openssl",
  "outlook-pst-rw",
+ "quick-xml",
  "regex",
  "reqwest",
  "serde",

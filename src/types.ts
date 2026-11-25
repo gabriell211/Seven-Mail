@@ -231,7 +231,20 @@ export interface WorkspaceDocument<T = Record<string, unknown>> {
   deletedAt?: string | null;
 }
 
+export interface DavResource {
+  href: string;
+  etag: string;
+  readOnly?: boolean;
+}
+
+export interface DavObject {
+  resource: DavResource;
+  data: string;
+}
+
 export interface CalendarEvent {
+  davResource?: DavResource;
+  davUid?: string;
   id: string;
   title: string;
   description: string;
@@ -280,6 +293,8 @@ export interface CalendarListItem {
 }
 
 export interface ContactItem {
+  davResource?: DavResource;
+  davUid?: string;
   id: string;
   displayName: string;
   email: string;

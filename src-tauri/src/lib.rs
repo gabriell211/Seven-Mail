@@ -1,6 +1,8 @@
 mod app_lock;
+mod cloud_binding;
 mod credentials;
 mod dav_sync;
+mod dav_xml;
 mod imap_sync;
 mod interchange;
 mod ldap_sync;
@@ -12,6 +14,8 @@ mod provider_native;
 mod providers;
 mod smime;
 mod storage;
+#[path = "../storage_guard.rs"]
+pub mod storage_guard;
 mod updater;
 mod workspace;
 
@@ -30,6 +34,18 @@ struct DesktopState {
 #[tauri::command]
 fn runtime_info() -> Result<RuntimeInfo, String> {
     Ok(AppPaths::resolve()?.runtime_info())
+}
+
+#[tauri::command]
+fn get_cloud_binding() -> Result<Option<cloud_binding::CloudBinding>, String> {
+    app_lock::require_unlocked()?;
+    cloud_binding::get(&AppPaths::resolve()?)
+}
+
+#[tauri::command]
+fn set_cloud_binding(owner_id: String, enabled: bool) -> Result<cloud_binding::CloudBinding, String> {
+    app_lock::require_unlocked()?;
+    cloud_binding::set(&AppPaths::resolve()?, &owner_id, enabled)
 }
 
 #[tauri::command]
@@ -374,47 +390,47 @@ fn test_dav_connection(account_id: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn put_dav_calendar(account_id: String, event_id: String, ics: String) -> Result<(), String> {
+fn put_dav_calendar(account_id: String, event_id: String, ics: String, resource: Option<dav_xml::DavResource>, create: Option<bool>) -> Result<dav_xml::DavResource, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    dav_sync::put_calendar(&account, &event_id, &ics)
+    dav_sync::put_calendar(&account, &event_id, &ics, resource.as_ref(), create.unwrap_or(false))
 }
 
 #[tauri::command]
-fn delete_dav_calendar(account_id: String, event_id: String) -> Result<(), String> {
+fn delete_dav_calendar(account_id: String, resource: Option<dav_xml::DavResource>) -> Result<(), String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    dav_sync::delete_calendar(&account, &event_id)
+    dav_sync::delete_calendar(&account, resource.as_ref())
 }
 
 #[tauri::command]
-fn put_dav_contact(account_id: String, contact_id: String, vcard: String) -> Result<(), String> {
+fn put_dav_contact(account_id: String, contact_id: String, vcard: String, resource: Option<dav_xml::DavResource>, create: Option<bool>) -> Result<dav_xml::DavResource, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    dav_sync::put_contact(&account, &contact_id, &vcard)
+    dav_sync::put_contact(&account, &contact_id, &vcard, resource.as_ref(), create.unwrap_or(false))
 }
 
 #[tauri::command]
-fn delete_dav_contact(account_id: String, contact_id: String) -> Result<(), String> {
+fn delete_dav_contact(account_id: String, resource: Option<dav_xml::DavResource>) -> Result<(), String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| "Conta não encontrada.".to_string())?;
-    dav_sync::delete_contact(&account, &contact_id)
+    dav_sync::delete_contact(&account, resource.as_ref())
 }
 
 #[tauri::command]
@@ -1117,6 +1133,10 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            // Hold the storage lock before any cache migration or recovery.
+            let root = AppPaths::data_root().map_err(std::io::Error::other)?;
+            let guard = storage_guard::StorageGuard::desktop(&root).map_err(std::io::Error::other)?;
+            app.manage(guard);
             let paths = AppPaths::resolve().map_err(std::io::Error::other)?;
             storage::recover_interrupted_operations(&paths).map_err(std::io::Error::other)?;
             let _ = interchange::cleanup_attachment_exports(&paths);
@@ -1182,6 +1202,8 @@ pub fn run() {
             initial_open_requests,
             set_close_to_tray,
             open_default_mail_settings,
+            get_cloud_binding,
+            set_cloud_binding,
             list_accounts,
             save_account,
             set_default_account,

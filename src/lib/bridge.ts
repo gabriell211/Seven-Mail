@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AccountProfile, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, OutboxFlushResult, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument, WorkspaceKind } from "../types";
+import type { DavResource, DavObject, AccountProfile, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, OutboxFlushResult, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument, WorkspaceKind } from "../types";
 
 const hasTauri = () => "__TAURI_INTERNALS__" in window;
 
@@ -8,7 +8,14 @@ async function command<T>(name: string, args?: Record<string, unknown>): Promise
   return invoke<T>(name, args);
 }
 
+export interface CloudBinding {
+  ownerId: string;
+  enabled: boolean;
+}
+
 export const bridge = {
+  getCloudBinding: (): Promise<CloudBinding | null> => command("get_cloud_binding"),
+  setCloudBinding: (ownerId: string, enabled: boolean): Promise<CloudBinding> => command("set_cloud_binding", { ownerId, enabled }),
   initialOpenRequests: (): Promise<string[]> => command("initial_open_requests"),
   runtimeInfo: async (): Promise<RuntimeInfo> => hasTauri()
     ? command<RuntimeInfo>("runtime_info")
@@ -57,12 +64,12 @@ export const bridge = {
     command("inspect_smime_message", { accountId, messageId }),
   syncLdap: (accountId: string): Promise<Array<{id:string;displayName:string;email:string;phone:string;company:string;jobTitle:string;dn:string}>> => command("sync_ldap", { accountId }),
   testLdapConnection: (accountId: string): Promise<boolean> => command("test_ldap_connection", { accountId }),
-  syncDav: (accountId: string): Promise<{calendarObjects:string[];contactObjects:string[]}> => command("sync_dav", { accountId }),
+  syncDav: (accountId: string): Promise<{calendarObjects:DavObject[];contactObjects:DavObject[]}> => command("sync_dav", { accountId }),
   testDavConnection: (accountId: string): Promise<boolean> => command("test_dav_connection", { accountId }),
-  putDavCalendar: (accountId: string, eventId: string, ics: string): Promise<void> => command("put_dav_calendar", { accountId, eventId, ics }),
-  deleteDavCalendar: (accountId: string, eventId: string): Promise<void> => command("delete_dav_calendar", { accountId, eventId }),
-  putDavContact: (accountId: string, contactId: string, vcard: string): Promise<void> => command("put_dav_contact", { accountId, contactId, vcard }),
-  deleteDavContact: (accountId: string, contactId: string): Promise<void> => command("delete_dav_contact", { accountId, contactId }),
+  putDavCalendar: (accountId: string, eventId: string, ics: string, resource?: DavResource, create = false): Promise<DavResource> => command("put_dav_calendar", { accountId, eventId, ics, resource: resource ?? null, create }),
+  deleteDavCalendar: (accountId: string, resource?: DavResource): Promise<void> => command("delete_dav_calendar", { accountId, resource: resource ?? null }),
+  putDavContact: (accountId: string, contactId: string, vcard: string, resource?: DavResource, create = false): Promise<DavResource> => command("put_dav_contact", { accountId, contactId, vcard, resource: resource ?? null, create }),
+  deleteDavContact: (accountId: string, resource?: DavResource): Promise<void> => command("delete_dav_contact", { accountId, resource: resource ?? null }),
   testSmtpConnection: (accountId: string): Promise<boolean> => command("test_smtp_connection", { accountId }),
   testImapConnection: (accountId: string): Promise<boolean> => command("test_imap_connection", { accountId }),
   syncInbox: (accountId: string, limit = 50): Promise<number> => command("sync_inbox", { accountId, limit }),

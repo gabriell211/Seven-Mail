@@ -2,62 +2,67 @@ use crate::{
     credentials,
     models::{AccountProfile, DavSyncResult},
 };
-use regex::Regex;
-use reqwest::{blocking::Client, Method};
+use crate::dav_xml::{self, DavObject, DavResource};
+use reqwest::{blocking::Client, Method, Url, header::{ETAG, IF_MATCH, IF_NONE_MATCH}};
+use std::io::Read;
 use std::time::Duration;
 
-fn validate_url(value: &str) -> Result<(), String> {
-    let lower = value.to_ascii_lowercase();
-    if lower.starts_with("https://")
-        || lower.starts_with("http://127.0.0.1")
-        || lower.starts_with("http://localhost")
-    {
-        Ok(())
-    } else {
-        Err("CalDAV/CardDAV exige HTTPS (HTTP é permitido apenas em localhost).".to_string())
+fn validate_url(value: &str) -> Result<Url, String> {
+    let url = Url::parse(value).map_err(|_| "URL DAV inválida.".to_string())?;
+    let loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+    if (url.scheme() != "https" && !(url.scheme() == "http" && loopback))
+        || url.host_str().is_none() || !url.username().is_empty() || url.password().is_some()
+        || url.query().is_some() || url.fragment().is_some() {
+        return Err("DAV exige HTTPS, sem credenciais, query ou fragmento; HTTP somente em loopback.".into());
     }
+    Ok(url)
 }
 
-fn xml_unescape(value: &str) -> String {
-    value
-        .trim()
-        .strip_prefix("<![CDATA[")
-        .and_then(|value| value.strip_suffix("]]>"))
-        .unwrap_or(value.trim())
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&amp;", "&")
+fn collection_url(base: &str) -> Result<Url, String> {
+    let mut url = validate_url(base)?;
+    if !url.path().ends_with('/') {
+        let path = format!("{}/", url.path());
+        url.set_path(&path);
+    }
+    Ok(url)
 }
 
-fn extract_objects(xml: &str, local_name: &str) -> Result<Vec<String>, String> {
-    let pattern = format!(
-        r"(?is)<(?:[A-Za-z0-9_-]+:)?{0}(?:\s[^>]*)?>(.*?)</(?:[A-Za-z0-9_-]+:)?{0}>",
-        regex::escape(local_name)
-    );
-    let regex = Regex::new(&pattern).map_err(|error| error.to_string())?;
-    Ok(regex
-        .captures_iter(xml)
-        .filter_map(|capture| capture.get(1))
-        .map(|capture| xml_unescape(capture.as_str()))
-        .filter(|value| !value.trim().is_empty())
-        .collect())
+fn resource_url(base: &str, href: &str) -> Result<Url, String> {
+    let collection = collection_url(base)?;
+    let target = collection.join(href).map_err(|_| "Endereço de recurso DAV inválido.".to_string())?;
+    let target = validate_url(target.as_str())?;
+    let suffix = target.path().strip_prefix(collection.path()).unwrap_or("");
+    let lower = suffix.to_ascii_lowercase();
+    if target.origin() != collection.origin() || suffix.is_empty() || suffix.contains('/')
+        || lower.contains("%2f") || lower.contains("%5c") || lower.contains("%00")
+        || lower.contains("%25") {
+        return Err("Recurso DAV fora da coleção autorizada.".into());
+    }
+    Ok(target)
 }
 
-fn report(account: &AccountProfile, url: &str, body: &str, tag: &str) -> Result<Vec<String>, String> {
-    validate_url(url)?;
+fn strong_etag(value: &str) -> Result<&str, String> {
+    if value.len() < 2 || value.len() > 1024 || !value.starts_with('"') || !value.ends_with('"')
+        || value[1..value.len()-1].chars().any(|c| c == '"' || c.is_control() || c.is_whitespace()) {
+        return Err("ETag forte indisponível. Sincronize o recurso antes de alterá-lo.".into());
+    }
+    Ok(value)
+}
+
+fn report(account: &AccountProfile, url: &str, body: &str, tag: &str) -> Result<Vec<DavObject>, String> {
+    let url = collection_url(url)?;
     let password = credentials::load(account.credential_account_id())?;
     let username = account.username.as_deref().unwrap_or(&account.email);
     let timeout = Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300));
     let client = Client::builder()
         .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| format!("Falha ao preparar cliente DAV: {error}"))?;
     let method = Method::from_bytes(b"REPORT").map_err(|error| error.to_string())?;
 
     let response = client
-        .request(method, url)
+        .request(method, url.clone())
         .basic_auth(username, Some(password))
         .header("Depth", "1")
         .header("Content-Type", "application/xml; charset=utf-8")
@@ -67,8 +72,56 @@ fn report(account: &AccountProfile, url: &str, body: &str, tag: &str) -> Result<
         .error_for_status()
         .map_err(|error| format!("Servidor DAV recusou a sincronização: {error}"))?;
 
-    let xml = response.text().map_err(|error| format!("Resposta DAV inválida: {error}"))?;
-    extract_objects(&xml, tag)
+    if response.status().as_u16() != 207 {
+        return Err(format!("REPORT DAV esperado: HTTP 207, recebido {}.", response.status()));
+    }
+    let mut bytes = Vec::new();
+    response.take(dav_xml::MAX_REPORT_BYTES as u64 + 1).read_to_end(&mut bytes)
+        .map_err(|error| format!("Resposta DAV inválida: {error}"))?;
+    if bytes.len() > dav_xml::MAX_REPORT_BYTES { return Err("Resposta DAV excede 16 MB.".into()); }
+    let xml = String::from_utf8(bytes).map_err(|_| "Resposta DAV não está em UTF-8.".to_string())?;
+    let mut objects = dav_xml::parse_report(&xml, tag)?;
+    normalize_report_resources(url.as_str(), &mut objects)?;
+    Ok(objects)
+}
+
+// RFC 3986 unreserved percent encodings identify the same resource.
+// Keep the original validated href for requests, but canonicalize the
+// identity used to detect duplicate resources.
+fn canonical_resource_identity(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(a), Some(b)) = ((bytes[i + 1] as char).to_digit(16), (bytes[i + 2] as char).to_digit(16)) {
+                let decoded = (a * 16 + b) as u8;
+                if decoded.is_ascii_alphanumeric() || matches!(decoded, b'-' | b'.' | b'_' | b'~') {
+                    output.push(decoded);
+                } else {
+                    output.extend_from_slice(&[b'%', bytes[i + 1].to_ascii_uppercase(), bytes[i + 2].to_ascii_uppercase()]);
+                }
+                i += 3;
+                continue;
+            }
+        }
+        output.push(bytes[i]);
+        i += 1;
+    }
+    // All transformations preserve UTF-8.
+    String::from_utf8(output).expect("canonical URL is valid UTF-8")
+}
+
+fn normalize_report_resources(base: &str, objects: &mut [DavObject]) -> Result<(), String> {
+    let mut seen = std::collections::HashSet::new();
+    for object in objects {
+        let href = resource_url(base, &object.resource.href)?.to_string();
+        if !seen.insert(canonical_resource_identity(&href)) {
+            return Err("Identidade DAV duplicada após normalização.".into());
+        }
+        object.resource.href = href;
+    }
+    Ok(())
 }
 
 pub fn sync(account: &AccountProfile) -> Result<DavSyncResult, String> {
@@ -91,7 +144,7 @@ pub fn sync(account: &AccountProfile) -> Result<DavSyncResult, String> {
         Vec::new()
     };
 
-    let contact_objects = if let Some(url) = account.carddav_url.as_deref().filter(|value| !value.trim().is_empty()) {
+    let contact_objects = if let Some(url) = account.carddav_url.as_deref().filter(|value| account.can("read") && !value.trim().is_empty()) {
         report(
             account,
             url,
@@ -123,21 +176,15 @@ pub fn test(account: &AccountProfile) -> Result<bool, String> {
 }
 
 
-fn object_url(base: &str, id: &str, extension: &str) -> Result<String, String> {
-    validate_url(base)?;
-    let mut url = base.trim_end_matches('/').to_string();
-    let safe = id
-        .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') { ch } else { '_' })
-        .collect::<String>();
-    if safe.trim_matches('_').is_empty() {
-        return Err("Identificador DAV inválido.".to_string());
+fn object_url(base: &str, id: &str, extension: &str) -> Result<Url, String> {
+    if id.is_empty() || id.len() > 180 || id == "." || id == ".."
+        || !id.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.')) {
+        return Err("Identificador DAV inválido.".into());
     }
-    url.push('/');
-    url.push_str(&safe);
-    url.push('.');
-    url.push_str(extension);
-    Ok(url)
+    let mut url = collection_url(base)?;
+    url.path_segments_mut().map_err(|_| "Coleção DAV inválida.".to_string())?
+        .pop_if_empty().push(&format!("{id}.{extension}"));
+    resource_url(base, url.as_str())
 }
 
 fn dav_client(account: &AccountProfile) -> Result<(Client, String, String), String> {
@@ -146,9 +193,26 @@ fn dav_client(account: &AccountProfile) -> Result<(Client, String, String), Stri
     let timeout = Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300));
     let client = Client::builder()
         .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| format!("Falha ao preparar cliente DAV: {error}"))?;
     Ok((client, username, password))
+}
+
+fn check_mutation_status(response: &reqwest::blocking::Response) -> Result<(), String> {
+    validate_mutation_status(response.status().as_u16())
+}
+
+fn validate_mutation_status(status: u16) -> Result<(), String> {
+    if status == 412 {
+        return Err("Conflito DAV: o recurso foi alterado em outro dispositivo. Sincronize antes de tentar novamente.".into());
+    }
+    // 202 is only accepted for processing, and 207 can contain individual failures.
+    // Neither confirms that the requested resource mutation completed.
+    if !matches!(status, 200 | 201 | 204) {
+        return Err(format!("Servidor DAV não confirmou a alteração: HTTP {status}."));
+    }
+    Ok(())
 }
 
 fn put_object(
@@ -158,39 +222,41 @@ fn put_object(
     extension: &str,
     content_type: &str,
     content: &str,
-) -> Result<(), String> {
-    let url = object_url(base_url, id, extension)?;
+    resource: Option<&DavResource>,
+    create: bool,
+) -> Result<DavResource, String> {
+    let (url, condition) = match resource {
+        Some(resource) if !create => (resource_url(base_url, &resource.href)?, Some(strong_etag(&resource.etag)?)),
+        None if create => (object_url(base_url, id, extension)?, None),
+        _ => return Err("Identidade ou versão DAV não confirmada. Sincronize antes de editar.".into()),
+    };
+    if content.len() > 2 * 1024 * 1024 { return Err("Objeto DAV excede 2 MB.".into()); }
     let (client, username, password) = dav_client(account)?;
-    client
-        .put(url)
-        .basic_auth(username, Some(password))
-        .header("Content-Type", content_type)
-        .body(content.to_string())
-        .send()
-        .map_err(|error| format!("Falha ao gravar objeto DAV: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("Servidor DAV recusou a gravação: {error}"))?;
-    Ok(())
+    let request = client.put(url.clone()).basic_auth(username, Some(password))
+        .header("Content-Type", content_type).body(content.to_owned());
+    let request = if let Some(etag) = condition { request.header(IF_MATCH, etag) }
+        else { request.header(IF_NONE_MATCH, "*") };
+    let response = request.send().map_err(|error| format!("Falha ao gravar objeto DAV: {error}"))?;
+    check_mutation_status(&response)?;
+    let etag = response.headers().get(ETAG).and_then(|value| value.to_str().ok())
+        .and_then(|value| strong_etag(value).ok()).unwrap_or("").to_owned();
+    // If the server omits a strong ETag, the successful write is retained but
+    // further updates must wait for the next REPORT.
+    Ok(DavResource { href: url.to_string(), etag })
 }
 
-fn delete_object(account: &AccountProfile, base_url: &str, id: &str, extension: &str) -> Result<(), String> {
-    let url = object_url(base_url, id, extension)?;
+fn delete_object(account: &AccountProfile, base_url: &str, resource: Option<&DavResource>) -> Result<(), String> {
+    let resource = resource.ok_or_else(|| "Sincronize o recurso DAV antes de excluí-lo.".to_string())?;
+    let url = resource_url(base_url, &resource.href)?;
+    let etag = strong_etag(&resource.etag)?;
     let (client, username, password) = dav_client(account)?;
-    let response = client
-        .delete(url)
-        .basic_auth(username, Some(password))
-        .send()
-        .map_err(|error| format!("Falha ao excluir objeto DAV: {error}"))?;
-    if response.status().as_u16() == 404 {
-        return Ok(());
-    }
-    response
-        .error_for_status()
-        .map_err(|error| format!("Servidor DAV recusou a exclusão: {error}"))?;
-    Ok(())
+    let response = client.delete(url).basic_auth(username, Some(password)).header(IF_MATCH, etag)
+        .send().map_err(|error| format!("Falha ao excluir objeto DAV: {error}"))?;
+    if response.status().as_u16() == 404 { return Ok(()); }
+    check_mutation_status(&response)
 }
 
-pub fn put_calendar(account: &AccountProfile, event_id: &str, ics: &str) -> Result<(), String> {
+pub fn put_calendar(account: &AccountProfile, event_id: &str, ics: &str, resource: Option<&DavResource>, create: bool) -> Result<DavResource, String> {
     if account.is_shared_mailbox && !account.can("manage-calendar") {
         return Err("A conta compartilhada não permite editar o calendário.".to_string());
     }
@@ -199,10 +265,10 @@ pub fn put_calendar(account: &AccountProfile, event_id: &str, ics: &str) -> Resu
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| "CalDAV não configurado.".to_string())?;
-    put_object(account, base, event_id, "ics", "text/calendar; charset=utf-8", ics)
+    put_object(account, base, event_id, "ics", "text/calendar; charset=utf-8", ics, resource, create)
 }
 
-pub fn delete_calendar(account: &AccountProfile, event_id: &str) -> Result<(), String> {
+pub fn delete_calendar(account: &AccountProfile, resource: Option<&DavResource>) -> Result<(), String> {
     if account.is_shared_mailbox && !account.can("manage-calendar") {
         return Err("A conta compartilhada não permite editar o calendário.".to_string());
     }
@@ -211,10 +277,10 @@ pub fn delete_calendar(account: &AccountProfile, event_id: &str) -> Result<(), S
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| "CalDAV não configurado.".to_string())?;
-    delete_object(account, base, event_id, "ics")
+    delete_object(account, base, resource)
 }
 
-pub fn put_contact(account: &AccountProfile, contact_id: &str, vcard: &str) -> Result<(), String> {
+pub fn put_contact(account: &AccountProfile, contact_id: &str, vcard: &str, resource: Option<&DavResource>, create: bool) -> Result<DavResource, String> {
     if account.is_shared_mailbox && !account.can("edit") {
         return Err("A conta compartilhada não permite editar contatos.".to_string());
     }
@@ -223,10 +289,10 @@ pub fn put_contact(account: &AccountProfile, contact_id: &str, vcard: &str) -> R
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| "CardDAV não configurado.".to_string())?;
-    put_object(account, base, contact_id, "vcf", "text/vcard; charset=utf-8", vcard)
+    put_object(account, base, contact_id, "vcf", "text/vcard; charset=utf-8", vcard, resource, create)
 }
 
-pub fn delete_contact(account: &AccountProfile, contact_id: &str) -> Result<(), String> {
+pub fn delete_contact(account: &AccountProfile, resource: Option<&DavResource>) -> Result<(), String> {
     if account.is_shared_mailbox && !account.can("edit") {
         return Err("A conta compartilhada não permite editar contatos.".to_string());
     }
@@ -235,5 +301,48 @@ pub fn delete_contact(account: &AccountProfile, contact_id: &str) -> Result<(), 
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| "CardDAV não configurado.".to_string())?;
-    delete_object(account, base, contact_id, "vcf")
+    delete_object(account, base, resource)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn validates_resource_origin_and_collection() {
+        assert!(resource_url("https://mail.example/book/", "/book/a.vcf").is_ok());
+        for href in ["https://evil.example/book/a.vcf", "/other/a.vcf", "/book/%2Fother", "/book/", "../outside.vcf"] {
+            assert!(resource_url("https://mail.example/book/", href).is_err(), "{href}");
+        }
+        assert!(validate_url("http://localhost.evil.example/book").is_err());
+        assert!(validate_url("http://127.0.0.1:8080/book").is_ok());
+    }
+    #[test]
+    fn duplicate_resource_aliases_and_unconfirmed_mutations_are_rejected() {
+        let object = |href: &str| DavObject {
+            resource: DavResource { href: href.into(), etag: String::new() },
+            data: "example".into(),
+        };
+        let mut objects = vec![object("/book/a.vcf"), object("https://mail.example/book/a.vcf")];
+        assert!(normalize_report_resources("https://mail.example/book", &mut objects).is_err());
+        let mut encoded = vec![object("/book/a.vcf"), object("/book/%61.vcf")];
+        assert!(normalize_report_resources("https://mail.example/book", &mut encoded).is_err());
+        let mut hex_case = vec![object("/book/%C3%A9.vcf"), object("/book/%c3%a9.vcf")];
+        assert!(normalize_report_resources("https://mail.example/book", &mut hex_case).is_err());
+        let mut distinct = vec![object("/book/a.vcf"), object("/book/b.vcf")];
+        assert!(normalize_report_resources("https://mail.example/book", &mut distinct).is_ok());
+        for status in [200, 201, 204] {
+            assert!(validate_mutation_status(status).is_ok());
+        }
+        for status in [202, 207, 302, 412, 500] {
+            assert!(validate_mutation_status(status).is_err());
+        }
+    }
+
+    #[test]
+    fn only_strong_specific_etags_can_authorize_updates() {
+        assert_eq!(strong_etag("\"abc\"").unwrap(), "\"abc\"");
+        for tag in ["*", "", "W/\"a\"", "\"a\r\nb\"", "\"a\",\"b\""] {
+            assert!(strong_etag(tag).is_err(), "{tag}");
+        }
+    }
 }
