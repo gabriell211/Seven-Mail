@@ -8,6 +8,7 @@ on:
       - 'src-tauri/src/local_crypto.rs'
       - 'src-tauri/src/storage.rs'
       - '.github/workflows/native-keyring-lock.yml'
+      - 'src-tauri/scripts/prepare-msvc-openssl.ps1'
 permissions:
   contents: read
 jobs:
@@ -85,10 +86,36 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
       - name: Build storage tests
+        if: runner.os != 'Windows'
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --no-run
-      - name: Exercise Windows Credential Manager
+      - name: Prepare Windows native dependencies
         if: runner.os == 'Windows'
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib credentials::native_backend_tests::native_backend_roundtrip -- --ignored --exact
+        shell: pwsh
+        run: |
+          choco install strawberryperl nasm -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "C:\Strawberry\perl\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Exercise Windows Credential Manager without linker warnings
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PATH = "C:\Strawberry\perl\bin;C:\Strawberry\c\bin;$env:PATH"
+          ./src-tauri/scripts/prepare-msvc-openssl.ps1
+          $log = Join-Path $env:RUNNER_TEMP 'seven-mail-native-vault-windows.log'
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib credentials::native_backend_tests::native_backend_roundtrip -- --ignored --exact 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Select-String -Path $log -Pattern 'warning LNK[0-9]+|(^|\s)warning:') {
+            throw 'Rust compiler or native linker warnings detected.'
+          }
+      - name: Upload Windows vault diagnostics
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-vault-windows-diagnostics
+          path: ${{ runner.temp }}/seven-mail-native-vault-windows.log
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Exercise macOS Keychain in an isolated temporary vault
         if: runner.os == 'macOS'
         shell: bash
