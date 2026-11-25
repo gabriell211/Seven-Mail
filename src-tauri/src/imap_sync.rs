@@ -13,6 +13,39 @@ use mail_parser::{MessageParser, MimeHeaders};
 
 type SecureClient = Client<TlsStream<TcpStream>>;
 
+static ACTIVE_ACCOUNTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
+struct AccountOperationGuard(String);
+
+impl AccountOperationGuard {
+    fn acquire(account_id: &str) -> Result<Self, String> {
+        let mut active = ACTIVE_ACCOUNTS.lock().map_err(|_| "Bloqueio IMAP indisponível.".to_string())?;
+        if !active.insert(account_id.to_owned()) {
+            return Err("Já existe uma operação IMAP em andamento para esta conta.".into());
+        }
+        Ok(Self(account_id.to_owned()))
+    }
+}
+
+impl Drop for AccountOperationGuard {
+    fn drop(&mut self) {
+        if let Ok(mut active) = ACTIVE_ACCOUNTS.lock() {
+            active.remove(&self.0);
+        }
+    }
+}
+
+async fn bounded<T>(
+    account: &AccountProfile,
+    operation: &str,
+    future: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    let timeout = std::time::Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300));
+    async_std::future::timeout(timeout, future).await
+        .map_err(|_| format!("Tempo limite IMAP excedido: {operation}."))?
+}
+
 async fn connect(account: &AccountProfile) -> Result<SecureClient, String> {
     let settings = providers::settings_for(account);
     let address = format!("{}:{}", settings.imap_host, settings.imap_port);
@@ -95,11 +128,12 @@ fn parse_message(
     fetch: &async_imap::types::Fetch,
     remote_folder: &str,
     folder_label: &str,
+    uid_validity: u32,
 ) -> Option<MailMessage> {
     let raw = fetch.body()?;
     let parsed = MessageParser::default().parse(raw)?;
 
-    let uid = fetch.uid.unwrap_or(fetch.message);
+    let uid = fetch.uid?;
     let flags: Vec<_> = fetch.flags().collect();
     let is_read = flags.iter().any(|flag| matches!(flag, Flag::Seen));
     let is_flagged = flags.iter().any(|flag| matches!(flag, Flag::Flagged));
@@ -121,11 +155,7 @@ fn parse_message(
         .collect::<Vec<_>>();
 
     Some(MailMessage {
-        id: if remote_folder.eq_ignore_ascii_case("INBOX") {
-            format!("{}-inbox-{uid}", account.id)
-        } else {
-            format!("{}-{}-{uid}", account.id, mailbox_key(remote_folder))
-        },
+        id: remote_message_id(&account.id, remote_folder, uid_validity, uid),
         account_id: account.id.clone(),
         remote_id: Some(uid.to_string()),
         remote_folder: Some(remote_folder.to_owned()),
@@ -168,6 +198,10 @@ impl async_imap::Authenticator for &OAuth2 {
 }
 
 async fn login(account: &AccountProfile) -> Result<async_imap::Session<TlsStream<TcpStream>>, String> {
+    bounded(account, "conexão e autenticação", login_inner(account)).await
+}
+
+async fn login_inner(account: &AccountProfile) -> Result<async_imap::Session<TlsStream<TcpStream>>, String> {
     let client = connect(account).await?;
     if !account.can("read") {
         return Err("A conta compartilhada não possui permissão de leitura.".to_string());
@@ -227,6 +261,32 @@ pub fn test_find_subject(
         session.logout().await.map_err(|error| error.to_string())?;
         Ok(!matches.is_empty())
     })
+}
+
+pub(crate) fn remote_message_id(account_id: &str, folder: &str, validity: u32, uid: u32) -> String {
+    let folder_key = if folder.eq_ignore_ascii_case("INBOX") {
+        "inbox".to_string()
+    } else {
+        mailbox_key(folder)
+    };
+    format!("{account_id}-{folder_key}-v{validity}-{uid}")
+}
+
+fn validated_uid_validity(value: Option<u32>) -> Result<u32, String> {
+    value.filter(|value| *value != 0)
+        .ok_or_else(|| "O servidor IMAP não informou UIDVALIDITY válido.".to_string())
+}
+
+fn action_matches_generation(
+    operation: &crate::models::QueueOperation,
+    folder: &str,
+    validity: u32,
+) -> bool {
+    let uid = operation.payload.get("remoteId").and_then(|value| value.as_str())
+        .and_then(|value| value.parse::<u32>().ok().filter(|uid| *uid != 0 && uid.to_string() == value));
+    let Some(uid) = uid else { return false; };
+    let expected = remote_message_id(&operation.account_id, folder, validity, uid);
+    operation.payload.get("messageId").and_then(|value| value.as_str()) == Some(expected.as_str())
 }
 
 fn mailbox_key(path: &str) -> String {
@@ -463,6 +523,28 @@ pub fn list_folders(account: &AccountProfile) -> Result<Vec<MailFolder>, String>
     })
 }
 
+fn missing_uid_batch(
+    remote: &std::collections::HashSet<u32>,
+    cached: &[u32],
+    limit: usize,
+) -> Vec<u32> {
+    let cached_set = cached.iter().copied().collect::<std::collections::HashSet<_>>();
+    let mut missing = remote
+        .iter()
+        .copied()
+        .filter(|uid| !cached_set.contains(uid))
+        .collect::<Vec<_>>();
+    missing.sort_unstable();
+    // Show recent mail first on a fresh installation. On subsequent passes
+    // drain the oldest missing UIDs so newer arrivals cannot starve the backlog.
+    if cached.is_empty() && missing.len() > limit {
+        missing = missing.split_off(missing.len() - limit);
+    } else {
+        missing.truncate(limit);
+    }
+    missing
+}
+
 pub fn sync_folder(
     paths: &AppPaths,
     account: &AccountProfile,
@@ -471,13 +553,17 @@ pub fn sync_folder(
     limit: u32,
 ) -> Result<usize, String> {
     let limit = limit.clamp(1, 200);
+    let _guard = AccountOperationGuard::acquire(&account.id)?;
 
     async_std::task::block_on(async {
         let mut session = login(account).await?;
-        let mailbox = session
-            .select(remote_folder)
-            .await
-            .map_err(|error| format!("Não foi possível abrir {remote_folder}: {error}"))?;
+        let mailbox = bounded(account, "SELECT", async {
+            session.select(remote_folder).await
+                .map_err(|error| format!("Não foi possível abrir {remote_folder}: {error}"))
+        }).await?;
+
+        let uid_validity = validated_uid_validity(mailbox.uid_validity)?;
+        storage::prepare_imap_generation(paths, &account.id, remote_folder, uid_validity)?;
 
         if mailbox.exists == 0 {
             let empty = std::collections::HashSet::new();
@@ -486,77 +572,54 @@ pub fn sync_folder(
             return Ok(0);
         }
 
-        let remote_uids = session
-            .uid_search("ALL")
-            .await
-            .map_err(|error| format!("Falha ao consultar UIDs de {remote_folder}: {error}"))?;
+        let remote_uids = bounded(account, "UID SEARCH", async {
+            session.uid_search("ALL").await
+                .map_err(|error| format!("Falha ao consultar UIDs de {remote_folder}: {error}"))
+        }).await?;
         let cached_uids = storage::cached_remote_uids(paths, &account.id, remote_folder)?;
-        let cached_set = cached_uids.iter().copied().collect::<std::collections::HashSet<_>>();
-        let highest_cached = cached_uids.last().copied();
-
-        let mut sorted_remote = remote_uids.iter().copied().collect::<Vec<_>>();
-        sorted_remote.sort_unstable();
-
-        let mut wanted = if let Some(highest) = highest_cached {
-            sorted_remote
-                .iter()
-                .copied()
-                .filter(|uid| *uid > highest && !cached_set.contains(uid))
-                .collect::<Vec<_>>()
-        } else {
-            sorted_remote
-                .iter()
-                .rev()
-                .take(limit as usize)
-                .copied()
-                .collect::<Vec<_>>()
-        };
-        wanted.sort_unstable();
-        if wanted.len() > limit as usize {
-            wanted = wanted.split_off(wanted.len() - limit as usize);
-        }
+        // The persisted cache is the set of completed UIDs, not a high-water
+        // mark. Missing older UIDs must remain eligible after every batch.
+        let wanted = missing_uid_batch(&remote_uids, &cached_uids, limit as usize);
 
         let mut cached = 0usize;
-        if !wanted.is_empty() {
-            let sequence = wanted.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
-            let fetch_stream = session
-                .uid_fetch(sequence, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
-                .await
-                .map_err(|error| format!("Falha ao buscar novas mensagens: {error}"))?;
-            let fetched: Vec<_> = fetch_stream
-                .try_collect()
-                .await
-                .map_err(|error| format!("Falha ao receber novas mensagens: {error}"))?;
+        // Fetch bodies individually so a batch of large messages is not held in memory.
+        for uid in wanted {
+            let fetched: Vec<_> = bounded(account, "UID FETCH", async {
+                let stream = session.uid_fetch(uid.to_string(), "(UID FLAGS INTERNALDATE BODY.PEEK[])")
+                    .await.map_err(|error| format!("Falha ao buscar mensagem: {error}"))?;
+                stream.try_collect().await
+                    .map_err(|error| format!("Falha ao receber mensagem: {error}"))
+            }).await?;
 
             for item in &fetched {
-                if let Some(message) = parse_message(account, item, remote_folder, folder_label) {
-                    storage::cache_message(paths, &message)?;
+                if item.uid != Some(uid) { continue; }
+                if let Some(message) = parse_message(account, item, remote_folder, folder_label, uid_validity) {
                     if let Some(raw) = item.body() {
                         storage::cache_raw_message(paths, &message.account_id, &message.id, raw)?;
+                        storage::cache_message(paths, &message)?;
+                        cached += 1;
+                        break;
                     }
-                    cached += 1;
                 }
             }
         }
 
-        let recent_cached = cached_uids
-            .iter()
-            .rev()
-            .take(limit as usize)
-            .copied()
+        // Refresh every cached UID in bounded requests, including old mail.
+        let existing = cached_uids
+            .into_iter()
+            .filter(|uid| remote_uids.contains(uid))
             .collect::<Vec<_>>();
-        if !recent_cached.is_empty() {
-            let sequence = recent_cached.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
-            let flag_stream = session
-                .uid_fetch(sequence, "(UID FLAGS)")
-                .await
-                .map_err(|error| format!("Falha ao atualizar flags remotas: {error}"))?;
-            let flags: Vec<_> = flag_stream
-                .try_collect()
-                .await
-                .map_err(|error| format!("Falha ao receber flags remotas: {error}"))?;
+        for batch in existing.chunks(limit as usize) {
+            let sequence = batch.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+            let flags: Vec<_> = bounded(account, "UID FETCH FLAGS", async {
+                let stream = session.uid_fetch(sequence, "(UID FLAGS)").await
+                    .map_err(|error| format!("Falha ao atualizar flags remotas: {error}"))?;
+                stream.try_collect().await
+                    .map_err(|error| format!("Falha ao receber flags remotas: {error}"))
+            }).await?;
             for item in flags {
                 let Some(uid) = item.uid else { continue; };
+                if !batch.contains(&uid) { continue; }
                 let values: Vec<_> = item.flags().collect();
                 let is_read = values.iter().any(|flag| matches!(flag, Flag::Seen));
                 let is_flagged = values.iter().any(|flag| matches!(flag, Flag::Flagged));
@@ -564,6 +627,7 @@ pub fn sync_folder(
                     paths,
                     &account.id,
                     remote_folder,
+                    uid_validity,
                     uid,
                     is_read,
                     is_flagged,
@@ -778,6 +842,7 @@ pub fn delete_folder(account: &AccountProfile, path: &str) -> Result<(), String>
 }
 
 pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize, String> {
+    let _guard = AccountOperationGuard::acquire(&account.id)?;
     let Some(first) = storage::claim_next_mail_action(paths, &account.id)? else {
         return Ok(0);
     };
@@ -791,7 +856,13 @@ pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize
             }
         };
 
-        let folders = special_folders(&mut session).await.unwrap_or_default();
+        let folders = match bounded(account, "LIST action folders", special_folders(&mut session)).await {
+            Ok(folders) => folders,
+            Err(error) => {
+                storage::retry_later(paths, &first.id)?;
+                return Err(error);
+            }
+        };
         let mut applied = 0usize;
         let mut current = Some(first);
 
@@ -802,20 +873,43 @@ pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize
                 .and_then(|value| value.as_str())
                 .unwrap_or("INBOX");
 
-            if let Err(error) = session.select(source_mailbox).await {
-                storage::retry_later(paths, &operation.id)?;
+            let mailbox = match bounded(account, "SELECT action", async {
+                session.select(source_mailbox).await.map_err(|error| error.to_string())
+            }).await {
+                Ok(mailbox) => mailbox,
+                Err(error) => {
+                    storage::retry_later(paths, &operation.id)?;
+                    let _ = session.logout().await;
+                    return Err(format!("Não foi possível abrir {source_mailbox} para sincronizar a ação: {error}"));
+                }
+            };
+            let validity = match validated_uid_validity(mailbox.uid_validity) {
+                Ok(validity) => validity,
+                Err(error) => {
+                    storage::retry_later(paths, &operation.id)?;
+                    return Err(error);
+                }
+            };
+            if !action_matches_generation(&operation, source_mailbox, validity) {
+                // Legacy or stale actions must never affect a reused UID.
+                storage::quarantine_operation(paths, &operation.id, "imap_identity_unverified")?;
                 let _ = session.logout().await;
-                return Err(format!("Não foi possível abrir {source_mailbox} para sincronizar a ação: {error}"));
+                return Err("A ação IMAP foi preservada na fila de falhas: identidade da mensagem não confirmada. Sincronize a pasta novamente.".to_string());
             }
 
-            match apply_remote_action(&mut session, &operation, &folders).await {
+            match bounded(account, "UID action", apply_remote_action(&mut session, &operation, &folders)).await {
                 Ok(()) => {
                     storage::complete(paths, &operation.id)?;
                     applied += 1;
                 }
                 Err(error) => {
-                    storage::retry_later(paths, &operation.id)?;
-                    let _ = session.logout().await;
+                    // COPY/MOVE can have completed on the server before the
+                    // connection failed. Never blindly replay them.
+                    if matches!(operation.kind.as_str(), "copy" | "move" | "delete") {
+                        storage::quarantine_operation(paths, &operation.id, "delivery_unknown")?;
+                    } else {
+                        storage::retry_later(paths, &operation.id)?;
+                    }
                     return Err(error);
                 }
             }
@@ -825,4 +919,80 @@ pub fn flush_actions(paths: &AppPaths, account: &AccountProfile) -> Result<usize
         session.logout().await.map_err(|error| error.to_string())?;
         Ok(applied)
     })
+}
+
+#[cfg(test)]
+mod uid_batch_tests {
+    use super::missing_uid_batch;
+    use std::collections::HashSet;
+
+    #[test]
+    fn catches_up_after_more_than_two_hundred_arrivals() {
+        let remote: HashSet<u32> = (1..=501).collect();
+        let mut cached = vec![1];
+        for expected in [200, 200, 100, 0] {
+            let batch = missing_uid_batch(&remote, &cached, 200);
+            assert_eq!(batch.len(), expected);
+            cached.extend(batch);
+        }
+        assert_eq!(cached.into_iter().collect::<HashSet<_>>(), remote);
+    }
+
+    #[test]
+    fn initial_recent_batch_does_not_lose_older_mail() {
+        let remote: HashSet<u32> = (1..=500).collect();
+        let mut cached = missing_uid_batch(&remote, &[], 200);
+        assert_eq!(cached.first(), Some(&301));
+        cached.extend(missing_uid_batch(&remote, &cached, 200));
+        cached.extend(missing_uid_batch(&remote, &cached, 200));
+        assert_eq!(cached.into_iter().collect::<HashSet<_>>(), remote);
+    }
+
+    #[test]
+    fn repairs_existing_uid_gaps() {
+        let remote = HashSet::from([1, 2, 3, 4, 5, 6]);
+        assert_eq!(missing_uid_batch(&remote, &[1, 3, 6], 2), vec![2, 4]);
+    }
+}
+
+#[cfg(test)]
+mod generation_tests {
+    use super::*;
+
+    #[test]
+    fn operations_are_serialized_per_account_not_globally() {
+        let first = AccountOperationGuard::acquire("imap-test-account-a").unwrap();
+        assert!(AccountOperationGuard::acquire("imap-test-account-a").is_err());
+        let second = AccountOperationGuard::acquire("imap-test-account-b").unwrap();
+        drop(first);
+        assert!(AccountOperationGuard::acquire("imap-test-account-a").is_ok());
+        drop(second);
+    }
+
+    #[test]
+    fn recreated_mailbox_cannot_reuse_local_message_identity() {
+        assert_ne!(remote_message_id("account", "INBOX", 11, 1), remote_message_id("account", "INBOX", 12, 1));
+        assert_eq!(remote_message_id("account", "INBOX", 11, 1), remote_message_id("account", "inbox", 11, 1));
+        assert!(validated_uid_validity(None).is_err());
+        assert!(validated_uid_validity(Some(0)).is_err());
+    }
+
+    #[test]
+    fn only_actions_from_current_mailbox_generation_can_execute() {
+        let mut operation = crate::models::QueueOperation {
+            id: "op".into(), kind: "move".into(), account_id: "account".into(),
+            created_at: String::new(), attempts: 0,
+            payload: serde_json::json!({"remoteId": "1", "messageId": remote_message_id("account", "INBOX", 11, 1)}),
+        };
+        assert!(action_matches_generation(&operation, "INBOX", 11));
+        assert!(!action_matches_generation(&operation, "INBOX", 12));
+        assert!(!action_matches_generation(&operation, "Other", 11));
+        for invalid in ["0", "01", "+1", "1:2", "*", "1,2", "4294967296"] {
+            operation.payload["remoteId"] = serde_json::json!(invalid);
+            assert!(!action_matches_generation(&operation, "INBOX", 11));
+        }
+        operation.payload["remoteId"] = serde_json::json!("1");
+        operation.payload.as_object_mut().unwrap().remove("messageId");
+        assert!(!action_matches_generation(&operation, "INBOX", 11));
+    }
 }

@@ -251,7 +251,69 @@ fn attachment_mime(name: &str) -> &'static str {
     }
 }
 
-fn redirect_queued(account: &AccountProfile, operation: &QueueOperation) -> Result<Vec<u8>, String> {
+const MAX_SMTP_ATTACHMENT_BYTES: u64 = 250 * 1024 * 1024;
+const MAX_SMTP_TOTAL_ATTACHMENT_BYTES: u64 = 500 * 1024 * 1024;
+const MAX_SMTP_ATTACHMENT_COUNT: usize = 256;
+
+fn validate_attachment_count(count: usize) -> Result<(), String> {
+    if count > MAX_SMTP_ATTACHMENT_COUNT {
+        return Err("Quantidade de anexos excede o limite de 256 arquivos.".into());
+    }
+    Ok(())
+}
+
+fn attachment_budget(used: u64) -> Result<u64, String> {
+    MAX_SMTP_TOTAL_ATTACHMENT_BYTES.checked_sub(used)
+        .map(|remaining| remaining.min(MAX_SMTP_ATTACHMENT_BYTES))
+        .ok_or_else(|| "Total de anexos excede o limite de 500 MiB.".into())
+}
+
+fn read_staged_mail_file(
+    path: &str,
+    expected_operation: Option<&str>,
+    max_bytes: u64,
+) -> Result<Vec<u8>, String> {
+    let paths = AppPaths::resolve()?;
+    let root = paths.queue_attachments.canonicalize().map_err(|error| error.to_string())?;
+    let candidate = std::path::Path::new(path);
+    let metadata = fs::symlink_metadata(candidate).map_err(|error| error.to_string())?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err("Anexo não é um arquivo regular.".into());
+    }
+    let canonical = candidate.canonicalize().map_err(|error| error.to_string())?;
+    let relative = canonical.strip_prefix(&root)
+        .map_err(|_| "Arquivo fora da área de anexos da fila.".to_string())?;
+    let components = relative.components().collect::<Vec<_>>();
+    if components.len() != 2 || !components.iter().all(|component| matches!(component, std::path::Component::Normal(_))) {
+        return Err("Caminho de anexo inválido.".into());
+    }
+    if let Some(operation) = expected_operation {
+        if components[0].as_os_str() != std::ffi::OsStr::new(operation) {
+            return Err("A fonte não pertence à operação de redirecionamento.".into());
+        }
+    }
+    if metadata.len() > max_bytes + 1024 {
+        return Err("Arquivo da fila excede o limite de tamanho.".into());
+    }
+    use std::io::Read;
+    let file = fs::File::open(&canonical).map_err(|error| error.to_string())?;
+    let mut encrypted = Vec::new();
+    file.take(max_bytes + 1025).read_to_end(&mut encrypted).map_err(|error| error.to_string())?;
+    if encrypted.len() as u64 > max_bytes + 1024 || !local_crypto::is_encrypted(&encrypted) {
+        return Err("Arquivo de fila inválido ou não criptografado.".into());
+    }
+    let bytes = local_crypto::decrypt_or_plain(&encrypted)?;
+    if bytes.len() as u64 > max_bytes {
+        return Err("Arquivo da fila excede o limite de tamanho.".into());
+    }
+    Ok(bytes)
+}
+
+fn redirect_queued(
+    account: &AccountProfile,
+    operation: &QueueOperation,
+    before_submission: impl FnOnce() -> Result<(), String>,
+) -> Result<Vec<u8>, String> {
     if !account.can("send") {
         return Err("A conta não possui permissão de envio.".to_string());
     }
@@ -270,7 +332,7 @@ fn redirect_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
     let envelope = Envelope::new(Some(envelope_from), vec![recipient.clone()])
         .map_err(|error| format!("Envelope SMTP inválido: {error}"))?;
 
-    let original = fs::read(source_path)
+    let original = read_staged_mail_file(source_path, Some(&operation.id), 64 * 1024 * 1024)
         .map_err(|error| format!("Não foi possível ler a mensagem a redirecionar: {error}"))?;
     let resent = format!(
         "Resent-Date: {}\r\nResent-From: {}\r\nResent-To: {}\r\n",
@@ -281,15 +343,26 @@ fn redirect_queued(account: &AccountProfile, operation: &QueueOperation) -> Resu
     let mut raw = resent.into_bytes();
     raw.extend_from_slice(&original);
 
-    smtp_transport(account)?
+    let transport = smtp_transport(account)?;
+    before_submission()?;
+    transport
         .send_raw(&envelope, &raw)
         .map_err(|error| format!("Falha ao redirecionar mensagem: {error}"))?;
     Ok(raw)
 }
 
+#[cfg(test)]
 pub fn send_queued_raw(account: &AccountProfile, operation: &QueueOperation) -> Result<Vec<u8>, String> {
+    send_queued_raw_with_checkpoint(account, operation, || Ok(()))
+}
+
+pub fn send_queued_raw_with_checkpoint(
+    account: &AccountProfile,
+    operation: &QueueOperation,
+    before_submission: impl FnOnce() -> Result<(), String>,
+) -> Result<Vec<u8>, String> {
     if operation.kind == "redirect" {
-        return redirect_queued(account, operation);
+        return redirect_queued(account, operation, before_submission);
     }
     if operation.kind != "send" {
         return Err("Operação de fila não é um envio SMTP.".to_string());
@@ -451,10 +524,15 @@ pub fn send_queued_raw(account: &AccountProfile, operation: &QueueOperation) -> 
         );
     }
 
+    validate_attachment_count(attachments.len())?;
     let mut mixed = MultiPart::mixed().multipart(body_part);
+    let mut attachment_bytes = 0u64;
     for attachment in attachments {
-        let bytes = local_crypto::read(std::path::Path::new(&attachment.path))
+        let remaining = attachment_budget(attachment_bytes)?;
+        let bytes = read_staged_mail_file(&attachment.path, None, remaining)
             .map_err(|error| format!("Falha ao ler o anexo {}: {error}", attachment.name))?;
+        attachment_bytes = attachment_bytes.checked_add(bytes.len() as u64)
+            .ok_or_else(|| "Total de anexos inválido.".to_string())?;
         let content_type: ContentType = attachment_mime(&attachment.name)
             .parse()
             .map_err(|error| format!("MIME inválido para {}: {error}", attachment.name))?;
@@ -496,6 +574,8 @@ pub fn send_queued_raw(account: &AccountProfile, operation: &QueueOperation) -> 
         message.formatted()
     };
 
+    // Persist the submission boundary before calling the transport.
+    before_submission()?;
     transport
         .send_raw(message.envelope(), &raw)
         .map_err(|error| error.to_string())?;
@@ -601,5 +681,20 @@ mod protocol_security_tests {
         let settings = settings_for(&account);
         assert_eq!(settings.imap_security_mode, "tls");
         assert_eq!(settings.smtp_security_mode, "starttls");
+    }
+}
+
+#[cfg(test)]
+mod smtp_attachment_budget_tests {
+    use super::*;
+
+    #[test]
+    fn limits_attachment_count_and_actual_total_bytes() {
+        assert!(validate_attachment_count(256).is_ok());
+        assert!(validate_attachment_count(257).is_err());
+        assert_eq!(attachment_budget(0).unwrap(), MAX_SMTP_ATTACHMENT_BYTES);
+        assert_eq!(attachment_budget(MAX_SMTP_TOTAL_ATTACHMENT_BYTES - 1).unwrap(), 1);
+        assert_eq!(attachment_budget(MAX_SMTP_TOTAL_ATTACHMENT_BYTES).unwrap(), 0);
+        assert!(attachment_budget(MAX_SMTP_TOTAL_ATTACHMENT_BYTES + 1).is_err());
     }
 }

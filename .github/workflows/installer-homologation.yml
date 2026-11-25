@@ -1,0 +1,152 @@
+name: Desktop installer homologation
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/installer-homologation.yml'
+      - 'src-tauri/src/updater.rs'
+      - 'src-tauri/scripts/test-windows-uninstall.ps1'
+      - 'src-tauri/scripts/prepare-msvc-openssl.ps1'
+      - 'src-tauri/tauri.conf.json'
+      - 'src-tauri/Cargo.toml'
+      - 'src-tauri/Cargo.lock'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  installer:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            bundles: msi,nsis
+          - os: ubuntu-22.04
+            bundles: deb,appimage
+          - os: macos-latest
+            bundles: app,dmg
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential curl wget file libssl-dev
+      - name: Windows native dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install strawberryperl nasm -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "C:\Strawberry\perl\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Install locked dependencies without peer conflicts
+        run: npm ci --strict-peer-deps --strict-allow-scripts
+      - name: Confirm installed Tauri versions before native compilation
+        run: npm ls @tauri-apps/api @tauri-apps/plugin-deep-link @tauri-apps/plugin-opener
+      - name: Reject vulnerable dependency tree
+        run: npm audit --audit-level=low
+      - run: npm test
+      - run: npm run icons
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - name: Build Windows installers without native linker warnings
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Strawberry\perl\bin;C:\Strawberry\c\bin;$env:PATH"
+          ./src-tauri/scripts/prepare-msvc-openssl.ps1
+          npm run tauri -- build --bundles msi,nsis 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/seven-mail-windows-build.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $warnings = Select-String -Path "$env:RUNNER_TEMP/seven-mail-windows-build.log" -Pattern 'warning LNK[0-9]+|(^|\s)warning:'
+          if ($warnings) {
+            $warnings | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
+            throw 'Rust compiler or native linker warnings detected.'
+          }
+      - name: Build installers without publishing a release
+        if: runner.os != 'Windows'
+        run: npm run tauri -- build --bundles ${{ matrix.bundles }}
+      - name: Validate Windows installer payloads
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = @(Get-ChildItem src-tauri/target/release/bundle/msi -Filter *.msi)
+          $exe = @(Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *-setup.exe)
+          if ($msi.Count -ne 1 -or $exe.Count -ne 1) { throw 'Expected one MSI and one NSIS installer' }
+          foreach ($file in @($msi[0], $exe[0])) {
+            if ($file.Length -le 0) { throw 'Empty installer' }
+            Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName
+          }
+          $out = Join-Path $env:RUNNER_TEMP 'seven-mail-msi-extract'
+          New-Item -ItemType Directory -Path $out | Out-Null
+          $args = "/a `"$($msi[0].FullName)`" /qn TARGETDIR=`"$out`""
+          $process = Start-Process msiexec.exe -ArgumentList $args -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "MSI administrative extraction failed: $($process.ExitCode)" }
+          if (-not (Get-ChildItem $out -Recurse -File -Filter 'seven-mail.exe')) { throw 'Desktop executable missing from MSI' }
+      - name: Install and uninstall Windows packages
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./src-tauri/scripts/test-windows-uninstall.ps1
+      - name: Validate Linux installer payloads
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=(src-tauri/target/release/bundle/deb/*.deb)
+          images=(src-tauri/target/release/bundle/appimage/*.AppImage)
+          [[ ${#debs[@]} == 1 && ${#images[@]} == 1 ]]
+          sha256sum "${debs[0]}" "${images[0]}"
+          dpkg-deb --info "${debs[0]}"
+          dpkg-deb --extract "${debs[0]}" "$RUNNER_TEMP/seven-mail-deb"
+          test -x "$RUNNER_TEMP/seven-mail-deb/usr/bin/seven-mail"
+          image="$(realpath "${images[0]}")"
+          cd "$RUNNER_TEMP"
+          "$image" --appimage-extract > /dev/null
+          test -x squashfs-root/AppRun
+          test -x squashfs-root/usr/bin/seven-mail
+      - name: Validate macOS installer payloads
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apps=(src-tauri/target/release/bundle/macos/*.app)
+          dmgs=(src-tauri/target/release/bundle/dmg/*.dmg)
+          [[ ${#apps[@]} == 1 && ${#dmgs[@]} == 1 ]]
+          executable="$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "${apps[0]}/Contents/Info.plist")"
+          test -x "${apps[0]}/Contents/MacOS/$executable"
+          shasum -a 256 "${dmgs[0]}"
+          hdiutil verify "${dmgs[0]}"
+      - name: Upload Windows installer diagnostics
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-installer-diagnostics
+          path: |
+            ${{ runner.temp }}/seven-mail-windows-build.log
+            ${{ runner.temp }}/seven-mail-msi-install.log
+            ${{ runner.temp }}/seven-mail-msi-uninstall.log
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Upload installer QA artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: installer-qa-${{ matrix.os }}
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 3

@@ -1133,6 +1133,9 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
   }
 
   async function configureAppLock() {
+    const configured=await bridge.hasAppLock();
+    const currentPin=configured?window.prompt("Digite o PIN atual"):undefined;
+    if(configured && !currentPin) return;
     const pin=window.prompt("Crie um PIN para bloquear o Seven Mail")?.trim();
     if(!pin) return;
     const confirmation=window.prompt("Confirme o PIN")?.trim();
@@ -1140,7 +1143,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
       window.alert("Os PINs não coincidem.");
       return;
     }
-    await bridge.setAppLock(pin);
+    await bridge.setAppLock(pin,currentPin??undefined);
     set("appLockEnabled",true);
     window.dispatchEvent(new CustomEvent("seven-mail:app-lock-changed",{detail:true}));
     window.alert("Bloqueio do aplicativo ativado.");
@@ -1148,11 +1151,8 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
 
   async function disableAppLock() {
     const pin=window.prompt("Digite o PIN atual para desativar o bloqueio")??"";
-    if(!await bridge.verifyAppLock(pin)){
-      window.alert("PIN incorreto.");
-      return;
-    }
-    await bridge.clearAppLock();
+    if(!pin) return;
+    await bridge.clearAppLock(pin);
     set("appLockEnabled",false);
     window.dispatchEvent(new CustomEvent("seven-mail:app-lock-changed",{detail:false}));
   }
@@ -1262,6 +1262,68 @@ function Workspace({title,eyebrow,action,onAction,children}:{title:string;eyebro
 function Feature({icon,title,children}:{icon:IconName;title:string;children:ReactNode}) { return <article className="feature"><div className="empty-symbol small-symbol"><Icon name={icon}/></div><h3>{title}</h3><p>{children}</p></article>; }
 
 export default function App() {
+  const [locked, setLocked] = useState<boolean | null>(null);
+  const [lockError, setLockError] = useState("");
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) {
+      setLocked(false);
+      return;
+    }
+    let disposed = false;
+    let refreshing = false;
+    let generation = 0;
+    async function refresh() {
+      if (refreshing) return;
+      refreshing = true;
+      const requestGeneration = generation;
+      try {
+        const value = await bridge.isAppLocked();
+        if (!disposed && requestGeneration === generation) {
+          setLocked(value);
+          setLockError("");
+        }
+      } catch (error) {
+        if (!disposed && requestGeneration === generation) {
+          setLocked(true);
+          setLockError(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        refreshing = false;
+      }
+    }
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 2000);
+    const onLock = () => { generation += 1; setLocked(true); };
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("seven-mail:native-locked", onLock);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      window.removeEventListener("seven-mail:native-locked", onLock);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, []);
+  if (locked === null) return <LaunchScreen ready={false}/>;
+  if (locked) return <>
+    <AppLockScreen onUnlock={async (pin) => {
+      const accepted = await bridge.verifyAppLock(pin);
+      if (accepted) { setLocked(false); setLockError(""); }
+      return accepted;
+    }}/>
+    {lockError && <div role="alert" className="form-error">{lockError}</div>}
+  </>;
+  return <UnlockedApp/>;
+}
+
+async function lockNativeApp() {
+  await bridge.lockApp();
+  window.dispatchEvent(new Event("seven-mail:native-locked"));
+}
+
+function UnlockedApp() {
   const launchParams = new URLSearchParams(window.location.search);
   const launchMessageId = launchParams.get("message") ?? undefined;
   const launchAccountId = launchParams.get("account") ?? undefined;
@@ -1304,7 +1366,6 @@ export default function App() {
     messages: false,
   });
   const [lockConfigured,setLockConfigured]=useState(false);
-  const [appLocked,setAppLocked]=useState(false);
   const [settings,setSettings] = useState<AppSettings>(()=>{
     try { return {...DEFAULT_SETTINGS,...JSON.parse(localStorage.getItem("seven-mail:settings")||"{}")}; } catch { return DEFAULT_SETTINGS; }
   });
@@ -2605,13 +2666,11 @@ export default function App() {
     void bridge.hasAppLock().then((enabled)=>{
       if(disposed) return;
       setLockConfigured(enabled);
-      setAppLocked(enabled);
       setSettings((current)=>({...current,appLockEnabled:enabled}));
     }).catch(()=>undefined);
     const changed=(event:Event)=>{
       const enabled=Boolean((event as CustomEvent<boolean>).detail);
       setLockConfigured(enabled);
-      if(!enabled) setAppLocked(false);
     };
     window.addEventListener("seven-mail:app-lock-changed",changed);
     return ()=>{
@@ -2621,22 +2680,29 @@ export default function App() {
   },[]);
 
   useEffect(()=>{
-    if(!lockConfigured||appLocked) return;
+    if(!lockConfigured) return;
+    let disposed=false;
+    let lastActivity=0;
     const minutes=settings.appLockMinutes??5;
-    if(minutes<=0) return;
-    let timer=0;
-    const arm=()=>{
-      window.clearTimeout(timer);
-      timer=window.setTimeout(()=>setAppLocked(true),minutes*60_000);
-    };
+    function updateActivity(configure=false) {
+      const now=Date.now();
+      if(!configure && now-lastActivity<1000) return;
+      lastActivity=now;
+      void bridge.appLockActivity(configure?minutes:undefined).then((active)=>{
+        if(!active&&!disposed) window.dispatchEvent(new Event("seven-mail:native-locked"));
+      }).catch(()=>{
+        if(!disposed) window.dispatchEvent(new Event("seven-mail:native-locked"));
+      });
+    }
+    const onActivity=(event:Event)=>{ if(event.isTrusted) updateActivity(); };
     const events=["pointerdown","keydown","wheel","touchstart"] as const;
-    for(const event of events) window.addEventListener(event,arm,{passive:true});
-    arm();
+    for(const event of events) window.addEventListener(event,onActivity,{passive:true});
+    updateActivity(true);
     return ()=>{
-      window.clearTimeout(timer);
-      for(const event of events) window.removeEventListener(event,arm);
+      disposed=true;
+      for(const event of events) window.removeEventListener(event,onActivity);
     };
-  },[lockConfigured,appLocked,settings.appLockMinutes]);
+  },[lockConfigured,settings.appLockMinutes]);
 
   useEffect(()=>{
     const days=settings.localRetentionDays??90;
@@ -2764,6 +2830,14 @@ export default function App() {
   },[settings.notificationsEnabled]);
 
   useEffect(()=>{
+    void bridge.listQueue().then((queue)=>{
+      const interrupted=queue.filter((operation)=>operation.payload._deliveryState==="delivery_unknown");
+      if(interrupted.length){
+        setSendFeedback({state:"error",title:"Operações interrompidas",detail:`${interrupted.length} operação(ões) preservada(s) sem reenvio automático. Confira o servidor antes de repetir.`});
+      }
+    }).catch((reason)=>{
+      setSendFeedback({state:"error",title:"Falha ao consultar a caixa de saída",detail:reason instanceof Error?reason.message:String(reason)});
+    });
     const flush = () => {
       if (!navigator.onLine) return;
       void bridge.flushOutbox()
@@ -2772,7 +2846,13 @@ export default function App() {
             const refreshed=await bridge.listCachedMessages(unified?undefined:activeAccount?.id).catch(()=>null);
             if(refreshed) setMessages(refreshed);
           }
-          if(result.sentCopyWarnings.length>0){
+          if(result.deliveryWarnings?.length){
+            setSendFeedback({
+              state:"error",
+              title:"Caixa de saída requer atenção",
+              detail:result.deliveryWarnings.join(" · "),
+            });
+          }else if(result.sentCopyWarnings.length>0){
             setSendFeedback({
               state:"accepted",
               title:"Enviado · cópia pendente",
@@ -3328,9 +3408,15 @@ export default function App() {
         setSendFeedback({state:"sending",title:"Enviando",detail:"Conectando ao servidor SMTP...",id:info.id});
         void bridge.flushOutbox()
           .then(async(result)=>{
-            const queue=await bridge.listQueue().catch(()=>[]);
+            const queue=await bridge.listQueue();
             const pending=queue.find((operation)=>operation.id===info.id);
-            if(pending){
+            if(pending?.payload._deliveryState==="delivery_unknown"){
+              setSendFeedback({state:"error",title:"Entrega não confirmada",detail:"A mensagem foi preservada sem reenvio automático. Confira a pasta Enviados antes de tentar novamente.",id:info.id});
+            }else if(pending?.payload._deliveryState==="account_missing"){
+              setSendFeedback({state:"error",title:"Conta de envio não encontrada",detail:"A mensagem foi preservada na fila de falhas.",id:info.id});
+            }else if(pending?.payload._deliveryState==="retry_exhausted"){
+              setSendFeedback({state:"error",title:"Limite de tentativas atingido",detail:"A mensagem foi preservada na fila de falhas. Revise as configurações da conta.",id:info.id});
+            }else if(pending){
               setSendFeedback({
                 state:pending.attempts>0?"error":"queued",
                 title:pending.attempts>0?"Envio não aceito":"Mensagem na fila",
@@ -3339,7 +3425,7 @@ export default function App() {
                   : "A mensagem continua aguardando na fila.",
                 id:info.id,
               });
-            }else if(result.sent>0){
+            }else if(result.sentOperationIds?.includes(info.id)){
               const refreshed=await bridge.listCachedMessages(unified?undefined:activeAccount?.id).catch(()=>null);
               if(refreshed) setMessages(refreshed);
               const warning=result.sentCopyWarnings.find((value)=>value.includes(info.accountId))??result.sentCopyWarnings[0];
@@ -3352,7 +3438,7 @@ export default function App() {
                 id:info.id,
               });
             }else{
-              setSendFeedback({state:"accepted",title:"Saiu da fila",detail:"A mensagem não está mais pendente. O Seven Mail não a marca como entregue sem confirmação do servidor.",id:info.id});
+              setSendFeedback({state:"queued",title:"Estado do envio não confirmado",detail:"Não foi possível confirmar o resultado desta mensagem. Confira Enviados antes de reenviar.",id:info.id});
             }
           })
           .catch((reason)=>{
@@ -3375,12 +3461,6 @@ export default function App() {
     if(cancelled){
       setSendFeedback({state:"queued",title:"Envio cancelado",detail:"A mensagem foi removida da fila local.",id:current.id});
     }
-  }
-
-  async function unlockApp(pin:string):Promise<boolean>{
-    const valid=await bridge.verifyAppLock(pin);
-    if(valid) setAppLocked(false);
-    return valid;
   }
 
   useEffect(()=>{
@@ -3437,7 +3517,7 @@ export default function App() {
     setSearchHistory([]);
   }
 
-  return <><LaunchScreen ready={bootReady}/>{appLocked&&<AppLockScreen onUnlock={unlockApp}/>}<a className="skip-link" href="#seven-mail-main">Pular para o conteúdo</a><div className="app-shell">
+  return <><LaunchScreen ready={bootReady}/><a className="skip-link" href="#seven-mail-main">Pular para o conteúdo</a><div className="app-shell">
     <aside className="nav-rail" aria-label="Navegação principal">
       <div className="rail-brand"><BrandLogo variant="rail"/></div>
       <nav>{navItems.map(item=><button key={item.id} className={section===item.id?"nav-item active":"nav-item"} title={item.label} onClick={()=>setSection(item.id)}><Icon name={item.icon}/><span>{item.label}</span></button>)}</nav>
@@ -3448,7 +3528,7 @@ export default function App() {
         <div className="product"><strong>Seven Mail</strong><span>{NAV.find(n=>n.id===section)?.label}</span></div>
         {section==="mail"&&profileAccounts.length>0&&<select className="account-switcher" value={unified?"__all__":(activeAccount?.id??"")} onChange={e=>setActiveId(e.target.value)} aria-label="Selecionar conta"><option value="__all__">Todas as contas</option>{profileAccounts.map(account=><option key={account.id} value={account.id}>{account.email}</option>)}</select>}
         <label className="search"><Icon name="search" size={17}/><input list="seven-mail-search-suggestions" value={search} onFocus={()=>setGlobalSearchOpen(true)} onChange={e=>{setSearch(e.target.value);setGlobalSearchOpen(true);}} onKeyDown={e=>{if(e.key==="Enter"){commitSearchHistory();setGlobalSearchOpen(true);}else if(e.key==="Escape"){setGlobalSearchOpen(false);}}} placeholder="Pesquisar em todo o Seven Mail..."/><kbd>Ctrl K</kbd></label><datalist id="seven-mail-search-suggestions">{searchSuggestions.map((value)=><option value={value} key={value}/>)}</datalist>{section==="mail"&&search.trim()&&<button className="icon-button save-search-button" title="Salvar pesquisa" aria-label="Salvar pesquisa" onClick={()=>void saveCurrentSearch()}><Icon name="star" size={17}/></button>}
-        <div className="top-actions">{lockConfigured&&<button className="icon-button" title="Bloquear agora" onClick={()=>setAppLocked(true)}><Icon name="lock" size={17}/></button>}<span className={"sync "+syncState} role="status" aria-live="polite" aria-atomic="true" title={syncError??(lastSyncAt?`Última sincronização confirmada: ${new Date(lastSyncAt).toLocaleString()}`:"Nenhuma sincronização confirmada nesta sessão")}><i aria-hidden="true"/> {profileAccounts.length===0?"Sem conta":syncState==="syncing"?"Sincronizando":syncState==="error"?"Falha na sincronização":syncState==="offline"?"Offline":syncState==="synced"?(lastSyncAt?`Sincronizado ${new Date(lastSyncAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}`:"Sincronizado"):"Não verificado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
+        <div className="top-actions">{lockConfigured&&<button className="icon-button" title="Bloquear agora" onClick={()=>void lockNativeApp().catch((error)=>window.alert(String(error)))}><Icon name="lock" size={17}/></button>}<span className={"sync "+syncState} role="status" aria-live="polite" aria-atomic="true" title={syncError??(lastSyncAt?`Última sincronização confirmada: ${new Date(lastSyncAt).toLocaleString()}`:"Nenhuma sincronização confirmada nesta sessão")}><i aria-hidden="true"/> {profileAccounts.length===0?"Sem conta":syncState==="syncing"?"Sincronizando":syncState==="error"?"Falha na sincronização":syncState==="offline"?"Offline":syncState==="synced"?(lastSyncAt?`Sincronizado ${new Date(lastSyncAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}`:"Sincronizado"):"Não verificado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
         {globalSearchOpen&&search.trim()&&<div className="global-search-popover">
           <header><span><Icon name="search" size={15}/><b>Pesquisa global</b></span><button onClick={()=>setGlobalSearchOpen(false)}><Icon name="x" size={13}/></button></header>
           <div className="global-search-group"><small>E-MAILS</small>{filtered.slice(0,6).map((message)=><button key={message.id} onClick={()=>{setActiveId(message.accountId);setFocusMessageId(message.id);setSection("mail");setGlobalSearchOpen(false);commitSearchHistory();}}><Icon name="mail" size={14}/><span><b>{message.subject||"(sem assunto)"}</b><small>{message.from.name||message.from.email}</small></span></button>)}{filtered.length===0&&<em>Nenhum e-mail encontrado.</em>}</div>
