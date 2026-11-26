@@ -77,7 +77,10 @@ export function MessageDetailsModal({
       // Each explicit drag obtains a fresh, private, time-limited export.
       // Never reuse a path after the native cleanup may have removed it.
       const path = await bridge.cacheMessageAttachment(message.accountId, message.id, item.index);
-      await startDrag({ item: [path], icon: "", mode: "copy" });
+      const separator = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+      if (separator < 0) throw new Error("Caminho do anexo temporário inválido.");
+      const icon = `${path.slice(0, separator + 1)}.drag-preview.png`;
+      await startDrag({ item: [path], icon, mode: "copy" });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
