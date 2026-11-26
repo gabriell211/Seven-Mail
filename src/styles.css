@@ -31,7 +31,7 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .nav-item span{display:none;position:absolute;left:55px;padding:7px 9px;background:#11131a;color:#fff;border-radius:8px;font-size:11px;white-space:nowrap;box-shadow:var(--shadow);z-index:20}.nav-item:hover span{display:block}
 .profile{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(145deg,#222438,#484b6c);color:#fff;font-weight:800}
 .main{min-width:0;min-height:0;display:grid;grid-template-rows:66px minmax(0,1fr)}.topbar{display:flex;align-items:center;gap:14px;padding:10px 20px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--surface) 76%,transparent);backdrop-filter:blur(24px)}
-.product{display:flex;flex:0 0 190px;flex-direction:column}.product strong{font-size:13px}.product span{font-size:10px;color:var(--muted);margin-top:2px}.account-switcher{height:40px;max-width:220px;min-width:150px;border:1px solid var(--line);background:var(--solid);color:var(--text);border-radius:12px;padding:0 34px 0 11px;font-size:11px;font-weight:700;outline:none}.account-switcher:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}.search{height:40px;min-width:280px;max-width:620px;flex:1;border:1px solid var(--line);background:var(--solid);border-radius:13px;display:flex;align-items:center;padding:0 12px;gap:9px;box-shadow:0 4px 16px rgba(45,40,80,.04)}
+.product{display:flex;flex:0 0 190px;flex-direction:column}.product strong{font-size:13px}.product span{font-size:10px;color:var(--muted);margin-top:2px}.search{height:40px;min-width:280px;max-width:620px;flex:1;border:1px solid var(--line);background:var(--solid);border-radius:13px;display:flex;align-items:center;padding:0 12px;gap:9px;box-shadow:0 4px 16px rgba(45,40,80,.04)}
 .search svg{color:var(--muted)}.search input{border:0;outline:0;background:transparent;color:var(--text);flex:1;min-width:0;font-size:12px}.search input::placeholder{color:var(--muted2)}kbd{font-size:9px;color:var(--muted);background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:3px 5px}
 .top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px}.sync{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:7px;max-width:260px;white-space:nowrap}.sync i{width:7px;height:7px;border-radius:50%;background:var(--muted2);box-shadow:0 0 0 4px color-mix(in srgb,var(--muted2) 12%,transparent)}.sync.synced i{background:var(--green);box-shadow:0 0 0 4px rgba(52,183,132,.12)}.sync.syncing i{background:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 13%,transparent);animation:pulse 1s ease-in-out infinite}.sync.error{color:#d95656}.sync.error i{background:#d95656;box-shadow:0 0 0 4px rgba(217,86,86,.12)}.sync.offline{color:var(--muted)}.sync.offline i{background:#d69b43;box-shadow:0 0 0 4px rgba(214,155,67,.12)}.sync.unknown i{background:var(--muted2)}
 .icon-button{width:35px;height:35px;border-radius:10px;background:transparent;color:var(--muted);display:grid;place-items:center}.icon-button:hover{background:var(--soft);color:var(--text)}.content{min-width:0;min-height:0}
@@ -967,3 +967,52 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 /* Update controls can now include a silent install action. */
 .update-banner-actions{flex-wrap:wrap;justify-content:flex-end;max-width:100%}
 @media(max-width:850px){.update-banner{grid-template-columns:42px minmax(0,1fr)}.update-banner-actions{grid-column:1/-1}}
+
+/* Account switcher anchored to the bottom of the navigation rail. */
+.nav-rail{min-height:0}
+.nav-rail>.rail-brand{flex:none}
+.nav-rail>nav{min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
+.nav-rail .nav-item{flex:none}
+.rail-account-switcher{position:relative;flex:none;margin-top:auto;padding-top:10px;width:100%;display:grid;place-items:center}
+.rail-account-trigger{position:relative;display:grid;place-items:center;width:48px;height:48px;border-radius:15px;background:transparent}
+.rail-account-trigger:hover,.rail-account-trigger[aria-expanded="true"]{background:var(--accent-soft)}
+.rail-account-avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--accent);color:white;font-weight:750;font-size:15px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.10)}
+.rail-account-chevron{position:absolute;right:1px;bottom:1px;display:grid;place-items:center;width:16px;height:16px;border:1px solid var(--line2);border-radius:50%;background:var(--solid);color:var(--muted)}
+.rail-account-popover{position:absolute;left:calc(100% + 12px);bottom:0;width:min(340px,calc(100vw - 104px));max-height:min(520px,calc(100vh / var(--ui-scale,1) - 32px));display:flex;flex-direction:column;min-height:0;border:1px solid var(--line2);border-radius:15px;background:var(--solid);box-shadow:var(--shadow);z-index:40;color:var(--text)}
+.rail-account-popover>header{padding:16px 16px 12px;display:grid;gap:4px;flex:none}
+.rail-account-popover>header strong{font-size:15px}
+.rail-account-popover small{font-size:12px;color:var(--muted)}
+.rail-account-options{overflow:auto;min-height:0;padding:0 8px 8px;display:flex;flex-direction:column;gap:4px}
+.rail-account-options>p{padding:8px;font-size:13px;color:var(--muted)}
+.rail-account-option{display:flex;align-items:center;gap:10px;padding:9px;border:1px solid transparent;border-radius:10px;background:transparent;text-align:left;min-width:0;flex:none}
+.rail-account-option:hover{background:var(--soft)}
+.rail-account-option[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent)}
+.rail-account-option>span:nth-child(2){display:grid;gap:3px;min-width:0;flex:1}
+.rail-account-option b,.rail-account-option small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rail-account-option b{font-size:13px}
+.rail-account-option>svg{flex:none;color:var(--accent)}
+.rail-account-popover>footer{border-top:1px solid var(--line);padding:8px;display:grid;gap:3px;flex:none}
+.rail-account-popover>footer button{background:transparent;padding:10px;border-radius:9px;text-align:left;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600}
+.rail-account-popover>footer button:hover{background:var(--soft)}
+.rail-account-popover>footer svg{color:var(--accent)}
+
+/* Independent, collapsible mailbox trees. Keep long addresses in a tooltip. */
+.mailbox-tree{display:flex;flex-direction:column;gap:5px;min-width:0}
+.mailbox-section{min-width:0;border-radius:10px}
+.mailbox-section-heading{display:flex;align-items:center;gap:2px;min-width:0}
+.mailbox-toggle{display:flex;align-items:center;gap:6px;min-width:0;flex:1;padding:9px 5px;border-radius:9px;background:transparent;text-align:left;color:var(--text);font-size:12px;font-weight:650}
+.mailbox-section.current>.mailbox-section-heading{background:var(--accent-soft);border-radius:9px}
+.mailbox-toggle:hover{background:var(--soft)}
+.mailbox-chevron{flex:none;color:var(--muted);transition:transform .16s}
+.mailbox-chevron.expanded{transform:rotate(90deg)}
+.mailbox-initial{display:grid;place-items:center;flex:none;width:23px;height:23px;border-radius:7px;color:white;font-size:11px;font-weight:800}
+.mailbox-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mailbox-children{padding:4px 0 3px 10px}
+.mailbox-children[hidden]{display:none}
+.mailbox-children .folder{min-height:35px;height:auto;padding-block:6px;padding-inline:7px;gap:6px}
+.mailbox-children .folder>svg,.mailbox-children .folder>b{flex:none}
+.mailbox-children .folder>span{min-width:0;overflow-wrap:anywhere}
+.mailbox-children .folder-organizer{grid-template-columns:minmax(0,1fr) auto;position:relative}
+.mailbox-children .folder-organizer>.folder-actions{display:none}
+.mailbox-children .folder-organizer:hover>.folder-actions,.mailbox-children .folder-organizer:focus-within>.folder-actions{display:flex;position:absolute;right:0;top:100%;background:var(--solid);border:1px solid var(--line2);border-radius:8px;z-index:5;padding:3px;box-shadow:var(--shadow)}
+.mailbox-status{margin:6px 5px;color:var(--muted);font-size:11px;line-height:1.5}
