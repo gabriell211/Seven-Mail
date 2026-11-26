@@ -22,6 +22,7 @@ import { ReadingAssist } from "./components/ReadingAssist";
 import { VirtualList } from "./components/VirtualList";
 import { BrandLogo } from "./components/BrandLogo";
 import { ProviderSelector } from "./components/ProviderSelector";
+import { ConnectionError } from "./components/ConnectionError";
 import { SettingsAbout } from "./components/SettingsAbout";
 import { LaunchScreen } from "./components/LaunchScreen";
 import { AppLockScreen } from "./components/AppLockScreen";
@@ -428,7 +429,7 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
       </div>}
       <div className="secure-note"><Icon name="lock" size={16}/><span>A credencial nunca é gravada no cache. A conta só aparece como conectada depois que entrada e SMTP forem validados.</span></div>
       {connectionStep&&<div className="connection-progress" role="status"><Icon name="refresh" size={14}/><span>{connectionStep}</span></div>}
-      {error&&<div className="form-error">{error}</div>}
+      {error&&<div className="form-error"><ConnectionError error={error} email={email} provider={provider}/></div>}
       <footer className="modal-footer"><button className="secondary" onClick={onClose}>Cancelar</button><button className="primary" disabled={!email.trim()||busy} onClick={connect}>{busy?"Conectando...":"Conectar"}</button></footer>
     </section>
   </div>;
