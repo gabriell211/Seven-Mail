@@ -225,6 +225,9 @@ pub fn download(requested: &UpdateInfo) -> Result<String, String> {
 
     let expected = expected_sha256(info.digest.as_deref())?;
     let destination = trusted_destination(&info)?;
+    if verify_installer(&destination, &info).is_ok() {
+        return Ok(destination.to_string_lossy().to_string());
+    }
     let partial = destination.with_extension(format!("{}.download", uuid::Uuid::new_v4()));
 
     let mut response = client()?
@@ -294,7 +297,7 @@ pub fn download(requested: &UpdateInfo) -> Result<String, String> {
     Ok(destination.to_string_lossy().to_string())
 }
 
-pub fn install(path: &str) -> Result<String, String> {
+fn verified_update(path: &str) -> Result<UpdateInfo, String> {
     let info = check()?;
     if !info.available {
         return Err("Nenhuma atualização está disponível.".to_string());
@@ -304,6 +307,12 @@ pub fn install(path: &str) -> Result<String, String> {
         return Err("O caminho não corresponde ao instalador oficial.".to_string());
     }
     verify_installer(&trusted, &info)?;
+    Ok(info)
+}
+
+pub fn install(path: &str) -> Result<String, String> {
+    let info = verified_update(path)?;
+    let trusted = trusted_destination(&info)?;
     let path = trusted.as_path();
 
     #[cfg(target_os = "windows")]
@@ -398,5 +407,139 @@ mod tests {
         fs::write(&path, b"tampered installer").unwrap();
         assert!(verify_installer(&path, &info).is_err());
         fs::remove_file(path).unwrap();
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) mod silent {
+    use super::*;
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, ERROR_INVALID_PARAMETER, WAIT_OBJECT_0},
+        System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE},
+    };
+
+    const HELPER_FLAG: &str = "--seven-mail-silent-update";
+    const HELPER_PREFIX: &str = "seven-mail-update-helper-";
+
+    pub struct PendingUpdate {
+        helper: PathBuf,
+        version: String,
+        installer: PathBuf,
+    }
+
+    impl Drop for PendingUpdate {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.helper);
+        }
+    }
+
+    pub fn supported() -> bool {
+        std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join("uninstall.exe")))
+            .is_some_and(|uninstaller| uninstaller.is_file())
+    }
+
+    pub fn prepare(path: &str) -> Result<PendingUpdate, String> {
+        if !supported() {
+            return Err("Instalação silenciosa disponível somente para instalações Windows NSIS.".into());
+        }
+        let info = verified_update(path)?;
+        let installer = trusted_destination(&info)?;
+        if !installer.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.to_ascii_lowercase().ends_with("-setup.exe")) {
+            return Err("Instalador NSIS inválido.".into());
+        }
+        let directory = update_directory()?;
+        // Remove only stale copies of our helper. A running copy cannot be removed on Windows.
+        if let Ok(entries) = fs::read_dir(&directory) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name.starts_with(HELPER_PREFIX) && name.ends_with(".exe") {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+        let helper = directory.join(format!("{HELPER_PREFIX}{}.exe", uuid::Uuid::new_v4()));
+        let mut input = fs::File::open(std::env::current_exe().map_err(|error| error.to_string())?)
+            .map_err(|error| error.to_string())?;
+        let mut output = fs::OpenOptions::new().write(true).create_new(true).open(&helper)
+            .map_err(|error| error.to_string())?;
+        let copied = std::io::copy(&mut input, &mut output).and_then(|_| output.sync_all());
+        drop(output);
+        if let Err(error) = copied {
+            let _ = fs::remove_file(&helper);
+            return Err(error.to_string());
+        }
+        Ok(PendingUpdate { helper, version: info.version, installer })
+    }
+
+    impl PendingUpdate {
+        pub fn launch(self) -> Result<(), String> {
+            // The helper is independent of the installed executable and waits
+            // for the real application process to exit before NSIS starts.
+            let result = Command::new(&self.helper)
+                .arg(HELPER_FLAG)
+                .arg(std::process::id().to_string())
+                .arg(&self.version)
+                .arg(&self.installer)
+                .spawn()
+                .map_err(|error| error.to_string());
+            if result.is_ok() {
+                // Windows may not allow deleting a running executable; leave
+                // this verified copy for cleanup during the next update.
+                std::mem::forget(self);
+            }
+            result.map(|_| ())
+        }
+    }
+
+    fn wait_for_exit(pid: u32) -> Result<(), String> {
+        // SAFETY: OpenProcess returns an owned process handle; wait and close
+        // are called only for a non-null handle, exactly once.
+        unsafe {
+            let handle = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
+            if handle.is_null() {
+                let error = std::io::Error::last_os_error();
+                if error.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32) {
+                    return Ok(());
+                }
+                return Err(error.to_string());
+            }
+            let result = WaitForSingleObject(handle, 120_000);
+            CloseHandle(handle);
+            if result != WAIT_OBJECT_0 {
+                return Err("O Seven Mail não encerrou a tempo; atualização cancelada.".into());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn run_helper() -> Option<Result<(), String>> {
+        let args = std::env::args_os().collect::<Vec<_>>();
+        if args.get(1).and_then(|value| value.to_str()) != Some(HELPER_FLAG) {
+            return None;
+        }
+        Some((|| {
+            if args.len() != 5 {
+                return Err("Argumentos do atualizador inválidos.".into());
+            }
+            let pid = args[2].to_str().and_then(|value| value.parse::<u32>().ok())
+                .filter(|pid| *pid != 0 && *pid != std::process::id())
+                .ok_or_else(|| "PID do aplicativo inválido.".to_string())?;
+            let version = args[3].to_str().ok_or_else(|| "Versão inválida.".to_string())?;
+            let installer = PathBuf::from(&args[4]);
+            wait_for_exit(pid)?;
+            // Re-fetch trusted release metadata and verify the exact asset again.
+            let info = check()?;
+            if !info.available || info.version != version || trusted_destination(&info)? != installer {
+                return Err("A atualização agendada mudou ou deixou de estar disponível.".into());
+            }
+            verify_installer(&installer, &info)?;
+            let result = Command::new(&installer).args(["/S", "/UPDATE", "/NS"])
+                .status().map_err(|error| error.to_string())?;
+            if !result.success() {
+                return Err(format!("Instalação silenciosa falhou: {result}"));
+            }
+            Ok(())
+        })())
     }
 }

@@ -158,6 +158,7 @@ jobs:
             - SMTP sem TLS explícito para relays locais confiáveis (localhost e IPs privados), sem desativar TLS de IMAP/POP3.
             - Logos dos provedores armazenadas localmente, com seletor de contas aprimorado.
             - Janelas de edição do calendário, contatos, tarefas, notas e regras com rolagem interna e ações acessíveis.
+            - Verificação de atualizações a cada 30 minutos e ao reconectar; instalação silenciosa opcional ao sair (Windows NSIS).
 
             A homologação externa do Gmail, do arraste gráfico, das notificações nativas e das alterações visuais ainda requer validação específica.
 

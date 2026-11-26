@@ -1329,6 +1329,7 @@ function UnlockedApp() {
   const [messages,setMessages] = useState<MailMessage[]>([]);
   const [quickNotifications,setQuickNotifications] = useState<MailMessage[]>([]);
   const [updateInfo,setUpdateInfo] = useState<UpdateInfo>();
+  const dismissedUpdate = useRef<{version:string;at:number}|null>(null);
   const [mailFolders,setMailFolders] = useState<MailFolder[]>(FALLBACK_FOLDERS);
   const [selectedFolder,setSelectedFolder] = useState<MailFolder>(FALLBACK_FOLDERS[0]);
   const [runtime,setRuntime] = useState<RuntimeInfo>();
@@ -2999,15 +3000,41 @@ function UnlockedApp() {
   },[profileAccounts,activeAccount?.id,unified,settings.notificationsEnabled,settings.syncIntervalMinutes,settings.batterySaverEnabled,settings.memorySaverEnabled,settings.maxConcurrentSyncs]);
 
   useEffect(()=>{
-    if(!bootReady||settings.autoUpdateEnabled===false) return;
+    if(!bootReady||settings.autoUpdateEnabled===false||!runtime||runtime.platform==="browser") return;
     let cancelled=false;
-    const timer=window.setTimeout(()=>{
-      void bridge.checkForUpdate()
-        .then((info)=>{if(!cancelled&&info.available&&info.assetUrl)setUpdateInfo(info);})
-        .catch(()=>undefined);
-    },2200);
-    return ()=>{cancelled=true;window.clearTimeout(timer);};
-  },[bootReady,settings.autoUpdateEnabled]);
+    let checking=false;
+    let lastAttempt=0;
+    const intervalMs=30*60_000;
+    async function check(force=false) {
+      if(cancelled||checking||!navigator.onLine||(!force&&Date.now()-lastAttempt<intervalMs)) return;
+      checking=true;
+      lastAttempt=Date.now();
+      try {
+        const info=await bridge.checkForUpdate();
+        if(cancelled||!info.available||!info.assetUrl) return;
+        const dismissed=dismissedUpdate.current;
+        if(dismissed?.version===info.version&&Date.now()-dismissed.at<24*60*60_000) return;
+        setUpdateInfo(current=>current?.version===info.version?current:info);
+      } catch {
+        // A transient network failure never stops mail or future checks.
+      } finally {
+        checking=false;
+      }
+    }
+    const online=()=>void check(true);
+    const focus=()=>void check();
+    const timer=window.setTimeout(()=>void check(true),2200);
+    const interval=window.setInterval(()=>void check(),intervalMs);
+    window.addEventListener("online",online);
+    window.addEventListener("focus",focus);
+    return ()=>{
+      cancelled=true;
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
+      window.removeEventListener("online",online);
+      window.removeEventListener("focus",focus);
+    };
+  },[bootReady,runtime?.platform,settings.autoUpdateEnabled]);
 
   useEffect(()=>{
     if(!bootReady||profileAccounts.length===0) return;
@@ -3577,6 +3604,6 @@ function UnlockedApp() {
       onRead={(message)=>void quickNotificationAction(message,"read")}
       onArchive={(message)=>void quickNotificationAction(message,"archive")}
     />
-    {updateInfo&&<UpdateBanner info={updateInfo} onDismiss={()=>setUpdateInfo(undefined)}/>}
+    {updateInfo&&<UpdateBanner key={updateInfo.version} info={updateInfo} platform={runtime?.platform} onDismiss={()=>{dismissedUpdate.current={version:updateInfo.version,at:Date.now()};setUpdateInfo(undefined);}}/>}
   </div></>;
 }

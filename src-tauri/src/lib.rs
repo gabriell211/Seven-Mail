@@ -29,6 +29,8 @@ use tauri::{Emitter, Manager};
 
 struct DesktopState {
     close_to_tray: Mutex<bool>,
+    #[cfg(target_os = "windows")]
+    pending_silent_update: Mutex<Option<updater::silent::PendingUpdate>>,
 }
 
 #[tauri::command]
@@ -49,20 +51,65 @@ fn set_cloud_binding(owner_id: String, enabled: bool) -> Result<cloud_binding::C
 }
 
 #[tauri::command]
-fn check_for_update() -> Result<updater::UpdateInfo, String> {
-    updater::check()
+async fn check_for_update() -> Result<updater::UpdateInfo, String> {
+    tauri::async_runtime::spawn_blocking(updater::check).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn download_update(info: updater::UpdateInfo) -> Result<String, String> {
+async fn download_update(info: updater::UpdateInfo) -> Result<String, String> {
     app_lock::require_unlocked()?;
-    updater::download(&info)
+    tauri::async_runtime::spawn_blocking(move || updater::download(&info)).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn install_update(path: String) -> Result<String, String> {
+async fn install_update(path: String) -> Result<String, String> {
     app_lock::require_unlocked()?;
-    updater::install(&path)
+    tauri::async_runtime::spawn_blocking(move || updater::install(&path)).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+fn silent_update_status(state: tauri::State<'_, DesktopState>) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let pending = state.pending_silent_update.lock().map_err(|_| "Atualizador indisponível.".to_string())?;
+        Ok(serde_json::json!({"supported": updater::silent::supported(), "pending": pending.is_some()}))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = state;
+        Ok(serde_json::json!({"supported": false, "pending": false}))
+    }
+}
+
+#[tauri::command]
+async fn schedule_silent_update(path: String, app: tauri::AppHandle) -> Result<String, String> {
+    app_lock::require_unlocked()?;
+    #[cfg(target_os = "windows")]
+    {
+        let prepared = tauri::async_runtime::spawn_blocking(move || updater::silent::prepare(&path))
+            .await.map_err(|error| error.to_string())??;
+        let state = app.state::<DesktopState>();
+        let mut pending = state.pending_silent_update.lock().map_err(|_| "Atualizador indisponível.".to_string())?;
+        *pending = Some(prepared);
+        Ok("Atualização agendada. Ao sair completamente do Seven Mail, a instalação será silenciosa. Reabra o aplicativo após a conclusão.".into())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (path, app);
+        Err("Instalação silenciosa disponível somente no Windows NSIS.".into())
+    }
+}
+
+#[tauri::command]
+fn cancel_silent_update(state: tauri::State<'_, DesktopState>) -> Result<(), String> {
+    app_lock::require_unlocked()?;
+    #[cfg(target_os = "windows")]
+    {
+        state.pending_silent_update.lock().map_err(|_| "Atualizador indisponível.".to_string())?.take();
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = state;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1107,6 +1154,11 @@ fn import_workspace(documents: Vec<WorkspaceDocument>) -> Result<usize, String> 
 }
 
 pub fn run() {
+    #[cfg(target_os = "windows")]
+    if let Some(result) = updater::silent::run_helper() {
+        if let Err(error) = result { eprintln!("{error}"); }
+        return;
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -1121,6 +1173,8 @@ pub fn run() {
         }))
         .manage(DesktopState {
             close_to_tray: Mutex::new(true),
+            #[cfg(target_os = "windows")]
+            pending_silent_update: Mutex::new(None),
         })
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
@@ -1200,6 +1254,9 @@ pub fn run() {
             check_for_update,
             download_update,
             install_update,
+            silent_update_status,
+            schedule_silent_update,
+            cancel_silent_update,
             initial_open_requests,
             set_close_to_tray,
             open_default_mail_settings,
@@ -1296,6 +1353,19 @@ pub fn run() {
             export_workspace,
             import_workspace
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run Seven Mail");
+        .build(tauri::generate_context!())
+        .expect("failed to build Seven Mail")
+        .run(|app, event| {
+            #[cfg(target_os = "windows")]
+            if matches!(event, tauri::RunEvent::Exit) {
+                let state = app.state::<DesktopState>();
+                if let Ok(mut pending) = state.pending_silent_update.lock() {
+                    if let Some(update) = pending.take() {
+                        if let Err(error) = update.launch() { eprintln!("{error}"); }
+                    }
+                };
+            }
+            #[cfg(not(target_os = "windows"))]
+            let _ = (app, event);
+        });
 }
