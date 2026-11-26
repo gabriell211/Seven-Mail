@@ -364,8 +364,10 @@ fn external_receive_smoke() {
 
     let email = required("SEVEN_MAIL_EXTERNAL_EMAIL");
     let username = std::env::var("SEVEN_MAIL_EXTERNAL_USERNAME").unwrap_or_else(|_| email.clone());
-    let expected_subject = std::env::var("SEVEN_MAIL_EXTERNAL_EXPECTED_SUBJECT")
-        .unwrap_or_else(|_| "Seven Mail inbound receive smoke".to_string());
+    // Every run owns its fixture; do not depend on a message from a past run.
+    let marker = uuid::Uuid::new_v4().to_string();
+    let expected_subject = format!("Seven Mail inbound receive smoke {marker}");
+    let pop_username = format!("recent:{}", username.strip_prefix("recent:").unwrap_or(&username));
 
     let imap_account: AccountProfile = serde_json::from_value(serde_json::json!({
         "id": "ci-external-imap",
@@ -394,7 +396,7 @@ fn external_receive_smoke() {
         "provider": "gmail",
         "color": "#6d5dfc",
         "isDefault": false,
-        "username": imap_account.username,
+        "username": pop_username,
         "incomingProtocol": "pop3",
         "pop3Host": "pop.gmail.com",
         "pop3Port": 995,
@@ -410,81 +412,76 @@ fn external_receive_smoke() {
     let paths = AppPaths::resolve().expect("Seven Mail app paths must resolve in external CI");
     storage::clear_cache(&paths).expect("external receive cache must be clean");
 
-    let mut imap_location = None;
-    let mut imap_error = None;
-    match imap_sync::test(&imap_account) {
-        Ok(true) => {
-            let mut folders = imap_sync::list_folders(&imap_account)
-                .unwrap_or_else(|error| {
-                    imap_error = Some(error);
-                    Vec::new()
-                });
-            folders.sort_by_key(|folder| match folder.role.as_str() {
-                "inbox" => 0,
-                "archive" => 1,
-                "spam" => 2,
-                _ => 10,
-            });
+    assert!(imap_sync::test(&imap_account).expect("External IMAP authentication failed"));
+    assert!(pop3_sync::test(&pop3_account).expect("External POP3 recent-mode authentication failed"));
 
-            for folder in folders {
-                if matches!(folder.role.as_str(), "sent" | "drafts" | "trash") {
-                    continue;
-                }
-                match imap_sync::test_find_subject(&imap_account, &folder.path, &expected_subject) {
-                    Ok(true) => {
-                        imap_location = Some(folder.path);
-                        break;
-                    }
-                    Ok(false) => {}
-                    Err(error) => imap_error = Some(error),
-                }
-            }
-        }
-        Ok(false) => imap_error = Some("IMAP connection test returned false".to_string()),
-        Err(error) => imap_error = Some(error),
-    }
+    // Deliver to the configured test mailbox itself, never to an unrelated recipient.
+    let operation = QueueOperation {
+        id: uuid::Uuid::new_v4().to_string(),
+        kind: "send".to_string(),
+        account_id: imap_account.id.clone(),
+        created_at: chrono::Utc::now().to_rfc3339(),
+        attempts: 0,
+        payload: serde_json::json!({
+            "fromAddress": imap_account.email,
+            "to": imap_account.email,
+            "cc": "",
+            "bcc": "",
+            "subject": expected_subject,
+            "bodyText": format!("Seven Mail inbound protocol fixture {marker}"),
+            "bodyHtml": "",
+            "attachments": [],
+            "priority": "normal",
+            "requestReadReceipt": false,
+            "requestDeliveryReceipt": false
+        }),
+    };
+    providers::send_queued(&imap_account, &operation)
+        .expect("SMTP did not accept the fresh inbound fixture");
 
+    let matches_fixture = |message: &crate::models::MailMessage| {
+        message.subject == expected_subject
+            && message.body_text.as_deref().is_some_and(|body| body.contains(&marker))
+    };
     let mut imap_found = false;
-    if let Some(folder) = imap_location.as_deref() {
-        match imap_sync::sync_folder(&paths, &imap_account, folder, "Teste externo", 100) {
-            Ok(_) => {
-                let messages = storage::list_cached_messages(&paths, Some(&imap_account.id))
-                    .expect("external IMAP cache must be readable");
-                imap_found = messages.iter().any(|message| message.subject.contains(&expected_subject));
-            }
-            Err(error) => imap_error = Some(error),
-        }
-    }
-
     let mut pop3_found = false;
+    let mut imap_error = None;
     let mut pop3_error = None;
-    match pop3_sync::test(&pop3_account) {
-        Ok(true) => match pop3_sync::sync_latest(&paths, &pop3_account, 100) {
-            Ok(_) => {
-                let messages = storage::list_cached_messages(&paths, Some(&pop3_account.id))
-                    .expect("external POP3 cache must be readable");
-                pop3_found = messages.iter().any(|message| message.subject.contains(&expected_subject));
+    // Gmail may expose the new message to IMAP and POP at different times.
+    // Retry reads only; never resend the fixture or clear the cache between attempts.
+    for attempt in 1..=6 {
+        if !imap_found {
+            match imap_sync::test_find_subject(&imap_account, "INBOX", &expected_subject) {
+                Ok(true) => match imap_sync::sync_folder(&paths, &imap_account, "INBOX", "Teste externo", 100) {
+                    Ok(_) => {
+                        let messages = storage::list_cached_messages(&paths, Some(&imap_account.id))
+                            .expect("External IMAP cache must be readable");
+                        imap_found = messages.iter().any(&matches_fixture);
+                        imap_error = None;
+                    }
+                    Err(error) => imap_error = Some(error),
+                },
+                Ok(false) => imap_error = None,
+                Err(error) => imap_error = Some(error),
             }
-            Err(error) => pop3_error = Some(error),
-        },
-        Ok(false) => pop3_error = Some("POP3 connection test returned false".to_string()),
-        Err(error) => pop3_error = Some(error),
+        }
+        if !pop3_found {
+            match pop3_sync::sync_latest(&paths, &pop3_account, 100) {
+                Ok(_) => pop3_error = None,
+                Err(error) => pop3_error = Some(error),
+            }
+            let messages = storage::list_cached_messages(&paths, Some(&pop3_account.id))
+                .expect("External POP3 cache must be readable");
+            pop3_found = messages.iter().any(&matches_fixture);
+        }
+        println!("External receive attempt {attempt}/6: IMAP={imap_found}, POP3={pop3_found}");
+        if imap_found && pop3_found { break; }
+        if attempt < 6 { std::thread::sleep(std::time::Duration::from_secs(10)); }
     }
-
-    println!(
-        "Seven Mail Gmail receive: imap_location={:?} imap_found={} pop3_found={}",
-        imap_location, imap_found, pop3_found
-    );
-
     assert!(
-        imap_found,
-        "Seven Mail IMAP did not retrieve the inbound Gmail message. location={:?}; last_error={}",
-        imap_location,
-        imap_error.unwrap_or_else(|| "none".to_string())
-    );
-    assert!(
-        pop3_found,
-        "Seven Mail POP3 did not retrieve the inbound Gmail message. last_error={}",
-        pop3_error.unwrap_or_else(|| "none".to_string())
+        imap_found && pop3_found,
+        "Fresh inbound fixture not received: IMAP={imap_found}; POP3={pop3_found}; IMAP last_error={}; POP3 last_error={}",
+        imap_error.as_deref().unwrap_or("none"),
+        pop3_error.as_deref().unwrap_or("none")
     );
 }
