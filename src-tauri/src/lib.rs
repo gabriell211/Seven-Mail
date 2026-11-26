@@ -1139,6 +1139,7 @@ pub fn run() {
             app.manage(guard);
             let paths = AppPaths::resolve().map_err(std::io::Error::other)?;
             storage::recover_interrupted_operations(&paths).map_err(std::io::Error::other)?;
+            interchange::cleanup_legacy_attachment_cache(&paths).map_err(std::io::Error::other)?;
             let _ = interchange::cleanup_attachment_exports(&paths);
             use tauri::{
                 menu::{Menu, MenuItem},
