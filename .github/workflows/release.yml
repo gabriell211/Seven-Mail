@@ -83,6 +83,54 @@ jobs:
             exit 1
           fi
 
+      - name: Prepare Windows native dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Install-WithRetry([string] $Package) {
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              choco install $Package -y --no-progress
+              if ($LASTEXITCODE -eq 0) { return }
+              if ($attempt -lt 3) {
+                Write-Host "Retrying $Package after package source failure ($attempt/3)."
+                Start-Sleep -Seconds (10 * $attempt)
+              }
+            }
+            throw "Unable to install $Package after three attempts."
+          }
+          $perl = 'C:\Strawberry\perl\bin\perl.exe'
+          if (-not (Test-Path -LiteralPath $perl -PathType Leaf)) {
+            Install-WithRetry 'strawberryperl'
+          }
+          if (-not (Test-Path -LiteralPath $perl -PathType Leaf)) {
+            throw 'Native Strawberry Perl executable missing.'
+          }
+          & $perl -MLocale::Maketext::Simple -MIPC::Cmd -e 'print "Native Perl ready\n"'
+          if ($LASTEXITCODE -ne 0) { throw 'Native Perl prerequisites missing.' }
+
+          # Prefer tools already available on the runner; avoid unnecessary feed requests.
+          $env:PATH = "$env:PATH;" + [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+          $nasm = Get-Command nasm.exe -CommandType Application -ErrorAction SilentlyContinue
+          if (-not $nasm) {
+            Install-WithRetry 'nasm'
+            $env:PATH = "$env:PATH;" + [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+            $nasm = Get-Command nasm.exe -CommandType Application -ErrorAction SilentlyContinue
+          }
+          if (-not $nasm) { throw 'NASM executable missing after installation.' }
+          & $nasm.Source -v
+          if ($LASTEXITCODE -ne 0) { throw 'NASM version check failed.' }
+          @('C:\Strawberry\perl\bin', 'C:\Strawberry\c\bin', (Split-Path -Parent $nasm.Source)) |
+            Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Prepare locked OpenSSL for MSVC
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PATH = "C:\Strawberry\perl\bin;C:\Strawberry\c\bin;$env:PATH"
+          ./src-tauri/scripts/prepare-msvc-openssl.ps1
+          "CARGO_HOME=$env:CARGO_HOME" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Validate Rust
         run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml
@@ -99,13 +147,13 @@ jobs:
             Seven Mail v__VERSION__
 
             Principais mudanças:
-            - IMAP IDLE contínuo para novos e-mails sem a antiga janela de espera.
-            - INBOX monitorada continuamente mesmo enquanto outra pasta está aberta.
-            - Pasta ativa atualizada em tempo real quando o servidor suporta IMAP IDLE.
-            - POP3 com polling curto e estado real exibido na interface.
-            - Enviados atualizado logo após o SMTP aceitar a mensagem.
-            - Reconciliação com Gmail/Exchange e fallback IMAP APPEND para servidores genéricos.
-            - Interface mostra estados reais de sincronização, SMTP e erros.
+            - Proteção dos anexos temporários com ACLs Windows e permissões Unix.
+            - Limpeza de caches legados e exportações temporárias expiradas.
+            - Arraste de anexos com arquivos temporários únicos e prévia nativa.
+            - Correções de segurança, armazenamento, sincronização e testes de protocolos.
+            - CI obrigatório de SMTP, IMAP e POP3 com servidor isolado.
+
+            A homologação externa do Gmail e do arraste gráfico ainda requer validação específica.
 
             Windows:
             - MSI
