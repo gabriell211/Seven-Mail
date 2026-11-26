@@ -21,6 +21,7 @@ import { SafeMessageBody } from "./components/SafeMessageBody";
 import { ReadingAssist } from "./components/ReadingAssist";
 import { VirtualList } from "./components/VirtualList";
 import { BrandLogo } from "./components/BrandLogo";
+import { ProviderSelector } from "./components/ProviderSelector";
 import { SettingsAbout } from "./components/SettingsAbout";
 import { LaunchScreen } from "./components/LaunchScreen";
 import { AppLockScreen } from "./components/AppLockScreen";
@@ -403,14 +404,7 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
         <div><span className="eyebrow">NOVA CONTA</span><h2>Conectar e-mail</h2><p>Configuração automática para provedores conhecidos e modo manual para servidores corporativos.</p></div>
         <button className="icon-button" onClick={onClose} aria-label="Fechar"><Icon name="x"/></button>
       </header>
-      <div className="provider-grid">
-        {(["gmail","microsoft","yahoo","icloud","imap"] as const).map(item =>
-          <button className={provider===item?"provider active":"provider"} key={item} onClick={()=>setProvider(item)}>
-            <span className="provider-glyph">{item==="imap"?"@":item[0].toUpperCase()}</span>
-            <b>{item==="imap"?"Outro":item[0].toUpperCase()+item.slice(1)}</b>
-          </button>
-        )}
-      </div>
+      <ProviderSelector value={provider} onChange={setProvider}/>
       <div className="form-grid">
         <label><span>Nome</span><input value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="Seu nome"/></label>
         <label><span>E-mail</span><input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="voce@dominio.com"/></label>
