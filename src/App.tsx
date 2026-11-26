@@ -488,7 +488,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
   const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread"|"size"|"status">("newest");
   const [focusTab,setFocusTab] = useState<InboxTab>("all");
-  const [conversationView,setConversationView] = useState(true);
+  const [conversationView,setConversationView] = useState(false);
   const [periodFilter,setPeriodFilter] = useState<"all"|"today"|"7d"|"30d">("all");
   const [senderFilter,setSenderFilter] = useState("");
   const [priorityFilter,setPriorityFilter] = useState<"all"|"low"|"normal"|"high">("all");
@@ -551,9 +551,6 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
     ? sortedFolderMessages.filter((message,index,array)=>array.findIndex((item)=>conversationKey(item)===conversationKey(message))===index)
     : sortedFolderMessages;
   const folderMessages=displayMessages.slice(0,visibleCount);
-  const selectedThread=selected&&conversationView
-    ? messages.filter((message)=>conversationKey(message)===conversationKey(selected)).sort((a,b)=>a.receivedAt.localeCompare(b.receivedAt))
-    : selected?[selected]:[];
 
   useEffect(()=>{
     if (focusMessageId && messages.some((message)=>message.id===focusMessageId)) {
@@ -897,7 +894,6 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
         <div className="sender">{settings.showSenderPhotos!==false&&<span className="avatar big">{(selected.from.name||selected.from.email)[0].toUpperCase()}</span>}<div><b>{selected.from.name||selected.from.email}</b><small>{selected.from.email}{isTrusted(selected)?" · confiável":isBlocked(selected)?" · bloqueado":""}</small></div><time>{new Date(selected.receivedAt).toLocaleString()}</time></div>
         {categories.length>0&&<div className="message-categories">{categories.map(category=>{const active=selected.categories.includes(category.name);return <button key={category.id} className={active?"category-chip active":"category-chip"} onClick={()=>onToggleCategory(selected,category)}><i style={{background:category.color}}/>{category.name}</button>;})}</div>}
         {activeAccount&&folders.length>1&&<div className="move-folder-row"><span>Organizar</span>{onMoveToFolder&&<select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onMoveToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Mover para...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select>}{onCopyToFolder&&<select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onCopyToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Copiar para...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select>}</div>}
-        {conversationView&&selectedThread.length>1&&<div className="thread-summary"><b>{selectedThread.length} mensagens nesta conversa</b>{selectedThread.map(item=><button key={item.id} className={item.id===selected.id?"active":""} onClick={()=>setSelectedId(item.id)}><span>{item.from.name||item.from.email}</span><time>{new Date(item.receivedAt).toLocaleString("pt-BR")}</time></button>)}</div>}
         <SafeMessageBody message={selected} settings={settings} onAllowRemote={onAllowRemoteContent}/>
         <ReadingAssist message={selected}/>
         {providerPolicy&&(providerPolicy.sensitivityLabelId||!providerPolicy.reactionsAllowed||!providerPolicy.canForward||!providerPolicy.canCopy)&&<div className="provider-policy-banner"><Icon name="shield" size={14}/><div><b>Política do provedor aplicada</b><span>{providerPolicy.sensitivityLabelId?`Rótulo ${providerPolicy.sensitivityLabelId}. `:""}{!providerPolicy.canForward?"Encaminhamento bloqueado. ":""}{!providerPolicy.canCopy?"Cópia bloqueada. ":""}{!providerPolicy.reactionsAllowed?"Reações desativadas pelo remetente/servidor.":""}</span></div></div>}

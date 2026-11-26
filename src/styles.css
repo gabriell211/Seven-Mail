@@ -443,11 +443,6 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .message.important{box-shadow:inset 3px 0 0 var(--accent)}
 .message.phishing{box-shadow:inset 3px 0 0 #d94f64;background:color-mix(in srgb,var(--soft) 86%,#d94f64)}
 .message.blocked .message-meta b{color:#d94f64}
-.thread-summary{margin:0 25px 18px;border:1px solid var(--line);border-radius:12px;background:var(--soft);padding:10px;display:flex;flex-direction:column;gap:5px}
-.thread-summary>b{font-size:9px;color:var(--muted);padding:2px 4px 6px}
-.thread-summary button{border:0;background:transparent;border-radius:8px;color:var(--text);padding:7px 8px;display:flex;justify-content:space-between;gap:10px;font-size:9px;text-align:left}
-.thread-summary button.active,.thread-summary button:hover{background:var(--solid)}
-.thread-summary time{color:var(--muted);font-size:8px}
 .advanced-actions{flex-wrap:wrap}
 .advanced-actions .secondary.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .priority-select{min-height:34px;border:1px solid var(--line);border-radius:9px;background:var(--solid);color:var(--text);padding:0 9px;font-size:9px}
@@ -477,7 +472,7 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .move-folder-row select{min-width:150px}
 
 @media print{
-  .nav-rail,.topbar,.folder-pane,.message-pane,.reading-header .icon-group,.reply-actions,.move-folder-row,.message-categories,.thread-summary,.modal-backdrop{display:none!important}
+  .nav-rail,.topbar,.folder-pane,.message-pane,.reading-header .icon-group,.reply-actions,.move-folder-row,.message-categories,.modal-backdrop{display:none!important}
   .app-shell,.main,.content,.mail-layout,.reading-pane{display:block!important;width:100%!important;height:auto!important;overflow:visible!important;background:#fff!important}
   .reading-pane{color:#000!important}
   .reading-header,.sender,.mail-body{padding-left:0!important;padding-right:0!important;margin-left:0!important;margin-right:0!important}
