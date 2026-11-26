@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Icon, type IconName } from "../icons";
@@ -139,6 +139,7 @@ function EditorModal({
   disabled?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  const titleId = useId();
   async function save() {
     if (disabled || busy) return;
     setBusy(true);
@@ -151,18 +152,18 @@ function EditorModal({
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <section className="modal entity-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+    <div className="modal-backdrop entity-modal-backdrop" onMouseDown={onClose}>
+      <section className="modal entity-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(event) => event.stopPropagation()}>
         <header className="modal-header compact-header">
           <div>
             <span className="eyebrow">{eyebrow}</span>
-            <h2>{title}</h2>
+            <h2 id={titleId}>{title}</h2>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Fechar">
             <Icon name="x" />
           </button>
         </header>
-        <div className="entity-form">{children}</div>
+        <div className="entity-form" role="region" aria-label="Campos do formulário" tabIndex={0}>{children}</div>
         <footer className="modal-footer">
           <button className="secondary" onClick={onClose}>Cancelar</button>
           <button className="primary" disabled={disabled || busy} onClick={() => void save()}>
@@ -961,10 +962,10 @@ function CalendarEditor({
       <label><span>Fim</span><input type="datetime-local" value={value.endAt.slice(0, 16)} onChange={(event) => onChange({ ...value, endAt: event.target.value })} /><span className="duration-controls"><button type="button" onClick={()=>onChange({...value,endAt:new Date(Math.max(new Date(value.startAt).getTime()+15*60_000,new Date(value.endAt).getTime()-15*60_000)).toISOString()})}>−15 min</button><button type="button" onClick={()=>onChange({...value,endAt:new Date(new Date(value.endAt).getTime()+15*60_000).toISOString()})}>+15 min</button></span></label>
       <label><span>Calendário</span><select value={value.calendarId??"local"} onChange={(event)=>onChange({...value,calendarId:event.target.value,color:calendars.find((item)=>item.id===event.target.value)?.color??value.color})}>{calendars.map((calendar)=><option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</select></label>
       <label><span>Status</span><select value={value.status??"confirmed"} onChange={(event)=>onChange({...value,status:event.target.value as CalendarEvent["status"]})}><option value="confirmed">Confirmado</option><option value="draft">Rascunho</option><option value="cancelled">Cancelado</option></select></label>
-      <label className="full"><span>Local</span><input value={value.location} onChange={(event) => onChange({ ...value, location: event.target.value })} placeholder="Local ou sala" /></label>
-      <label className="full"><span>Reunião online</span><input value={value.onlineMeetingUrl??""} onChange={(event)=>onChange({...value,onlineMeetingUrl:event.target.value||undefined})} placeholder="https://..." />{meetingExtensions.length>0&&<span className="meeting-extension-actions">{meetingExtensions.map((extension)=><button type="button" key={extension.id} onClick={()=>void createOnlineMeeting(extension)}>{extension.meeting?.label||extension.name}</button>)}</span>}</label>
-      <label className="full"><span>Participantes obrigatórios</span><input value={(value.requiredParticipants?.length?value.requiredParticipants:value.participants).join(", ")} onChange={(event) => {const list=event.target.value.split(",").map((item)=>item.trim()).filter(Boolean);onChange({ ...value, requiredParticipants:list,participants:list });}} placeholder="email@exemplo.com" /></label>
-      <label className="full"><span>Participantes opcionais</span><input value={(value.optionalParticipants??[]).join(", ")} onChange={(event)=>onChange({...value,optionalParticipants:event.target.value.split(",").map((item)=>item.trim()).filter(Boolean)})}/></label>
+      <label><span>Local</span><input value={value.location} onChange={(event) => onChange({ ...value, location: event.target.value })} placeholder="Local ou sala" /></label>
+      <label><span>Reunião online</span><input value={value.onlineMeetingUrl??""} onChange={(event)=>onChange({...value,onlineMeetingUrl:event.target.value||undefined})} placeholder="https://..." />{meetingExtensions.length>0&&<span className="meeting-extension-actions">{meetingExtensions.map((extension)=><button type="button" key={extension.id} onClick={()=>void createOnlineMeeting(extension)}>{extension.meeting?.label||extension.name}</button>)}</span>}</label>
+      <label><span>Participantes obrigatórios</span><input value={(value.requiredParticipants?.length?value.requiredParticipants:value.participants).join(", ")} onChange={(event) => {const list=event.target.value.split(",").map((item)=>item.trim()).filter(Boolean);onChange({ ...value, requiredParticipants:list,participants:list });}} placeholder="email@exemplo.com" /></label>
+      <label><span>Participantes opcionais</span><input value={(value.optionalParticipants??[]).join(", ")} onChange={(event)=>onChange({...value,optionalParticipants:event.target.value.split(",").map((item)=>item.trim()).filter(Boolean)})}/></label>
       <label className="full"><span>Salas e recursos</span><input value={(value.resources??[]).join(", ")} onChange={(event)=>onChange({...value,resources:event.target.value.split(",").map((item)=>item.trim()).filter(Boolean)})} placeholder="Sala 1, Projetor"/></label>
       <label><span>Recorrência</span><select value={value.recurrence??"none"} onChange={(event)=>onChange({...value,recurrence:event.target.value as CalendarEvent["recurrence"]})}><option value="none">Não repetir</option><option value="daily">Diária</option><option value="weekly">Semanal</option><option value="monthly">Mensal</option><option value="yearly">Anual</option></select></label>
       <label><span>Repetir até</span><input type="date" value={value.recurrenceUntil?.slice(0,10)??""} disabled={!value.recurrence||value.recurrence==="none"} onChange={(event)=>onChange({...value,recurrenceUntil:event.target.value||undefined})}/></label>
