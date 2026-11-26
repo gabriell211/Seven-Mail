@@ -995,3 +995,24 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .rail-account-popover>footer button{background:transparent;padding:10px;border-radius:9px;text-align:left;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600}
 .rail-account-popover>footer button:hover{background:var(--soft)}
 .rail-account-popover>footer svg{color:var(--accent)}
+
+/* Independent, collapsible mailbox trees. Keep long addresses in a tooltip. */
+.mailbox-tree{display:flex;flex-direction:column;gap:5px;min-width:0}
+.mailbox-section{min-width:0;border-radius:10px}
+.mailbox-section-heading{display:flex;align-items:center;gap:2px;min-width:0}
+.mailbox-toggle{display:flex;align-items:center;gap:6px;min-width:0;flex:1;padding:9px 5px;border-radius:9px;background:transparent;text-align:left;color:var(--text);font-size:12px;font-weight:650}
+.mailbox-section.current>.mailbox-section-heading{background:var(--accent-soft);border-radius:9px}
+.mailbox-toggle:hover{background:var(--soft)}
+.mailbox-chevron{flex:none;color:var(--muted);transition:transform .16s}
+.mailbox-chevron.expanded{transform:rotate(90deg)}
+.mailbox-initial{display:grid;place-items:center;flex:none;width:23px;height:23px;border-radius:7px;color:white;font-size:11px;font-weight:800}
+.mailbox-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mailbox-children{padding:4px 0 3px 10px}
+.mailbox-children[hidden]{display:none}
+.mailbox-children .folder{min-height:35px;height:auto;padding-block:6px;padding-inline:7px;gap:6px}
+.mailbox-children .folder>svg,.mailbox-children .folder>b{flex:none}
+.mailbox-children .folder>span{min-width:0;overflow-wrap:anywhere}
+.mailbox-children .folder-organizer{grid-template-columns:minmax(0,1fr) auto;position:relative}
+.mailbox-children .folder-organizer>.folder-actions{display:none}
+.mailbox-children .folder-organizer:hover>.folder-actions,.mailbox-children .folder-organizer:focus-within>.folder-actions{display:flex;position:absolute;right:0;top:100%;background:var(--solid);border:1px solid var(--line2);border-radius:8px;z-index:5;padding:3px;box-shadow:var(--shadow)}
+.mailbox-status{margin:6px 5px;color:var(--muted);font-size:11px;line-height:1.5}
