@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import { Icon } from "../icons";
@@ -27,7 +27,7 @@ export function MessageDetailsModal({
   const [previewBusy,setPreviewBusy] = useState(false);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
-  const [cachedAttachments,setCachedAttachments]=useState<Record<number,string>>({});
+  const draggingAttachment = useRef(false);
   const [smime,setSmime]=useState<{signed:boolean;signatureValid?:boolean;encrypted:boolean;decrypted:boolean;decryptedPreview?:string;error?:string}>();
 
   useEffect(() => {
@@ -69,21 +69,22 @@ export function MessageDetailsModal({
     };
   },[headers]);
 
-  async function cacheOne(item: MailAttachmentInfo):Promise<string> {
-    const existing=cachedAttachments[item.index];
-    if(existing) return existing;
-    const path=await bridge.cacheMessageAttachment(message.accountId,message.id,item.index);
-    setCachedAttachments((current)=>({...current,[item.index]:path}));
-    return path;
-  }
-
   async function dragOne(item: MailAttachmentInfo) {
+    if (draggingAttachment.current) return;
+    draggingAttachment.current = true;
     setError("");
-    try{
-      const path=await cacheOne(item);
-      await startDrag({item:[path],icon:""});
-    }catch(reason){
-      setError(reason instanceof Error?reason.message:String(reason));
+    try {
+      // Each explicit drag obtains a fresh, private, time-limited export.
+      // Never reuse a path after the native cleanup may have removed it.
+      const path = await bridge.cacheMessageAttachment(message.accountId, message.id, item.index);
+      const separator = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+      if (separator < 0) throw new Error("Caminho do anexo temporário inválido.");
+      const icon = `${path.slice(0, separator + 1)}.drag-preview.png`;
+      await startDrag({ item: [path], icon, mode: "copy" });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      draggingAttachment.current = false;
     }
   }
 
@@ -131,14 +132,14 @@ export function MessageDetailsModal({
             <div className="attachment-browser-toolbar"><span>{attachments.length} arquivo(s)</span><button className="secondary" onClick={()=>void saveAll()}><Icon name="download" size={14}/> Baixar todos</button></div>
             {attachments.map((item)=><article
               key={item.index}
-              className={cachedAttachments[item.index]?"attachment-browser-row cached":"attachment-browser-row"}
+              className="attachment-browser-row"
               draggable
               title="Arraste para a Área de Trabalho ou outro aplicativo"
               onDragStart={(event)=>{event.preventDefault();void dragOne(item);}}
             >
               <span className="attachment-file-icon"><Icon name="paperclip" size={17}/></span>
-              <span><b>{item.name}</b><small>{item.mime} · {humanSize(item.size)}{item.inline ? " · inline" : ""}{cachedAttachments[item.index]?" · em cache":""}</small></span>
-              <div className="attachment-row-actions"><button className="secondary" onClick={()=>void previewOne(item)}>Visualizar</button><button className="secondary" onClick={()=>void cacheOne(item)}>{cachedAttachments[item.index]?"Em cache":"Manter offline"}</button><button className="secondary" onClick={()=>void saveOne(item)}><Icon name="download" size={14}/> Salvar</button></div>
+              <span><b>{item.name}</b><small>{item.mime} · {humanSize(item.size)}{item.inline ? " · inline" : ""}</small></span>
+              <div className="attachment-row-actions"><button className="secondary" onClick={()=>void previewOne(item)}>Visualizar</button><button className="secondary" onClick={()=>void saveOne(item)}><Icon name="download" size={14}/> Salvar</button></div>
             </article>)}
             {(previewBusy||preview)&&<div className="attachment-preview">
               <header><b>{preview?.name??"Carregando..."}</b>{preview&&<small>{preview.mime} · {humanSize(preview.size)}</small>}<button className="icon-button" aria-label="Fechar pré-visualização" onClick={()=>setPreview(null)}><Icon name="x" size={13}/></button></header>

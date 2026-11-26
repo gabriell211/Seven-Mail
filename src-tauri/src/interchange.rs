@@ -276,8 +276,25 @@ fn safe_attachment_name(value: &str, index: usize) -> String {
         .chars()
         .map(|ch| if ch.is_control() || matches!(ch, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { ch })
         .collect::<String>();
-    let cleaned = cleaned.trim().trim_matches('.').to_string();
-    if cleaned.is_empty() { format!("anexo-{}", index + 1) } else { cleaned }
+    let cleaned = cleaned.trim_matches(|c: char| c.is_whitespace() || c == '.');
+    let device = cleaned.split('.').next().unwrap_or("").trim_end().to_ascii_uppercase();
+    let reserved = matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
+        || ["COM", "LPT"].iter().any(|prefix| device.strip_prefix(*prefix)
+            .is_some_and(|suffix| matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³")));
+    // Leave room for UUID prefixes and export collision suffixes. Preserve
+    // normal extensions so a truncated filename retains its file type.
+    let cleaned = if cleaned.len() > 160 {
+        let extension = Path::new(cleaned).extension().and_then(|v| v.to_str())
+            .filter(|v| v.len() <= 20).map(|v| format!(".{v}")).unwrap_or_default();
+        let stem = if extension.is_empty() { cleaned } else { &cleaned[..cleaned.len()-extension.len()] };
+        let mut end = (160 - extension.len()).min(stem.len());
+        while !stem.is_char_boundary(end) { end -= 1; }
+        format!("{}{extension}", &stem[..end])
+    } else { cleaned.to_owned() };
+    let cleaned = cleaned.trim_end_matches(|c: char| c.is_whitespace() || c == '.');
+    if cleaned.is_empty() { format!("anexo-{}", index.saturating_add(1)) }
+    else if reserved { format!("_{cleaned}") }
+    else { cleaned.to_owned() }
 }
 
 pub fn read_message_source(paths: &AppPaths, account_id: &str, message_id: &str) -> Result<String, String> {
@@ -352,9 +369,9 @@ fn zip_summary(bytes: &[u8], extension: &str) -> Result<String, String> {
     let mut details = String::new();
     match extension {
         "docx" => {
-            if let Ok(mut document) = archive.by_name("word/document.xml") {
+            if let Ok(document) = archive.by_name("word/document.xml") {
                 let mut xml = String::new();
-                let _ = document.read_to_string(&mut xml);
+                let _ = document.take(2 * 1024 * 1024).read_to_string(&mut xml);
                 let text = strip_xml_text(&xml);
                 if !text.is_empty() {
                     details.push_str("Texto extraído do documento:\n\n");
@@ -364,9 +381,9 @@ fn zip_summary(bytes: &[u8], extension: &str) -> Result<String, String> {
             }
         }
         "xlsx" => {
-            if let Ok(mut workbook) = archive.by_name("xl/workbook.xml") {
+            if let Ok(workbook) = archive.by_name("xl/workbook.xml") {
                 let mut xml = String::new();
-                let _ = workbook.read_to_string(&mut xml);
+                let _ = workbook.take(2 * 1024 * 1024).read_to_string(&mut xml);
                 let text = strip_xml_text(&xml);
                 if !text.is_empty() {
                     details.push_str("Estrutura da planilha:\n\n");
@@ -397,8 +414,9 @@ pub fn preview_message_attachment(
     let parsed = MessageParser::default()
         .parse(&raw)
         .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
+    let attachment_index = u32::try_from(index).map_err(|_| "Índice de anexo inválido.".to_string())?;
     let part = parsed
-        .attachment(index as u32)
+        .attachment(attachment_index)
         .ok_or_else(|| "Anexo não encontrado.".to_string())?;
 
     let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
@@ -417,7 +435,7 @@ pub fn preview_message_attachment(
     }
 
     let extension = name.rsplit_once('.').map(|(_, value)| value.to_ascii_lowercase()).unwrap_or_default();
-    if mime.starts_with("image/") {
+    if mime.starts_with("image/") && mime != "image/svg+xml" {
         return Ok(MailAttachmentPreview {
             name,
             mime: mime.clone(),
@@ -468,6 +486,158 @@ pub fn preview_message_attachment(
     })
 }
 
+// Never traverse a symlink or a Windows reparse-point directory during cleanup.
+fn is_plain_export_directory(metadata: &fs::Metadata) -> bool {
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(windows)]
+fn restrict_export_directory(path: &Path) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    let system_root = std::env::var_os("SystemRoot")
+        .ok_or_else(|| "Diretório do sistema Windows indisponível.".to_string())?;
+    let powershell = std::path::PathBuf::from(system_root)
+        .join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe");
+    // Do not interpolate paths into a script or inherit permissive access rules.
+    // The current user and SYSTEM are the only explicit access principals.
+    let script = r#"
+$ErrorActionPreference = 'Stop'
+$path = $env:SEVEN_MAIL_PRIVATE_EXPORT
+$user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$system = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18')
+$acl = [System.Security.AccessControl.DirectorySecurity]::new()
+$acl.SetAccessRuleProtection($true, $false)
+$inherit = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+foreach ($sid in @($user, $system)) {
+    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($sid, 'FullControl', $inherit, 'None', 'Allow')
+    $acl.AddAccessRule($rule)
+}
+[System.IO.Directory]::SetAccessControl($path, $acl)
+"#;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let output = std::process::Command::new(powershell)
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .env("SEVEN_MAIL_PRIVATE_EXPORT", path)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output().map_err(|error| format!("Não foi possível configurar as permissões do anexo: {error}"))?;
+    if !output.status.success() {
+        return Err("Não foi possível restringir as permissões do anexo temporário.".into());
+    }
+    Ok(())
+}
+
+fn create_private_export_directory(path: &Path) -> Result<(), String> {
+    let builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    let builder = {
+        use std::os::unix::fs::DirBuilderExt;
+        let mut builder = builder;
+        builder.mode(0o700);
+        builder
+    };
+    builder.create(path).map_err(|error| error.to_string())?;
+    #[cfg(windows)]
+    if let Err(error) = restrict_export_directory(path) {
+        let _ = fs::remove_dir(path);
+        return Err(error);
+    }
+    Ok(())
+}
+
+// The old cache is derived from local raw messages, not the outgoing queue or
+// user-selected exports. Refuse redirected entries before removing anything.
+fn validate_legacy_cache_tree(path: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if metadata.file_type().is_symlink() {
+        return Err("Link inesperado no cache legado de anexos.".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("Ponto de reanálise no cache legado de anexos.".into());
+        }
+    }
+    if metadata.is_dir() {
+        for entry in fs::read_dir(path).map_err(|error| error.to_string())? {
+            validate_legacy_cache_tree(&entry.map_err(|error| error.to_string())?.path())?;
+        }
+    } else if !metadata.is_file() {
+        return Err("Entrada inválida no cache legado de anexos.".into());
+    }
+    Ok(())
+}
+
+pub fn cleanup_legacy_attachment_cache(paths: &AppPaths) -> Result<(), String> {
+    storage::staging_directory(&paths.root)?;
+    storage::staging_directory(&paths.cache)?;
+    purge_legacy_attachment_cache(&paths.attachment_cache)
+}
+
+fn purge_legacy_attachment_cache(path: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if is_plain_export_directory(&metadata) => {
+            validate_legacy_cache_tree(path)?;
+            fs::remove_dir_all(path).map_err(|error| error.to_string())?;
+        }
+        Ok(_) => return Err("Cache legado de anexos inválido.".into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.to_string()),
+    }
+    fs::create_dir(path).map_err(|error| error.to_string())
+}
+
+fn cleanup_expired_attachment_exports(root: &Path) -> Result<(), String> {
+    cleanup_attachment_exports_at(root, std::time::SystemTime::now())
+}
+
+fn cleanup_attachment_exports_at(root: &Path, now: std::time::SystemTime) -> Result<(), String> {
+    let metadata = match fs::symlink_metadata(root) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    if !is_plain_export_directory(&metadata) {
+        return Err("Pasta de anexos temporários inválida.".into());
+    }
+    for entry in fs::read_dir(root).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if uuid::Uuid::parse_str(&entry.file_name().to_string_lossy()).is_err() {
+            continue;
+        }
+        let metadata = match fs::symlink_metadata(entry.path()) {
+            Ok(metadata) => metadata,
+            // Another cleanup may already have removed this directory.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.to_string()),
+        };
+        if is_plain_export_directory(&metadata) &&
+            metadata.modified().ok().and_then(|time| now.duration_since(time).ok())
+                .map(|age| age >= std::time::Duration::from_secs(3600)).unwrap_or(false)
+        {
+            // A file may still be in use by an external application on Windows.
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+    Ok(())
+}
+
+pub fn cleanup_attachment_exports(paths: &AppPaths) -> Result<(), String> {
+    let root = paths.root.join("attachment-exports");
+    cleanup_expired_attachment_exports(&root)
+}
+
 pub fn cache_message_attachment(
     paths: &AppPaths,
     account_id: &str,
@@ -478,24 +648,34 @@ pub fn cache_message_attachment(
     let parsed = MessageParser::default()
         .parse(&raw)
         .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
+    let attachment_index = u32::try_from(index).map_err(|_| "Índice de anexo inválido.".to_string())?;
     let part = parsed
-        .attachment(index as u32)
+        .attachment(attachment_index)
         .ok_or_else(|| "Anexo não encontrado.".to_string())?;
     let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
 
-    let account = account_id
-        .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') { ch } else { '_' })
-        .collect::<String>();
-    let message = message_id
-        .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') { ch } else { '_' })
-        .collect::<String>();
-    let directory = paths.attachment_cache.join(account).join(message);
-    fs::create_dir_all(&directory).map_err(|error| format!("Não foi possível preparar o cache de anexos: {error}"))?;
+    if part.contents().len() > 64 * 1024 * 1024 {
+        return Err("O anexo excede o limite de materialização de 64 MB.".to_string());
+    }
+    // Raw message storage is encrypted. Materialize only for an explicit
+    // external-open or drag operation, in an isolated transient directory.
+    let root = paths.root.join("attachment-exports");
+    materialize_attachment_export(&root, index, &name, part.contents())
+}
+
+fn materialize_attachment_export(root: &Path, index: usize, name: &str, bytes: &[u8]) -> Result<String, String> {
+    fs::create_dir_all(root).map_err(|error| error.to_string())?;
+    cleanup_expired_attachment_exports(root)?;
+    let directory = root.join(uuid::Uuid::new_v4().to_string());
+    create_private_export_directory(&directory)?;
     let destination = directory.join(format!("{index:03}-{name}"));
-    fs::write(&destination, part.contents())
-        .map_err(|error| format!("Não foi possível materializar o anexo: {error}"))?;
+    // The drag plugin needs a real image file, not an empty icon path.
+    let written = write_new_attachment(&directory.join(".drag-preview.png"), include_bytes!("../icons/32x32.png"))
+        .and_then(|_| write_new_attachment(&destination, bytes));
+    if let Err(error) = written {
+        let _ = fs::remove_dir_all(&directory);
+        return Err(format!("Não foi possível materializar o anexo: {error}"));
+    }
     Ok(destination.display().to_string())
 }
 
@@ -510,15 +690,16 @@ pub fn save_message_attachment(
     let parsed = MessageParser::default()
         .parse(&raw)
         .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
+    let attachment_index = u32::try_from(index).map_err(|_| "Índice de anexo inválido.".to_string())?;
     let part = parsed
-        .attachment(index as u32)
+        .attachment(attachment_index)
         .ok_or_else(|| "Anexo não encontrado.".to_string())?;
     let destination = Path::new(destination);
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| format!("Não foi possível preparar a pasta: {error}"))?;
     }
-    fs::write(destination, part.contents())
-        .map_err(|error| format!("Não foi possível salvar o anexo: {error}"))
+    write_new_attachment(destination, part.contents())
+        .map_err(|error| format!("Não foi possível salvar o anexo sem sobrescrever arquivos: {error}"))
 }
 
 pub fn stage_message_attachments(
@@ -532,17 +713,32 @@ pub fn stage_message_attachments(
         .parse(&raw)
         .ok_or_else(|| "Não foi possível interpretar a fonte da mensagem.".to_string())?;
 
-    let directory = paths.queue_attachments.join(operation_id);
-    fs::create_dir_all(&directory).map_err(|error| format!("Não foi possível preparar anexos: {error}"))?;
-
-    let mut output = Vec::new();
+    if uuid::Uuid::parse_str(operation_id).is_err() {
+        return Err("Identificador de operação de anexo inválido.".to_string());
+    }
+    if parsed.attachment_count() > 256 {
+        return Err("Quantidade de anexos acima do limite.".into());
+    }
+    // Validate the complete batch before creating any staged files.
+    let mut total = 0usize;
+    for index in 0..parsed.attachment_count() {
+        let Some(part) = parsed.attachment(index as u32) else { continue; };
+        total = total.saturating_add(part.contents().len());
+        if part.contents().len() > 64 * 1024 * 1024 || total > 100 * 1024 * 1024 {
+            return Err("Anexos excedem o limite de 64 MB por arquivo ou 100 MB no total.".into());
+        }
+    }
+    let directory = storage::prepare_attachment_directory(&paths.queue_attachments, operation_id)?;
+    let mut output: Vec<crate::models::QueuedAttachment> = Vec::new();
     for index in 0..parsed.attachment_count() {
         let Some(part) = parsed.attachment(index as u32) else { continue; };
         let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
-        let staged_name = format!("{index:03}-{name}");
+        let staged_name = format!("{}-{index:03}-{name}", uuid::Uuid::new_v4());
         let path = directory.join(staged_name);
-        local_crypto::write(&path, part.contents())
-            .map_err(|error| format!("Não foi possível preparar o anexo {name}: {error}"))?;
+        if let Err(error) = local_crypto::write(&path, part.contents()) {
+            for attachment in &output { let _ = fs::remove_file(&attachment.path); }
+            return Err(format!("Não foi possível preparar o anexo {name}: {error}"));
+        }
         output.push(crate::models::QueuedAttachment {
             name,
             path: path.display().to_string(),
@@ -552,6 +748,46 @@ pub fn stage_message_attachments(
         });
     }
     Ok(output)
+}
+
+// create_new performs the existence check and creation together, including dangling symlinks.
+fn write_new_attachment(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    if let Err(error) = file.write_all(bytes).and_then(|_| file.sync_all()) {
+        drop(file);
+        let _ = fs::remove_file(path);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn export_unique_attachment(directory: &Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
+    let original = Path::new(name);
+    let stem = original.file_stem().and_then(|value| value.to_str()).unwrap_or("anexo");
+    let ext = original.extension().and_then(|value| value.to_str()).unwrap_or("");
+    for suffix in 0..1000 {
+        let candidate = if suffix == 0 {
+            name.to_owned()
+        } else if ext.is_empty() {
+            format!("{stem}-{suffix}")
+        } else {
+            format!("{stem}-{suffix}.{ext}")
+        };
+        match write_new_attachment(&directory.join(candidate), bytes) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "Limite de nomes de anexo atingido"))
 }
 
 pub fn save_all_message_attachments(
@@ -571,18 +807,7 @@ pub fn save_all_message_attachments(
     for index in 0..parsed.attachment_count() {
         let Some(part) = parsed.attachment(index as u32) else { continue; };
         let name = safe_attachment_name(part.attachment_name().unwrap_or("anexo"), index);
-        let mut path = directory.join(&name);
-        if path.exists() {
-            let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("anexo");
-            let ext = path.extension().and_then(|value| value.to_str()).unwrap_or("");
-            let next = if ext.is_empty() {
-                format!("{stem}-{}", index + 1)
-            } else {
-                format!("{stem}-{}.{}", index + 1, ext)
-            };
-            path = directory.join(next);
-        }
-        fs::write(path, part.contents())
+        export_unique_attachment(directory, &name, part.contents())
             .map_err(|error| format!("Não foi possível salvar o anexo {name}: {error}"))?;
         saved += 1;
     }
@@ -793,4 +1018,192 @@ pub fn export_pst(paths: &AppPaths, account_id: Option<&str>, destination: &str)
     }
 
     Ok(messages.len())
+}
+
+#[cfg(test)]
+mod attachment_export_safety_tests {
+    use super::*;
+
+    #[test]
+    fn attachment_names_are_portable_and_bounded() {
+        for name in ["CON.txt", "NUL", "COM1.pdf", "LPT².txt", "CONIN$", "AUX .doc"] {
+            assert!(safe_attachment_name(name, 0).starts_with('_'), "{name}");
+        }
+        assert_eq!(safe_attachment_name(" . ", 0), "anexo-1");
+        assert_eq!(safe_attachment_name("report.pdf. ", 0), "report.pdf");
+        assert_eq!(safe_attachment_name("../a\\b:stream", 0), "_a_b_stream");
+        let long = safe_attachment_name(&format!("{}.pdf", "á".repeat(200)), 0);
+        assert!(long.len() <= 160);
+        assert!(long.ends_with(".pdf"));
+    }
+
+    #[test]
+    fn cleanup_only_removes_expired_uuid_directories() {
+        use std::time::{Duration, SystemTime};
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&root).unwrap();
+        let expired = root.join(uuid::Uuid::new_v4().to_string());
+        let unrelated = root.join("keep");
+        let file = root.join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&expired).unwrap();
+        fs::create_dir(&unrelated).unwrap();
+        fs::write(&file, b"keep").unwrap();
+        fs::write(expired.join("attachment.txt"), b"temporary").unwrap();
+        let modified = fs::metadata(&expired).unwrap().modified().unwrap();
+        cleanup_attachment_exports_at(&root, SystemTime::now()).unwrap();
+        assert!(expired.is_dir());
+        cleanup_attachment_exports_at(&root, modified + Duration::from_secs(3600)).unwrap();
+        assert!(!expired.exists());
+        assert!(unrelated.is_dir());
+        assert!(file.is_file());
+        fs::remove_dir_all(&root).unwrap();
+        assert!(cleanup_attachment_exports_at(&root, SystemTime::now()).is_ok());
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn cleanup_rejects_redirected_export_directories() {
+        use std::time::{Duration, SystemTime};
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let exports = root.join("exports");
+        let external = root.join("external");
+        fs::create_dir_all(&exports).unwrap();
+        fs::create_dir(&external).unwrap();
+        let sentinel = external.join("keep.txt");
+        fs::write(&sentinel, b"preserve").unwrap();
+        let redirected = exports.join(uuid::Uuid::new_v4().to_string());
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&external, &redirected).unwrap();
+        #[cfg(windows)]
+        {
+            // A junction exercises reparse-point protection without requiring
+            // the privileges needed to create Windows symbolic links.
+            let status = std::process::Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-Command",
+                    "New-Item -ItemType Junction -Path $env:SEVEN_MAIL_TEST_LINK -Target $env:SEVEN_MAIL_TEST_TARGET -ErrorAction Stop | Out-Null"])
+                .env("SEVEN_MAIL_TEST_LINK", &redirected)
+                .env("SEVEN_MAIL_TEST_TARGET", &external)
+                .status().unwrap();
+            assert!(status.success(), "could not create test junction");
+        }
+        let expired = SystemTime::now() + Duration::from_secs(7200);
+        assert!(cleanup_attachment_exports_at(&redirected, expired).is_err());
+        cleanup_attachment_exports_at(&exports, expired).unwrap();
+        assert!(fs::symlink_metadata(&redirected).is_ok());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"preserve");
+        #[cfg(unix)]
+        fs::remove_file(&redirected).unwrap();
+        #[cfg(windows)]
+        fs::remove_dir(&redirected).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn drag_exports_are_fresh_and_have_valid_preview_files() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let first = std::path::PathBuf::from(materialize_attachment_export(&root, 0, "sample.txt", b"attachment").unwrap());
+        let second = std::path::PathBuf::from(materialize_attachment_export(&root, 0, "sample.txt", b"attachment").unwrap());
+        assert_ne!(first, second);
+        for path in [first, second] {
+            assert_eq!(fs::read(&path).unwrap(), b"attachment");
+            let icon = fs::read(path.parent().unwrap().join(".drag-preview.png")).unwrap();
+            assert!(icon.starts_with(b"\x89PNG\r\n\x1a\n"));
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+            }
+        }
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn legacy_cache_cleanup_preserves_other_data() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let legacy = root.join("attachments");
+        let queue = root.join("queue");
+        fs::create_dir_all(legacy.join("account/message")).unwrap();
+        fs::create_dir(&queue).unwrap();
+        fs::write(legacy.join("account/message/old.txt"), b"old plaintext").unwrap();
+        fs::write(queue.join("pending"), b"preserve").unwrap();
+        purge_legacy_attachment_cache(&legacy).unwrap();
+        assert_eq!(fs::read_dir(&legacy).unwrap().count(), 0);
+        assert_eq!(fs::read(queue.join("pending")).unwrap(), b"preserve");
+        purge_legacy_attachment_cache(&legacy).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn materialized_export_directory_is_private() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        create_private_export_directory(&root).unwrap();
+        let file = root.join("attachment.txt");
+        fs::write(&file, b"test").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(&root).unwrap().permissions().mode() & 0o777, 0o700);
+        }
+        #[cfg(windows)]
+        {
+            let script = r#"
+$ErrorActionPreference = 'Stop'
+$user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$allowed = @($user, 'S-1-5-18')
+$directoryAcl = [System.IO.Directory]::GetAccessControl($env:SEVEN_MAIL_TEST_PRIVATE)
+$fileAcl = [System.IO.File]::GetAccessControl($env:SEVEN_MAIL_TEST_FILE)
+if (-not $directoryAcl.AreAccessRulesProtected) { throw 'Directory inherits access rules' }
+$fullControl = [System.Security.AccessControl.FileSystemRights]::FullControl
+foreach ($acl in @($directoryAcl, $fileAcl)) {
+    $rules = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
+    $seen = @{}
+    foreach ($rule in $rules) {
+        $sid = $rule.IdentityReference.Value
+        if ($sid -notin $allowed -or $rule.AccessControlType -ne 'Allow') { throw 'Unexpected access rule' }
+        if (($rule.FileSystemRights -band $fullControl) -eq $fullControl) {
+            $seen[$sid] = $true
+        }
+    }
+    foreach ($sid in $allowed) {
+        if (-not $seen.ContainsKey($sid)) { throw "Required full-control access missing: $sid" }
+    }
+}
+"#;
+            let powershell = std::path::PathBuf::from(std::env::var_os("SystemRoot").expect("Windows system root"))
+                .join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe");
+            let status = std::process::Command::new(powershell)
+                .args(["-NoProfile", "-NonInteractive", "-Command", script])
+                .env("SEVEN_MAIL_TEST_PRIVATE", &root)
+                .env("SEVEN_MAIL_TEST_FILE", &file)
+                .status().unwrap();
+            assert!(status.success(), "private export ACL validation failed");
+        }
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn exporting_does_not_overwrite_original_or_previous_collision() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("report.pdf"), b"original").unwrap();
+        fs::write(root.join("report-1.pdf"), b"previous").unwrap();
+        assert!(write_new_attachment(&root.join("report.pdf"), b"replacement").is_err());
+        export_unique_attachment(&root, "report.pdf", b"new").unwrap();
+        assert_eq!(fs::read(root.join("report.pdf")).unwrap(), b"original");
+        assert_eq!(fs::read(root.join("report-1.pdf")).unwrap(), b"previous");
+        assert_eq!(fs::read(root.join("report-2.pdf")).unwrap(), b"new");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_is_not_followed_when_exporting() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&root).unwrap();
+        let target = root.join("target");
+        std::os::unix::fs::symlink(&target, root.join("link")).unwrap();
+        assert!(write_new_attachment(&root.join("link"), b"data").is_err());
+        assert!(!target.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
 }

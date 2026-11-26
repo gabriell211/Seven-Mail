@@ -641,7 +641,7 @@ fn read_attachment_bounded(mut reader: impl io::Read, limit: u64) -> Result<Vec<
     Ok(bytes)
 }
 
-fn staging_directory(path: &Path) -> Result<(), String> {
+pub(crate) fn staging_directory(path: &Path) -> Result<(), String> {
     let metadata = fs::symlink_metadata(path).map_err(io_error)?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return Err("Diretório de anexos inválido.".into());
@@ -656,6 +656,15 @@ fn staging_directory(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn prepare_attachment_directory(root: &Path, operation_id: &str) -> Result<PathBuf, String> {
+    safe_component(operation_id)?;
+    staging_directory(root)?;
+    let destination = root.join(operation_id);
+    fs::create_dir_all(&destination).map_err(io_error)?;
+    staging_directory(&destination)?;
+    Ok(destination)
+}
+
 pub fn stage_attachments(
     paths: &AppPaths,
     operation_id: &str,
@@ -665,10 +674,7 @@ pub fn stage_attachments(
 ) -> Result<Vec<QueuedAttachment>, String> {
     safe_component(operation_id)?;
     if sources.len() > 256 { return Err("Quantidade de anexos acima do limite.".into()); }
-    staging_directory(&paths.queue_attachments)?;
-    let destination = paths.queue_attachments.join(operation_id);
-    fs::create_dir_all(&destination).map_err(io_error)?;
-    staging_directory(&destination)?;
+    let destination = prepare_attachment_directory(&paths.queue_attachments, operation_id)?;
     let max_file = max_file_mb.clamp(1, 250) * 1024 * 1024;
     let max_total = max_total_mb.clamp(max_file_mb.clamp(1, 250), 500) * 1024 * 1024;
     let mut output: Vec<QueuedAttachment> = Vec::new();
@@ -729,15 +735,12 @@ pub fn stage_message_as_eml(
         return Err("A mensagem excede o limite de 64 MB para encaminhamento como anexo.".to_string());
     }
 
-    let destination = paths.queue_attachments.join(operation_id);
-    fs::create_dir_all(&destination).map_err(io_error)?;
+    let destination = prepare_attachment_directory(&paths.queue_attachments, operation_id)?;
 
     let mut base = safe_attachment_name(suggested_name);
     if !base.to_ascii_lowercase().ends_with(".eml") {
         base.push_str(".eml");
     }
-    staging_directory(&paths.queue_attachments)?;
-    staging_directory(&destination)?;
     let staged_path = destination.join(format!("{}-{base}", uuid::Uuid::new_v4()));
     local_crypto::write(&staged_path, &raw)?;
 
@@ -1291,6 +1294,26 @@ mod tests {
         assert!(queue_operation(&paths, &operation).is_err());
         recover_interrupted_operations(&paths).unwrap();
         assert!(claim_next_send_due(&paths).unwrap().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staging_rejects_symlink_root_and_operation_directory() {
+        let root = std::env::temp_dir().join(format!("seven-mail-stage-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let queue = root.join("queue");
+        let external = root.join("external");
+        fs::create_dir(&queue).unwrap();
+        fs::create_dir(&external).unwrap();
+        let linked_root = root.join("linked-root");
+        std::os::unix::fs::symlink(&external, &linked_root).unwrap();
+        assert!(prepare_attachment_directory(&linked_root, "op").is_err());
+        assert!(!external.join("op").exists());
+        std::os::unix::fs::symlink(&external, queue.join("op")).unwrap();
+        assert!(prepare_attachment_directory(&queue, "op").is_err());
+        assert!(prepare_attachment_directory(&queue, "../outside").is_err());
+        assert_eq!(prepare_attachment_directory(&queue, "valid").unwrap(), queue.join("valid"));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

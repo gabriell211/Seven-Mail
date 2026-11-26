@@ -1139,6 +1139,8 @@ pub fn run() {
             app.manage(guard);
             let paths = AppPaths::resolve().map_err(std::io::Error::other)?;
             storage::recover_interrupted_operations(&paths).map_err(std::io::Error::other)?;
+            interchange::cleanup_legacy_attachment_cache(&paths).map_err(std::io::Error::other)?;
+            let _ = interchange::cleanup_attachment_exports(&paths);
             use tauri::{
                 menu::{Menu, MenuItem},
                 tray::TrayIconBuilder,
@@ -1169,6 +1171,13 @@ pub fn run() {
             }
 
             tray.build(app)?;
+            // The worker uses the already resolved paths, never triggering cache migration.
+            std::thread::Builder::new()
+                .name("attachment-export-cleanup".into())
+                .spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(15 * 60));
+                    let _ = interchange::cleanup_attachment_exports(&paths);
+                })?;
             Ok(())
         })
         .on_window_event(|window, event| {
