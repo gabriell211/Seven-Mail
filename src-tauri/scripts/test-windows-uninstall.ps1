@@ -61,6 +61,20 @@ try {
         $registration[0].UninstallString -notlike "*$uninstaller*") {
         throw 'NSIS uninstall registration missing or invalid.'
     }
+    # Exercise the same silent update flags as the native updater on a
+    # disposable installation. A same-version reinstall verifies the flags,
+    # registration, installation path and data preservation.
+    Invoke-CheckedProcess $nsis[0].FullName '/S /UPDATE /NS'
+    if (-not (Test-Path -LiteralPath $app -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
+        throw 'Silent NSIS update did not preserve the installation path.'
+    }
+    $registration = @(Get-SevenMailRegistration)
+    if ($registration.Count -ne 1 -or $registration[0].UninstallString -notlike "*$uninstaller*") {
+        throw 'Silent NSIS update did not preserve registration.'
+    }
+    Assert-DataPreserved
+    Write-Host 'Silent NSIS update flags and user data preservation passed.'
     Invoke-CheckedProcess $uninstaller '/S'
     Assert-Removed $app $uninstaller
     Assert-DataPreserved

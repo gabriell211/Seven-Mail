@@ -450,7 +450,7 @@ pub(crate) mod silent {
             return Err("Instalador NSIS inválido.".into());
         }
         let directory = update_directory()?;
-        let helper = directory.join(format!("{HELPER_PREFIX}{}.exe", uuid::Uuid::new_v4()));
+        let helper = directory.join(format!("{HELPER_PREFIX}{}-{}.exe", env!("CARGO_PKG_VERSION"), uuid::Uuid::new_v4()));
         let mut input = fs::File::open(std::env::current_exe().map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;
         let mut output = fs::OpenOptions::new().write(true).create_new(true).open(&helper)
@@ -465,13 +465,15 @@ pub(crate) mod silent {
     }
 
     pub fn cleanup_stale_helpers() {
-        // Run only at normal application startup, before scheduling a new update.
+        // A second instance of the same version must never delete a pending
+        // helper. Clean older-version copies only after a successful upgrade.
+        let current_prefix = format!("{HELPER_PREFIX}{}-", env!("CARGO_PKG_VERSION"));
         if let Ok(directory) = update_directory() {
             if let Ok(entries) = fs::read_dir(directory) {
                 for entry in entries.flatten() {
                     let name = entry.file_name();
                     let name = name.to_string_lossy();
-                    if name.starts_with(HELPER_PREFIX) && name.ends_with(".exe") {
+                    if name.starts_with(HELPER_PREFIX) && !name.starts_with(&current_prefix) && name.ends_with(".exe") {
                         let _ = fs::remove_file(entry.path());
                     }
                 }
