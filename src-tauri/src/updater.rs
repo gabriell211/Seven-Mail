@@ -429,7 +429,9 @@ pub(crate) mod silent {
 
     impl Drop for PendingUpdate {
         fn drop(&mut self) {
-            let _ = fs::remove_file(&self.helper);
+            if !self.helper.as_os_str().is_empty() {
+                let _ = fs::remove_file(&self.helper);
+            }
         }
     }
 
@@ -448,16 +450,6 @@ pub(crate) mod silent {
             return Err("Instalador NSIS inválido.".into());
         }
         let directory = update_directory()?;
-        // Remove only stale copies of our helper. A running copy cannot be removed on Windows.
-        if let Ok(entries) = fs::read_dir(&directory) {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                if name.starts_with(HELPER_PREFIX) && name.ends_with(".exe") {
-                    let _ = fs::remove_file(entry.path());
-                }
-            }
-        }
         let helper = directory.join(format!("{HELPER_PREFIX}{}.exe", uuid::Uuid::new_v4()));
         let mut input = fs::File::open(std::env::current_exe().map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;
@@ -472,8 +464,23 @@ pub(crate) mod silent {
         Ok(PendingUpdate { helper, version: info.version, installer })
     }
 
+    pub fn cleanup_stale_helpers() {
+        // Run only at normal application startup, before scheduling a new update.
+        if let Ok(directory) = update_directory() {
+            if let Ok(entries) = fs::read_dir(directory) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    if name.starts_with(HELPER_PREFIX) && name.ends_with(".exe") {
+                        let _ = fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
+    }
+
     impl PendingUpdate {
-        pub fn launch(self) -> Result<(), String> {
+        pub fn launch(mut self) -> Result<(), String> {
             // The helper is independent of the installed executable and waits
             // for the real application process to exit before NSIS starts.
             let result = Command::new(&self.helper)
@@ -484,9 +491,8 @@ pub(crate) mod silent {
                 .spawn()
                 .map_err(|error| error.to_string());
             if result.is_ok() {
-                // Windows may not allow deleting a running executable; leave
-                // this verified copy for cleanup during the next update.
-                std::mem::forget(self);
+                // Leave the running helper for cleanup on a subsequent launch.
+                self.helper = PathBuf::new();
             }
             result.map(|_| ())
         }

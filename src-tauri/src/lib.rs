@@ -105,7 +105,7 @@ fn cancel_silent_update(state: tauri::State<'_, DesktopState>) -> Result<(), Str
     app_lock::require_unlocked()?;
     #[cfg(target_os = "windows")]
     {
-        state.pending_silent_update.lock().map_err(|_| "Atualizador indisponível.".to_string())?.take();
+        drop(state.pending_silent_update.lock().map_err(|_| "Atualizador indisponível.".to_string())?.take());
     }
     #[cfg(not(target_os = "windows"))]
     let _ = state;
@@ -1159,6 +1159,8 @@ pub fn run() {
         if let Err(error) = result { eprintln!("{error}"); }
         return;
     }
+    #[cfg(target_os = "windows")]
+    updater::silent::cleanup_stale_helpers();
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
