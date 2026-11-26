@@ -486,6 +486,22 @@ pub fn preview_message_attachment(
     })
 }
 
+// Never traverse a symlink or a Windows reparse-point directory during cleanup.
+fn is_plain_export_directory(metadata: &fs::Metadata) -> bool {
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return false;
+        }
+    }
+    true
+}
+
 fn cleanup_expired_attachment_exports(root: &Path) -> Result<(), String> {
     cleanup_attachment_exports_at(root, std::time::SystemTime::now())
 }
@@ -496,7 +512,7 @@ fn cleanup_attachment_exports_at(root: &Path, now: std::time::SystemTime) -> Res
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(error.to_string()),
     };
-    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+    if !is_plain_export_directory(&metadata) {
         return Err("Pasta de anexos temporários inválida.".into());
     }
     for entry in fs::read_dir(root).map_err(|error| error.to_string())? {
@@ -510,7 +526,7 @@ fn cleanup_attachment_exports_at(root: &Path, now: std::time::SystemTime) -> Res
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => return Err(error.to_string()),
         };
-        if metadata.is_dir() && !metadata.file_type().is_symlink() &&
+        if is_plain_export_directory(&metadata) &&
             metadata.modified().ok().and_then(|time| now.duration_since(time).ok())
                 .map(|age| age >= std::time::Duration::from_secs(3600)).unwrap_or(false)
         {
@@ -956,6 +972,44 @@ mod attachment_export_safety_tests {
         assert!(file.is_file());
         fs::remove_dir_all(&root).unwrap();
         assert!(cleanup_attachment_exports_at(&root, SystemTime::now()).is_ok());
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn cleanup_rejects_redirected_export_directories() {
+        use std::time::{Duration, SystemTime};
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let exports = root.join("exports");
+        let external = root.join("external");
+        fs::create_dir_all(&exports).unwrap();
+        fs::create_dir(&external).unwrap();
+        let sentinel = external.join("keep.txt");
+        fs::write(&sentinel, b"preserve").unwrap();
+        let redirected = exports.join(uuid::Uuid::new_v4().to_string());
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&external, &redirected).unwrap();
+        #[cfg(windows)]
+        {
+            // A junction exercises reparse-point protection without requiring
+            // the privileges needed to create Windows symbolic links.
+            let status = std::process::Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-Command",
+                    "New-Item -ItemType Junction -Path $env:SEVEN_MAIL_TEST_LINK -Target $env:SEVEN_MAIL_TEST_TARGET -ErrorAction Stop | Out-Null"])
+                .env("SEVEN_MAIL_TEST_LINK", &redirected)
+                .env("SEVEN_MAIL_TEST_TARGET", &external)
+                .status().unwrap();
+            assert!(status.success(), "could not create test junction");
+        }
+        let expired = SystemTime::now() + Duration::from_secs(7200);
+        assert!(cleanup_attachment_exports_at(&redirected, expired).is_err());
+        cleanup_attachment_exports_at(&exports, expired).unwrap();
+        assert!(fs::symlink_metadata(&redirected).is_ok());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"preserve");
+        #[cfg(unix)]
+        fs::remove_file(&redirected).unwrap();
+        #[cfg(windows)]
+        fs::remove_dir(&redirected).unwrap();
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
