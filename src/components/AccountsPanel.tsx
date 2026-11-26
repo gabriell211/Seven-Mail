@@ -224,9 +224,13 @@ export function AccountsPanel({
               <label><span>Servidor SMTP</span><input value={editing.smtpHost ?? ""} onChange={(event) => setEditing({ ...editing, smtpHost: event.target.value })} /></label>
               <label><span>Porta SMTP</span><input type="number" value={editing.smtpPort ?? 465} onChange={(event) => setEditing({ ...editing, smtpPort: Number(event.target.value) })} /></label>
               <label><span>Segurança SMTP</span><select value={editing.smtpSecurityMode ?? editing.securityMode ?? "tls"} onChange={(event) => {
-                const value=event.target.value as "tls"|"starttls";
-                setEditing({ ...editing, smtpSecurityMode:value, securityMode:value });
-              }}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
+                const value=event.target.value as NonNullable<AccountProfile["smtpSecurityMode"]>;
+                setEditing({ ...editing,
+                  imapSecurityMode:editing.imapSecurityMode??(editing.imapPort===993?"tls":editing.securityMode??"tls"),
+                  pop3SecurityMode:editing.pop3SecurityMode??(editing.pop3Port===995?"tls":editing.securityMode??"tls"),
+                  smtpSecurityMode:value, securityMode:value==="plain"?editing.securityMode:value });
+              }}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option><option value="plain">Nenhum (sem criptografia)</option></select></label>
+              {editing.smtpSecurityMode==="plain"&&<div className="full secure-note" role="status"><Icon name="shield" size={16}/><span>SMTP sem criptografia: mensagens e senhas podem ser interceptadas. Use apenas um relay confiável em localhost ou com IP privado da rede local. OAuth exige TLS.</span></div>}
               <label><span>Timeout</span><select value={editing.connectionTimeoutSeconds ?? 30} onChange={(event) => setEditing({ ...editing, connectionTimeoutSeconds: Number(event.target.value) as AccountProfile["connectionTimeoutSeconds"] })}><option value={10}>10 s</option><option value={20}>20 s</option><option value={30}>30 s</option><option value={60}>60 s</option><option value={120}>120 s</option></select></label>
               <label><span>Cor</span><input type="color" value={editing.color} onChange={(event) => setEditing({ ...editing, color: event.target.value })} /></label>
               <label className="inline-check"><input type="checkbox" checked={Boolean(editing.muted)} onChange={(event) => setEditing({ ...editing, muted: event.target.checked })} /> Silenciar sincronização e notificações desta conta</label>

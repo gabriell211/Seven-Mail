@@ -12,7 +12,7 @@ use lettre::{
     transport::smtp::authentication::{Credentials, Mechanism},
     Address, Message, SmtpTransport, Transport,
 };
-use std::{fs, time::Duration};
+use std::{fs, net::IpAddr, time::Duration};
 
 pub fn discover(email: &str) -> ProviderSettings {
     let domain = email
@@ -96,6 +96,7 @@ pub fn settings_for(account: &AccountProfile) -> ProviderSettings {
     // SMTP 587 for the same provider requires STARTTLS.
     let imap_security_mode = account.imap_security_mode.clone().unwrap_or_else(|| {
         match account.security_mode.as_deref() {
+            Some(mode) if mode.eq_ignore_ascii_case("plain") => discovered.imap_security_mode.clone(),
             Some(mode) if imap_port == 993 && mode.eq_ignore_ascii_case("starttls") => "tls".to_string(),
             Some(mode) => mode.to_string(),
             None => discovered.imap_security_mode.clone(),
@@ -118,6 +119,7 @@ pub fn settings_for(account: &AccountProfile) -> ProviderSettings {
         match (pop3_port, account.security_mode.as_deref()) {
             // Same migration rule as IMAP: old profiles sometimes inherited
             // SMTP STARTTLS even though POP3S on 995 is implicit TLS.
+            (_, Some(mode)) if mode.eq_ignore_ascii_case("plain") => discovered.pop3_security_mode.clone(),
             (Some(995), Some(mode)) if mode.eq_ignore_ascii_case("starttls") => Some("tls".to_string()),
             (_, Some(mode)) => Some(mode.to_string()),
             _ => discovered.pop3_security_mode.clone(),
@@ -138,11 +140,35 @@ pub fn settings_for(account: &AccountProfile) -> ProviderSettings {
     }
 }
 
+// Explicit plaintext is permitted only for local, trusted relay addresses.
+// Never infer plaintext from the port or retry a failed TLS connection without TLS.
+fn plaintext_smtp_host_allowed(host: &str) -> bool {
+    let host = host.trim();
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    let host = host.strip_prefix('[').and_then(|value| value.strip_suffix(']')).unwrap_or(host);
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private(),
+        Ok(IpAddr::V6(ip)) => ip.is_loopback() || ip.is_unique_local(),
+        Err(_) => false,
+    }
+}
+
 fn smtp_transport(account: &AccountProfile) -> Result<SmtpTransport, String> {
     if !account.can("send") {
         return Err("A conta compartilhada não possui permissão de envio.".to_string());
     }
     let settings = settings_for(account);
+    let mode = settings.smtp_security_mode.to_ascii_lowercase();
+    if mode == "plain" {
+        if !plaintext_smtp_host_allowed(&settings.smtp_host) {
+            return Err("SMTP sem TLS exige localhost ou um endereço IP privado da rede local.".to_string());
+        }
+        if account.oauth_enabled {
+            return Err("SMTP com OAuth exige TLS para proteger o token de acesso.".to_string());
+        }
+    }
     let username = account.username.clone().unwrap_or_else(|| account.email.clone());
     let secret = if account.oauth_enabled {
         oauth::access_token(account)?
@@ -151,13 +177,10 @@ fn smtp_transport(account: &AccountProfile) -> Result<SmtpTransport, String> {
     };
     let credentials = Credentials::new(username, secret);
 
-    let mode = settings.smtp_security_mode.to_ascii_lowercase();
     let builder = if mode == "plain" {
-        let host = settings.smtp_host.trim().to_ascii_lowercase();
-        if !matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1" | "[::1]") {
-            return Err("SMTP sem TLS só é permitido para relay local.".to_string());
-        }
-        SmtpTransport::builder_dangerous(&settings.smtp_host)
+        let host = settings.smtp_host.trim();
+        let host = host.strip_prefix('[').and_then(|value| value.strip_suffix(']')).unwrap_or(host);
+        SmtpTransport::builder_dangerous(host)
     } else if mode == "starttls" {
         SmtpTransport::starttls_relay(&settings.smtp_host)
             .map_err(|error| error.to_string())?
@@ -670,6 +693,36 @@ mod protocol_security_tests {
             } else {
                 assert!(settings.pop3_host.is_none(), "iCloud não oferece POP3");
             }
+        }
+    }
+
+    #[test]
+    fn plaintext_smtp_accepts_only_local_and_private_addresses() {
+        for host in ["localhost", "127.0.0.1", "10.0.0.20", "172.16.10.5", "192.168.1.10", "::1", "[::1]", "fd00::20"] {
+            assert!(plaintext_smtp_host_allowed(host), "{host}");
+        }
+        for host in ["", "smtp.gmail.com", "8.8.8.8", "172.32.0.1", "0.0.0.0", "2001:4860::8888", "localhost.example.com"] {
+            assert!(!plaintext_smtp_host_allowed(host), "{host}");
+        }
+    }
+
+    #[test]
+    fn plaintext_smtp_does_not_downgrade_incoming_protocols() {
+        for profile in [
+            json!({"securityMode":"plain"}),
+            json!({"securityMode":"tls","smtpSecurityMode":"plain"}),
+        ] {
+            let mut account = json!({
+                "id":"plain", "displayName":"Plain", "email":"test@outlook.com",
+                "provider":"microsoft", "color":"#000000", "isDefault":true,
+                "imapPort":993, "pop3Port":995, "smtpHost":"192.168.1.10", "smtpPort":25
+            });
+            account.as_object_mut().unwrap().extend(profile.as_object().unwrap().clone());
+            let account: AccountProfile = serde_json::from_value(account).expect("valid account");
+            let settings = settings_for(&account);
+            assert_eq!(settings.smtp_security_mode, "plain");
+            assert_eq!(settings.imap_security_mode, "tls");
+            assert_eq!(settings.pop3_security_mode.as_deref(), Some("tls"));
         }
     }
 

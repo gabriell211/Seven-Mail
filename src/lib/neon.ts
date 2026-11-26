@@ -268,7 +268,7 @@ interface CloudAccountRow {
   imap_port: number | null;
   smtp_host: string | null;
   smtp_port: number | null;
-  security_mode: AccountProfile["securityMode"] | null;
+  security_mode: NonNullable<AccountProfile["smtpSecurityMode"]> | null;
   updated_at: string;
 }
 
@@ -309,7 +309,8 @@ export async function pullCloudAccounts(local: AccountProfile[] = []): Promise<A
     imapPort: row.imap_port ?? undefined,
     smtpHost: row.smtp_host ?? undefined,
     smtpPort: row.smtp_port ?? undefined,
-    securityMode: row.security_mode ?? undefined,
+    securityMode: row.security_mode === "plain" ? undefined : row.security_mode ?? undefined,
+    smtpSecurityMode: row.security_mode === "plain" ? "plain" : undefined,
   }));
 }
 
@@ -327,7 +328,7 @@ function accountToCloudRow(account: AccountProfile, owner: string) {
     imap_port: account.imapPort ?? null,
     smtp_host: account.smtpHost ?? null,
     smtp_port: account.smtpPort ?? null,
-    security_mode: account.securityMode ?? null,
+    security_mode: account.smtpSecurityMode === "plain" ? "plain" : account.securityMode ?? null,
   };
 }
 
