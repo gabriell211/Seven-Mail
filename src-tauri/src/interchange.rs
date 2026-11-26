@@ -502,6 +502,102 @@ fn is_plain_export_directory(metadata: &fs::Metadata) -> bool {
     true
 }
 
+#[cfg(windows)]
+fn restrict_export_directory(path: &Path) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    let system_root = std::env::var_os("SystemRoot")
+        .ok_or_else(|| "Diretório do sistema Windows indisponível.".to_string())?;
+    let powershell = std::path::PathBuf::from(system_root)
+        .join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe");
+    // Do not interpolate paths into a script or inherit permissive access rules.
+    // The current user and SYSTEM are the only explicit access principals.
+    let script = r#"
+$ErrorActionPreference = 'Stop'
+$path = $env:SEVEN_MAIL_PRIVATE_EXPORT
+$user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$system = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18')
+$acl = [System.Security.AccessControl.DirectorySecurity]::new()
+$acl.SetAccessRuleProtection($true, $false)
+$inherit = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+foreach ($sid in @($user, $system)) {
+    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($sid, 'FullControl', $inherit, 'None', 'Allow')
+    $acl.AddAccessRule($rule)
+}
+[System.IO.Directory]::SetAccessControl($path, $acl)
+"#;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let output = std::process::Command::new(powershell)
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .env("SEVEN_MAIL_PRIVATE_EXPORT", path)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output().map_err(|error| format!("Não foi possível configurar as permissões do anexo: {error}"))?;
+    if !output.status.success() {
+        return Err("Não foi possível restringir as permissões do anexo temporário.".into());
+    }
+    Ok(())
+}
+
+fn create_private_export_directory(path: &Path) -> Result<(), String> {
+    let builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    let builder = {
+        use std::os::unix::fs::DirBuilderExt;
+        let mut builder = builder;
+        builder.mode(0o700);
+        builder
+    };
+    builder.create(path).map_err(|error| error.to_string())?;
+    #[cfg(windows)]
+    if let Err(error) = restrict_export_directory(path) {
+        let _ = fs::remove_dir(path);
+        return Err(error);
+    }
+    Ok(())
+}
+
+// The old cache is derived from local raw messages, not the outgoing queue or
+// user-selected exports. Refuse redirected entries before removing anything.
+fn validate_legacy_cache_tree(path: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if metadata.file_type().is_symlink() {
+        return Err("Link inesperado no cache legado de anexos.".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("Ponto de reanálise no cache legado de anexos.".into());
+        }
+    }
+    if metadata.is_dir() {
+        for entry in fs::read_dir(path).map_err(|error| error.to_string())? {
+            validate_legacy_cache_tree(&entry.map_err(|error| error.to_string())?.path())?;
+        }
+    } else if !metadata.is_file() {
+        return Err("Entrada inválida no cache legado de anexos.".into());
+    }
+    Ok(())
+}
+
+pub fn cleanup_legacy_attachment_cache(paths: &AppPaths) -> Result<(), String> {
+    storage::staging_directory(&paths.root)?;
+    storage::staging_directory(&paths.cache)?;
+    purge_legacy_attachment_cache(&paths.attachment_cache)
+}
+
+fn purge_legacy_attachment_cache(path: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if is_plain_export_directory(&metadata) => {
+            validate_legacy_cache_tree(path)?;
+            fs::remove_dir_all(path).map_err(|error| error.to_string())?;
+        }
+        Ok(_) => return Err("Cache legado de anexos inválido.".into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.to_string()),
+    }
+    fs::create_dir(path).map_err(|error| error.to_string())
+}
+
 fn cleanup_expired_attachment_exports(root: &Path) -> Result<(), String> {
     cleanup_attachment_exports_at(root, std::time::SystemTime::now())
 }
@@ -567,15 +663,7 @@ pub fn cache_message_attachment(
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     cleanup_expired_attachment_exports(&root)?;
     let directory = root.join(uuid::Uuid::new_v4().to_string());
-    let builder = fs::DirBuilder::new();
-    #[cfg(unix)]
-    let builder = {
-        use std::os::unix::fs::DirBuilderExt;
-        let mut builder = builder;
-        builder.mode(0o700);
-        builder
-    };
-    builder.create(&directory).map_err(|error| error.to_string())?;
+    create_private_export_directory(&directory)?;
     let destination = directory.join(format!("{index:03}-{name}"));
     use std::io::Write;
     let mut options = fs::OpenOptions::new();
@@ -1009,6 +1097,59 @@ mod attachment_export_safety_tests {
         fs::remove_file(&redirected).unwrap();
         #[cfg(windows)]
         fs::remove_dir(&redirected).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn legacy_cache_cleanup_preserves_other_data() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let legacy = root.join("attachments");
+        let queue = root.join("queue");
+        fs::create_dir_all(legacy.join("account/message")).unwrap();
+        fs::create_dir(&queue).unwrap();
+        fs::write(legacy.join("account/message/old.txt"), b"old plaintext").unwrap();
+        fs::write(queue.join("pending"), b"preserve").unwrap();
+        purge_legacy_attachment_cache(&legacy).unwrap();
+        assert_eq!(fs::read_dir(&legacy).unwrap().count(), 0);
+        assert_eq!(fs::read(queue.join("pending")).unwrap(), b"preserve");
+        purge_legacy_attachment_cache(&legacy).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn materialized_export_directory_is_private() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        create_private_export_directory(&root).unwrap();
+        let file = root.join("attachment.txt");
+        fs::write(&file, b"test").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(&root).unwrap().permissions().mode() & 0o777, 0o700);
+        }
+        #[cfg(windows)]
+        {
+            let script = r#"
+$ErrorActionPreference = 'Stop'
+$user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$allowed = @($user, 'S-1-5-18')
+$acl = Get-Acl -LiteralPath $env:SEVEN_MAIL_TEST_PRIVATE
+if (-not $acl.AreAccessRulesProtected) { throw 'Directory inherits access rules' }
+foreach ($target in @($env:SEVEN_MAIL_TEST_PRIVATE, $env:SEVEN_MAIL_TEST_FILE)) {
+    $rules = (Get-Acl -LiteralPath $target).GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
+    if (-not ($rules | Where-Object { $_.IdentityReference.Value -eq $user -and $_.AccessControlType -eq 'Allow' })) { throw 'User access missing' }
+    foreach ($rule in $rules) {
+        if ($rule.IdentityReference.Value -notin $allowed -or $rule.AccessControlType -ne 'Allow') { throw 'Unexpected access rule' }
+    }
+}
+"#;
+            let status = std::process::Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-Command", script])
+                .env("SEVEN_MAIL_TEST_PRIVATE", &root)
+                .env("SEVEN_MAIL_TEST_FILE", &file)
+                .status().unwrap();
+            assert!(status.success(), "private export ACL validation failed");
+        }
         fs::remove_dir_all(&root).unwrap();
     }
 
