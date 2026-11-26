@@ -1253,7 +1253,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
 }
 
 function Workspace({title,eyebrow,action,onAction,children,className}:{title:string;eyebrow:string;action?:string;onAction?:()=>void;children:ReactNode;className?:string}) {
-  return <div className={className?`workspace ${className}`:"workspace"}><header className="workspace-header"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1></div>{action&&<button className="primary" onClick={onAction}><Icon name="plus" size={15}/>{action}</button>}</header>{children}</div>;
+  return <div className={className?`workspace ${className}`:"workspace"} tabIndex={0} role="region" aria-label={title}><header className="workspace-header"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1></div>{action&&<button className="primary" onClick={onAction}><Icon name="plus" size={15}/>{action}</button>}</header>{children}</div>;
 }
 function Feature({icon,title,children}:{icon:IconName;title:string;children:ReactNode}) { return <article className="feature"><div className="empty-symbol small-symbol"><Icon name={icon}/></div><h3>{title}</h3><p>{children}</p></article>; }
 

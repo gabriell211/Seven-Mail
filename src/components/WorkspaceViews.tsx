@@ -103,7 +103,7 @@ function Workspace({
   children: ReactNode;
 }) {
   return (
-    <div className="workspace">
+    <div className="workspace" tabIndex={0} role="region" aria-label={title}>
       <header className="workspace-header">
         <div>
           <span className="eyebrow">{eyebrow}</span>
