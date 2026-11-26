@@ -1150,17 +1150,28 @@ mod attachment_export_safety_tests {
 $ErrorActionPreference = 'Stop'
 $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $allowed = @($user, 'S-1-5-18')
-$acl = Get-Acl -LiteralPath $env:SEVEN_MAIL_TEST_PRIVATE
-if (-not $acl.AreAccessRulesProtected) { throw 'Directory inherits access rules' }
-foreach ($target in @($env:SEVEN_MAIL_TEST_PRIVATE, $env:SEVEN_MAIL_TEST_FILE)) {
-    $rules = (Get-Acl -LiteralPath $target).GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
-    if (-not ($rules | Where-Object { $_.IdentityReference.Value -eq $user -and $_.AccessControlType -eq 'Allow' })) { throw 'User access missing' }
+$directoryAcl = [System.IO.Directory]::GetAccessControl($env:SEVEN_MAIL_TEST_PRIVATE)
+$fileAcl = [System.IO.File]::GetAccessControl($env:SEVEN_MAIL_TEST_FILE)
+if (-not $directoryAcl.AreAccessRulesProtected) { throw 'Directory inherits access rules' }
+$fullControl = [System.Security.AccessControl.FileSystemRights]::FullControl
+foreach ($acl in @($directoryAcl, $fileAcl)) {
+    $rules = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
+    $seen = @{}
     foreach ($rule in $rules) {
-        if ($rule.IdentityReference.Value -notin $allowed -or $rule.AccessControlType -ne 'Allow') { throw 'Unexpected access rule' }
+        $sid = $rule.IdentityReference.Value
+        if ($sid -notin $allowed -or $rule.AccessControlType -ne 'Allow') { throw 'Unexpected access rule' }
+        if (($rule.FileSystemRights -band $fullControl) -eq $fullControl) {
+            $seen[$sid] = $true
+        }
+    }
+    foreach ($sid in $allowed) {
+        if (-not $seen.ContainsKey($sid)) { throw "Required full-control access missing: $sid" }
     }
 }
 "#;
-            let status = std::process::Command::new("powershell.exe")
+            let powershell = std::path::PathBuf::from(std::env::var_os("SystemRoot").expect("Windows system root"))
+                .join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe");
+            let status = std::process::Command::new(powershell)
                 .args(["-NoProfile", "-NonInteractive", "-Command", script])
                 .env("SEVEN_MAIL_TEST_PRIVATE", &root)
                 .env("SEVEN_MAIL_TEST_FILE", &file)
