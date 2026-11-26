@@ -17,3 +17,12 @@ test("external sender banner is removed without removing remote-content or suspi
   assert.ok(body.includes("settings.warnSuspiciousLinks"));
   assert.ok(body.includes("sanitizeMessageHtml"));
 });
+
+test("cache, workspace and queue operations also leave the UI thread",()=>{
+  for(const name of ["runtime_info","list_accounts","get_cloud_binding","cache_message","list_queue","queue_operation","message_action","update_message_metadata","prune_message_cache","list_workspace","list_workspace_for_sync","search_workspace","upsert_workspace","delete_workspace","read_message_source","provider_corporate_catalog","provider_capabilities"]){
+    const start=source.indexOf("async fn "+name+"(");
+    assert.notEqual(start,-1,name);
+    assert.ok(source.slice(start,source.indexOf("\n}\n",start)).includes("spawn_blocking"),name);
+  }
+  assert.ok(source.includes("OUTBOX_DRAIN.try_lock()"));
+});

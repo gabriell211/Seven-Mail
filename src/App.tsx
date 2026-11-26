@@ -2852,9 +2852,13 @@ function UnlockedApp() {
     }).catch((reason)=>{
       setSendFeedback({state:"error",title:"Falha ao consultar a caixa de saída",detail:reason instanceof Error?reason.message:String(reason)});
     });
-    const flush = () => {
-      if (!navigator.onLine) return;
-      void bridge.flushOutbox()
+    let disposed=false;
+    let flushing=false;
+    const flush = async () => {
+      if (disposed||flushing||!navigator.onLine) return;
+      flushing=true;
+      try {
+      await bridge.flushOutbox()
         .then(async(result)=>{
           if(result.sent>0){
             const refreshed=await bridge.listCachedMessages(unified?undefined:activeAccount?.id).catch(()=>null);
@@ -2881,19 +2885,23 @@ function UnlockedApp() {
             detail:reason instanceof Error?reason.message:String(reason),
           });
         });
-      for (const account of profileAccounts) {
-        if (account.muted) continue;
-        void bridge.flushMailActions(account.id).catch((reason)=>{
-          setSyncError(reason instanceof Error?reason.message:String(reason));
-          setSyncState("error");
+      await Promise.all(profileAccounts.filter(account=>!account.muted).map(async account=>{
+        if(disposed) return;
+        await bridge.flushMailActions(account.id).catch((reason)=>{
+          if(!disposed){
+            setSyncError(reason instanceof Error?reason.message:String(reason));
+            setSyncState("error");
+          }
         });
-      }
+      }));
+      } finally { flushing=false; }
     };
 
-    flush();
+    void flush();
     const timer = window.setInterval(flush, 15_000);
     window.addEventListener("online", flush);
     return ()=>{
+      disposed=true;
       window.clearInterval(timer);
       window.removeEventListener("online", flush);
     };
@@ -3158,8 +3166,11 @@ function UnlockedApp() {
     if(accounts.length===0) return;
     let disposed=false;
 
+    let polling=false;
     const poll=async()=>{
-      if(disposed||!navigator.onLine) return;
+      if(disposed||polling||!navigator.onLine) return;
+      polling=true;
+      try {
       for(const account of accounts){
         if(disposed) return;
         try{
@@ -3181,6 +3192,7 @@ function UnlockedApp() {
           setSyncState(navigator.onLine?"error":"offline");
         }
       }
+      } finally { polling=false; }
     };
 
     void poll();
