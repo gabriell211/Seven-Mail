@@ -1,6 +1,6 @@
 [package]
 name = "seven-mail"
-version = "1.0.2"
+version = "1.0.3"
 description = "Seven Mail desktop client"
 authors = ["gabriell211"]
 edition = "2021"
