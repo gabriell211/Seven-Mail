@@ -153,14 +153,17 @@ jobs:
             - Correções de segurança, armazenamento, sincronização e testes de protocolos.
             - CI obrigatório de SMTP, IMAP e POP3 com servidor isolado.
 
-            Novidades da v1.0.3:
-            - Configurações responsivas e seção Sobre com versão instalada e verificação de atualizações.
-            - SMTP sem TLS explícito para relays locais confiáveis (localhost e IPs privados), sem desativar TLS de IMAP/POP3.
-            - Logos dos provedores armazenadas localmente, com seletor de contas aprimorado.
-            - Janelas de edição do calendário, contatos, tarefas, notas e regras com rolagem interna e ações acessíveis.
-            - Verificação de atualizações a cada 30 minutos e ao reconectar; instalação silenciosa opcional ao sair (Windows NSIS).
+            Novidades da v1.0.4:
+            - Rolagem das configurações e correções de layout da caixa de entrada.
+            - SMTP sem criptografia para servidores explicitamente configurados, incluindo nomes de domínio.
+            - Mensagens de autenticação Gmail com instruções para gerar senha de aplicativo.
+            - Todas as mensagens visíveis por padrão, sem agrupamento obrigatório nem resumo de conversas.
+            - Primeira sincronização progressiva e operações de rede/cache fora da thread da janela.
+            - Proteção contra sobreposição de tarefas periódicas.
+            - Avatar inferior com troca de conta, inclusão e gerenciamento; pastas expansíveis por conta.
+            - Remoção do aviso de remetente externo, mantendo proteção de conteúdo remoto e links suspeitos.
 
-            A homologação externa do Gmail, do arraste gráfico, das notificações nativas e das alterações visuais ainda requer validação específica.
+            A homologação em ambiente real do Gmail, desempenho no Windows, instalação silenciosa e interface permanece pendente.
 
             Windows:
             - MSI
@@ -176,3 +179,52 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: --bundles ${{ matrix.bundles }}
+
+  publish-v104:
+    name: Publish verified v1.0.4
+    needs: release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Publish only the requested complete release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(tr -d '\r\n' < .github/release-trigger)"
+          if [[ "$tag" != v1.0.4 ]]; then
+            echo "Automatic publication is scoped to the requested v1.0.4."
+            exit 0
+          fi
+          version="$(jq -r .version src-tauri/tauri.conf.json)"
+          [[ "v$version" == "$tag" ]]
+          # Require successful CI on exactly the source revision built above.
+          passed=0
+          for attempt in $(seq 1 80); do
+            ci="$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" -f head_sha="$GITHUB_SHA" -f event=push -F per_page=10 | jq -c --arg sha "$GITHUB_SHA" '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.id) | last // {}')"
+            status="$(jq -r '.status // ""' <<< "$ci")"
+            conclusion="$(jq -r '.conclusion // ""' <<< "$ci")"
+            if [[ "$status" == completed ]]; then
+              [[ "$conclusion" == success ]] || { echo "Main CI did not pass; keeping the draft."; exit 1; }
+              passed=1
+              break
+            fi
+            sleep 15
+          done
+          [[ "$passed" == 1 ]] || { echo "Main CI not confirmed; keeping the draft."; exit 1; }
+          # Draft remains unpublished unless all six platform assets are present.
+          release="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" | jq -sce --arg tag "$tag" '[.[][] | select(.tag_name == $tag)] | if length == 1 then .[0] else error("Release not unique") end')"
+          jq -e --arg sha "$GITHUB_SHA" '.target_commitish == $sha and .prerelease == false' <<< "$release" >/dev/null
+          for name in "Seven.Mail_${version}_x64-setup.exe" "Seven.Mail_${version}_x64_en-US.msi" "Seven.Mail_${version}_amd64.AppImage" "Seven.Mail_${version}_amd64.deb" "Seven.Mail_${version}_aarch64.dmg" "Seven.Mail_aarch64.app.tar.gz"; do
+            jq -e --arg name "$name" '[.assets[] | select(.name == $name and .state == "uploaded" and .size > 0 and ((.digest // "") | test("^sha256:[0-9a-fA-F]{64}$")))] | length == 1' <<< "$release" >/dev/null
+          done
+          id="$(jq -r .id <<< "$release")"
+          if [[ "$(jq -r .draft <<< "$release")" == true ]]; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$id" -F draft=false -f make_latest=true --jq '{tag_name,draft,html_url}'
+          fi
