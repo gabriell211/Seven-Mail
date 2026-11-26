@@ -121,12 +121,10 @@ export function sanitizeMessageHtml(raw: string, allowRemote: boolean): { html: 
 
 export function SafeMessageBody({
   message,
-  accountEmail,
   settings,
   onAllowRemote,
 }: {
   message: MailMessage;
-  accountEmail?: string;
   settings: AppSettings;
   onAllowRemote: (sender: string) => void;
 }) {
@@ -141,10 +139,6 @@ export function SafeMessageBody({
     () => message.bodyHtml?.trim() ? sanitizeMessageHtml(message.bodyHtml, allowRemote) : null,
     [message.bodyHtml, allowRemote],
   );
-
-  const accountDomain = accountEmail?.split("@")[1]?.toLocaleLowerCase("pt-BR") ?? "";
-  const senderDomain = sender.split("@")[1] ?? "";
-  const external = Boolean(settings.externalSenderWarning && accountDomain && senderDomain && accountDomain !== senderDomain);
 
   function handleClick(event: MouseEvent<HTMLElement>) {
     const target = event.target as HTMLElement;
@@ -163,7 +157,6 @@ export function SafeMessageBody({
 
   return (
     <div className="safe-message-wrap">
-      {external && <div className="external-sender-warning">Remetente externo à sua organização</div>}
       {sanitized && (sanitized.blockedRemote > 0 || sanitized.trackers > 0) && (
         <div className="remote-content-banner">
           <span>

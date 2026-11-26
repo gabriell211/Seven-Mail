@@ -24,7 +24,27 @@ mod protocol_e2e;
 
 use models::{AccountProfile, DavSyncResult, DirectoryContact, MailAttachmentInfo, MailAttachmentPreview, MailFolder, MailMessage, OutboxFlushResult, ProviderSettings, QueueOperation, QueuedAttachment, RuntimeInfo, WorkspaceDocument};
 use storage::AppPaths;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, Weak};
+
+// Serializes sync and remote-action flushes per account while unrelated
+// accounts and the desktop event loop remain independent.
+static MAIL_ACCOUNT_IO: std::sync::LazyLock<Mutex<std::collections::HashMap<String, Weak<Mutex<()>>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+fn with_account_io<T>(account_id: &str, operation: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    let gate = {
+        let mut gates = MAIL_ACCOUNT_IO.lock().map_err(|_| "Sincronização indisponível.".to_string())?;
+        gates.retain(|_, gate| gate.strong_count() > 0);
+        if let Some(gate) = gates.get(account_id).and_then(Weak::upgrade) { gate } else {
+            let gate = Arc::new(Mutex::new(()));
+            gates.insert(account_id.to_string(), Arc::downgrade(&gate));
+            gate
+        }
+    };
+    let _guard = gate.lock().map_err(|_| "Sincronização indisponível.".to_string())?;
+    operation()
+}
+
 use tauri::{Emitter, Manager};
 
 struct DesktopState {
@@ -348,7 +368,13 @@ fn provider_sensitivity_rights(account_id: String, label_id: String, owner_email
 }
 
 #[tauri::command]
-fn provider_message_policy(account_id: String, message_id: String) -> Result<provider_native::MessagePolicy, String> {
+async fn provider_message_policy(account_id: String, message_id: String) -> Result<provider_native::MessagePolicy, String> {
+    tauri::async_runtime::spawn_blocking(move || provider_message_policy_blocking(account_id, message_id))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn provider_message_policy_blocking(account_id: String, message_id: String) -> Result<provider_native::MessagePolicy, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -393,7 +419,13 @@ fn provider_recall_message(account_id: String, message_id: String) -> Result<Str
 }
 
 #[tauri::command]
-fn sync_ldap(account_id: String) -> Result<Vec<DirectoryContact>, String> {
+async fn sync_ldap(account_id: String) -> Result<Vec<DirectoryContact>, String> {
+    tauri::async_runtime::spawn_blocking(move || sync_ldap_blocking(account_id))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn sync_ldap_blocking(account_id: String) -> Result<Vec<DirectoryContact>, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -404,7 +436,13 @@ fn sync_ldap(account_id: String) -> Result<Vec<DirectoryContact>, String> {
 }
 
 #[tauri::command]
-fn test_ldap_connection(account_id: String) -> Result<bool, String> {
+async fn test_ldap_connection(account_id: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || test_ldap_connection_blocking(account_id))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn test_ldap_connection_blocking(account_id: String) -> Result<bool, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -415,7 +453,13 @@ fn test_ldap_connection(account_id: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn sync_dav(account_id: String) -> Result<DavSyncResult, String> {
+async fn sync_dav(account_id: String) -> Result<DavSyncResult, String> {
+    tauri::async_runtime::spawn_blocking(move || sync_dav_blocking(account_id))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn sync_dav_blocking(account_id: String) -> Result<DavSyncResult, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -426,7 +470,13 @@ fn sync_dav(account_id: String) -> Result<DavSyncResult, String> {
 }
 
 #[tauri::command]
-fn test_dav_connection(account_id: String) -> Result<bool, String> {
+async fn test_dav_connection(account_id: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || test_dav_connection_blocking(account_id))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn test_dav_connection_blocking(account_id: String) -> Result<bool, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -519,13 +569,25 @@ fn has_smime_recipient_certificate(email: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn inspect_smime_message(account_id: String, message_id: String) -> Result<smime::SmimeInspection, String> {
+async fn inspect_smime_message(account_id: String, message_id: String) -> Result<smime::SmimeInspection, String> {
+    tauri::async_runtime::spawn_blocking(move || inspect_smime_message_blocking(account_id, message_id))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn inspect_smime_message_blocking(account_id: String, message_id: String) -> Result<smime::SmimeInspection, String> {
     app_lock::require_unlocked()?;
     smime::inspect_message(&AppPaths::resolve()?, &account_id, &message_id)
 }
 
 #[tauri::command]
-fn test_smtp_connection(account_id: String) -> Result<bool, String> {
+async fn test_smtp_connection(account_id: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || test_smtp_connection_blocking(account_id))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn test_smtp_connection_blocking(account_id: String) -> Result<bool, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -536,7 +598,13 @@ fn test_smtp_connection(account_id: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn test_imap_connection(account_id: String) -> Result<bool, String> {
+async fn test_imap_connection(account_id: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || test_imap_connection_blocking(account_id))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn test_imap_connection_blocking(account_id: String) -> Result<bool, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -571,7 +639,13 @@ async fn wait_for_mail_push(
 }
 
 #[tauri::command]
-fn sync_inbox(account_id: String, limit: Option<u32>) -> Result<usize, String> {
+async fn sync_inbox(account_id: String, limit: Option<u32>) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || with_account_io(&account_id.clone(), || sync_inbox_blocking(account_id, limit)))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn sync_inbox_blocking(account_id: String, limit: Option<u32>) -> Result<usize, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -586,7 +660,13 @@ fn sync_inbox(account_id: String, limit: Option<u32>) -> Result<usize, String> {
 }
 
 #[tauri::command]
-fn list_mail_folders(account_id: String) -> Result<Vec<MailFolder>, String> {
+async fn list_mail_folders(account_id: String) -> Result<Vec<MailFolder>, String> {
+    tauri::async_runtime::spawn_blocking(move || list_mail_folders_blocking(account_id))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn list_mail_folders_blocking(account_id: String) -> Result<Vec<MailFolder>, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -605,7 +685,18 @@ fn list_mail_folders(account_id: String) -> Result<Vec<MailFolder>, String> {
 }
 
 #[tauri::command]
-fn sync_mail_folder(
+async fn sync_mail_folder(
+    account_id: String,
+    path: String,
+    label: String,
+    limit: Option<u32>,
+) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || with_account_io(&account_id.clone(), || sync_mail_folder_blocking(account_id, path, label, limit)))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn sync_mail_folder_blocking(
     account_id: String,
     path: String,
     label: String,
@@ -675,7 +766,13 @@ fn delete_mail_folder(
 }
 
 #[tauri::command]
-fn flush_mail_actions(account_id: String) -> Result<usize, String> {
+async fn flush_mail_actions(account_id: String) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || with_account_io(&account_id.clone(), || flush_mail_actions_blocking(account_id)))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn flush_mail_actions_blocking(account_id: String) -> Result<usize, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let account = storage::list_accounts(&paths)?
@@ -690,13 +787,25 @@ fn flush_mail_actions(account_id: String) -> Result<usize, String> {
 }
 
 #[tauri::command]
-fn list_cached_messages(account_id: Option<String>) -> Result<Vec<MailMessage>, String> {
+async fn list_cached_messages(account_id: Option<String>) -> Result<Vec<MailMessage>, String> {
+    tauri::async_runtime::spawn_blocking(move || list_cached_messages_blocking(account_id))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn list_cached_messages_blocking(account_id: Option<String>) -> Result<Vec<MailMessage>, String> {
     app_lock::require_unlocked()?;
     storage::list_cached_messages(&AppPaths::resolve()?, account_id.as_deref())
 }
 
 #[tauri::command]
-fn search_cached_message_ids(account_id: Option<String>, query: String) -> Result<Vec<String>, String> {
+async fn search_cached_message_ids(account_id: Option<String>, query: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || search_cached_message_ids_blocking(account_id, query))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn search_cached_message_ids_blocking(account_id: Option<String>, query: String) -> Result<Vec<String>, String> {
     app_lock::require_unlocked()?;
     storage::search_cached_message_ids(&AppPaths::resolve()?, account_id.as_deref(), &query)
 }
@@ -760,7 +869,13 @@ fn list_queue() -> Result<Vec<QueueOperation>, String> {
 }
 
 #[tauri::command]
-fn flush_outbox() -> Result<OutboxFlushResult, String> {
+async fn flush_outbox() -> Result<OutboxFlushResult, String> {
+    tauri::async_runtime::spawn_blocking(move || flush_outbox_blocking())
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn flush_outbox_blocking() -> Result<OutboxFlushResult, String> {
     app_lock::require_unlocked()?;
     let paths = AppPaths::resolve()?;
     let accounts = storage::list_accounts(&paths)?;
@@ -990,7 +1105,13 @@ fn read_message_source(account_id: String, message_id: String) -> Result<String,
 }
 
 #[tauri::command]
-fn list_message_attachments(account_id: String, message_id: String) -> Result<Vec<MailAttachmentInfo>, String> {
+async fn list_message_attachments(account_id: String, message_id: String) -> Result<Vec<MailAttachmentInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || list_message_attachments_blocking(account_id, message_id))
+        .await
+        .map_err(|error| format!("Falha na operação de e-mail: {error}"))?
+}
+
+fn list_message_attachments_blocking(account_id: String, message_id: String) -> Result<Vec<MailAttachmentInfo>, String> {
     app_lock::require_unlocked()?;
     interchange::list_message_attachments(&AppPaths::resolve()?, &account_id, &message_id)
 }
