@@ -140,19 +140,21 @@ pub fn settings_for(account: &AccountProfile) -> ProviderSettings {
     }
 }
 
-// Explicit plaintext is permitted only for local, trusted relay addresses.
-// Never infer plaintext from the port or retry a failed TLS connection without TLS.
+// Allow user-configured SMTP hostnames and IPs when plaintext is explicitly
+// selected. Never infer plaintext from the port or downgrade a failed TLS connection.
 fn plaintext_smtp_host_allowed(host: &str) -> bool {
     let host = host.trim();
-    if host.eq_ignore_ascii_case("localhost") {
-        return true;
-    }
     let host = host.strip_prefix('[').and_then(|value| value.strip_suffix(']')).unwrap_or(host);
-    match host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private(),
-        Ok(IpAddr::V6(ip)) => ip.is_loopback() || ip.is_unique_local(),
-        Err(_) => false,
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return !ip.is_unspecified() && !ip.is_multicast()
+            && ip != IpAddr::V4(std::net::Ipv4Addr::BROADCAST);
     }
+    let name = host.strip_suffix('.').unwrap_or(host);
+    !name.is_empty() && name.len() <= 253 && name.split('.').all(|label| {
+        !label.is_empty() && label.len() <= 63
+            && !label.starts_with('-') && !label.ends_with('-')
+            && label.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    })
 }
 
 fn smtp_transport(account: &AccountProfile) -> Result<SmtpTransport, String> {
@@ -163,7 +165,7 @@ fn smtp_transport(account: &AccountProfile) -> Result<SmtpTransport, String> {
     let mode = settings.smtp_security_mode.to_ascii_lowercase();
     if mode == "plain" {
         if !plaintext_smtp_host_allowed(&settings.smtp_host) {
-            return Err("SMTP sem TLS exige localhost ou um endereço IP privado da rede local.".to_string());
+            return Err("Servidor SMTP inválido. Informe um nome de domínio ou endereço IP, sem URL, caminho ou porta.".to_string());
         }
         if account.oauth_enabled {
             return Err("SMTP com OAuth exige TLS para proteger o token de acesso.".to_string());
@@ -697,11 +699,15 @@ mod protocol_security_tests {
     }
 
     #[test]
-    fn plaintext_smtp_accepts_only_local_and_private_addresses() {
-        for host in ["localhost", "127.0.0.1", "10.0.0.20", "172.16.10.5", "192.168.1.10", "::1", "[::1]", "fd00::20"] {
+    fn plaintext_smtp_accepts_explicit_hostnames_and_ip_addresses() {
+        for host in ["localhost", "127.0.0.1", "10.0.0.20", "192.168.1.10",
+            "::1", "[::1]", "fd00::20", "smtp.example.com", "mail.example.com.br",
+            "smtp.local", "mailserver", "smtp.example.com.", "203.0.113.10", "2001:db8::10"] {
             assert!(plaintext_smtp_host_allowed(host), "{host}");
         }
-        for host in ["", "smtp.gmail.com", "8.8.8.8", "172.32.0.1", "0.0.0.0", "2001:4860::8888", "localhost.example.com"] {
+        for host in ["", " ", "https://smtp.example.com", "smtp.example.com:587",
+            "smtp.example.com/path", "user@smtp.example.com", "bad host", "-smtp.example.com",
+            "smtp..example.com", "0.0.0.0", "::", "224.0.0.1", "255.255.255.255"] {
             assert!(!plaintext_smtp_host_allowed(host), "{host}");
         }
     }
