@@ -963,3 +963,7 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .provider-brand-mark--icloud img{width:40px;height:30px}
 .provider-brand-custom{width:34px;height:34px;border-radius:9px;background:var(--accent);color:#fff}
 @media(max-width:580px){.provider-brand-grid{grid-template-columns:repeat(auto-fit,minmax(86px,1fr))}}
+
+/* Update controls can now include a silent install action. */
+.update-banner-actions{flex-wrap:wrap;justify-content:flex-end;max-width:100%}
+@media(max-width:850px){.update-banner{grid-template-columns:42px minmax(0,1fr)}.update-banner-actions{grid-column:1/-1}}
