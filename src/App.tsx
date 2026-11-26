@@ -22,6 +22,7 @@ import { ReadingAssist } from "./components/ReadingAssist";
 import { VirtualList } from "./components/VirtualList";
 import { BrandLogo } from "./components/BrandLogo";
 import { ProviderSelector } from "./components/ProviderSelector";
+import { AccountSwitcher } from "./components/AccountSwitcher";
 import { ConnectionError } from "./components/ConnectionError";
 import { SettingsAbout } from "./components/SettingsAbout";
 import { LaunchScreen } from "./components/LaunchScreen";
@@ -3569,7 +3570,7 @@ function UnlockedApp() {
     <aside className="nav-rail" aria-label="Navegação principal">
       <div className="rail-brand"><BrandLogo variant="rail"/></div>
       <nav>{navItems.map(item=><button key={item.id} className={section===item.id?"nav-item active":"nav-item"} title={item.label} onClick={()=>setSection(item.id)}><Icon name={item.icon}/><span>{item.label}</span></button>)}</nav>
-      <button className="profile" onClick={()=>setAccountOpen(true)}>{activeAccount?activeAccount.displayName[0].toUpperCase():<Icon name="userplus" size={17}/>}</button>
+      <AccountSwitcher accounts={profileAccounts} activeId={unified?"__all__":activeAccount?.id} onSelect={id=>{setActiveId(id);setSection("mail");setSearch("");}} onAdd={()=>setAccountOpen(true)} onManage={()=>setSection("settings")}/>
     </aside>
     <main className="main" id="seven-mail-main" tabIndex={-1}>
       <header className="topbar" data-tauri-drag-region>
