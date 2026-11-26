@@ -4,18 +4,10 @@ name: External Mail Smoke
 permissions:
   contents: read
 
+# Live provider diagnostics are opt-in. The required CI still runs real
+# SMTP/IMAP/POP3 against the isolated GreenMail server on every main push/PR.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/external-mail-smoke.yml"
-      - "src-tauri/src/protocol_e2e.rs"
-      - "src-tauri/src/imap_sync.rs"
-      - "src-tauri/src/pop3_sync.rs"
-      - "src-tauri/src/app_lock.rs"
-      - "src-tauri/src/credentials.rs"
-      - "src-tauri/src/local_crypto.rs"
 
 # Serialize access to the shared test mailbox (including manual runs).
 concurrency:
@@ -25,9 +17,13 @@ concurrency:
 jobs:
   external-smtp:
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     env:
       SEVEN_MAIL_EXTERNAL_EMAIL: ${{ secrets.SEVEN_MAIL_EXTERNAL_EMAIL }}
       SEVEN_MAIL_EXTERNAL_USERNAME: ${{ secrets.SEVEN_MAIL_EXTERNAL_EMAIL }}
+      SEVEN_MAIL_EXTERNAL_POP3_USERNAME: ${{ vars.SEVEN_MAIL_EXTERNAL_POP3_USERNAME }}
+      SEVEN_MAIL_EXTERNAL_FIXTURE_SENDER: ${{ secrets.SEVEN_MAIL_EXTERNAL_FIXTURE_SENDER }}
+      SEVEN_MAIL_EXTERNAL_FIXTURE_PASSWORD: ${{ secrets.SEVEN_MAIL_EXTERNAL_FIXTURE_PASSWORD }}
       SEVEN_MAIL_EXTERNAL_SMTP_HOST: smtp.gmail.com
       SEVEN_MAIL_EXTERNAL_SMTP_PORT: "465"
       SEVEN_MAIL_EXTERNAL_SMTP_SECURITY: tls
@@ -43,7 +39,7 @@ jobs:
         shell: bash
         run: |
           missing=0
-          for name in SEVEN_MAIL_EXTERNAL_EMAIL SEVEN_MAIL_TEST_SECRET
+          for name in SEVEN_MAIL_EXTERNAL_EMAIL SEVEN_MAIL_TEST_SECRET SEVEN_MAIL_EXTERNAL_FIXTURE_SENDER SEVEN_MAIL_EXTERNAL_FIXTURE_PASSWORD
           do
             if [ -z "${!name}" ]; then
               echo "::notice title=Seven Mail external smoke::Missing GitHub Actions secret: $name"
@@ -52,8 +48,8 @@ jobs:
           done
 
           if [ "$missing" -eq 1 ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Seven Mail external smoke::External SMTP test was not executed because credentials are not configured."
+            echo "::error title=Seven Mail external smoke::Configure the dedicated receiver and separate fixture sender secrets before running live provider tests."
+            exit 1
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi

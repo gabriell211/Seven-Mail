@@ -367,7 +367,12 @@ fn external_receive_smoke() {
     // Every run owns its fixture; do not depend on a message from a past run.
     let marker = uuid::Uuid::new_v4().to_string();
     let expected_subject = format!("Seven Mail inbound receive smoke {marker}");
-    let pop_username = format!("recent:{}", username.strip_prefix("recent:").unwrap_or(&username));
+    let pop_username = std::env::var("SEVEN_MAIL_EXTERNAL_POP3_USERNAME")
+        .ok().filter(|value| !value.trim().is_empty()).unwrap_or_else(|| username.clone());
+    let fixture_sender = required("SEVEN_MAIL_EXTERNAL_FIXTURE_SENDER");
+    let fixture_password = required("SEVEN_MAIL_EXTERNAL_FIXTURE_PASSWORD");
+    assert!(!fixture_sender.eq_ignore_ascii_case(&email),
+        "The inbound fixture must originate from a separate test mailbox");
 
     let imap_account: AccountProfile = serde_json::from_value(serde_json::json!({
         "id": "ci-external-imap",
@@ -413,31 +418,23 @@ fn external_receive_smoke() {
     storage::clear_cache(&paths).expect("external receive cache must be clean");
 
     assert!(imap_sync::test(&imap_account).expect("External IMAP authentication failed"));
-    assert!(pop3_sync::test(&pop3_account).expect("External POP3 recent-mode authentication failed"));
+    assert!(pop3_sync::test(&pop3_account).expect("External POP3 authentication failed; verify the configured POP username and Gmail POP settings"));
 
-    // Deliver to the configured test mailbox itself, never to an unrelated recipient.
-    let operation = QueueOperation {
-        id: uuid::Uuid::new_v4().to_string(),
-        kind: "send".to_string(),
-        account_id: imap_account.id.clone(),
-        created_at: chrono::Utc::now().to_rfc3339(),
-        attempts: 0,
-        payload: serde_json::json!({
-            "fromAddress": imap_account.email,
-            "to": imap_account.email,
-            "cc": "",
-            "bcc": "",
-            "subject": expected_subject,
-            "bodyText": format!("Seven Mail inbound protocol fixture {marker}"),
-            "bodyHtml": "",
-            "attachments": [],
-            "priority": "normal",
-            "requestReadReceipt": false,
-            "requestDeliveryReceipt": false
-        }),
-    };
-    providers::send_queued(&imap_account, &operation)
-        .expect("SMTP did not accept the fresh inbound fixture");
+    // Gmail may omit messages submitted by the same account from POP.
+    // A distinct dedicated sender creates a genuine inbound fixture.
+    use lettre::{Message, SmtpTransport, Transport, transport::smtp::authentication::Credentials};
+    let fixture = Message::builder()
+        .from(fixture_sender.parse().expect("Invalid fixture sender address"))
+        .to(imap_account.email.parse().expect("Invalid inbound test mailbox address"))
+        .subject(&expected_subject)
+        .body(format!("Seven Mail inbound protocol fixture {marker}"))
+        .expect("Could not construct inbound fixture");
+    let sender = SmtpTransport::relay("smtp.gmail.com")
+        .expect("Could not initialize fixture SMTP TLS")
+        .credentials(Credentials::new(fixture_sender, fixture_password))
+        .timeout(Some(std::time::Duration::from_secs(20)))
+        .build();
+    sender.send(&fixture).expect("Fixture sender SMTP delivery failed");
 
     let matches_fixture = |message: &crate::models::MailMessage| {
         message.subject == expected_subject
