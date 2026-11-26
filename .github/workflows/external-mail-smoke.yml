@@ -17,6 +17,11 @@ on:
       - "src-tauri/src/credentials.rs"
       - "src-tauri/src/local_crypto.rs"
 
+# Serialize access to the shared test mailbox (including manual runs).
+concurrency:
+  group: seven-mail-external-mailbox
+  cancel-in-progress: false
+
 jobs:
   external-smtp:
     runs-on: ubuntu-22.04
@@ -28,7 +33,6 @@ jobs:
       SEVEN_MAIL_EXTERNAL_SMTP_SECURITY: tls
       SEVEN_MAIL_TEST_SECRET: ${{ secrets.SEVEN_MAIL_GMAIL_APP_PASSWORD }}
       SEVEN_MAIL_EXTERNAL_RECIPIENT: roval90075@hiredify.com
-      SEVEN_MAIL_EXTERNAL_EXPECTED_SUBJECT: "Seven Mail inbound receive smoke"
       SEVEN_MAIL_PROTOCOL_E2E: "1"
       XDG_DATA_HOME: /tmp/seven-mail-external-smoke
     steps:
