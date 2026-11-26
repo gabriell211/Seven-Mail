@@ -31,7 +31,7 @@ import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/C
 import { ensureNotificationPermission, notifyCalendarReminder, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
 import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
 import { syncWorkspaceCollection } from "./lib/workspace-sync";
-import { matchesMailQuery, matchesQuickFilter, type MailQuickFilter } from "./lib/mail-search";
+import { matchesMailQuery, matchesQuickFilter, matchesInboxTab, type InboxTab, type MailQuickFilter } from "./lib/mail-search";
 import { pendingRulesForMessage } from "./lib/rules";
 import { takePendingOAuth } from "./lib/oauth-client";
 import { setApplicationLocale } from "./lib/i18n";
@@ -381,11 +381,10 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
       }
       if(failures.length) throw new Error(failures.join(" · "));
 
-      setConnectionStep("Conexões validadas. Fazendo a primeira sincronização...");
-      await bridge.syncInbox(account.id,50);
-
-      onAdded(account);
+      // Credentials and both protocols have been validated. Do not block
+      // account creation on downloading every message and attachment.
       stagedAccountId=undefined;
+      onAdded(account);
       onClose();
     } catch (reason) {
       if(stagedAccountId){
@@ -489,7 +488,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
   const [selectedId,setSelectedId] = useState<string>();
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
   const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread"|"size"|"status">("newest");
-  const [focusTab,setFocusTab] = useState<"focused"|"other">("focused");
+  const [focusTab,setFocusTab] = useState<InboxTab>("all");
   const [conversationView,setConversationView] = useState(true);
   const [periodFilter,setPeriodFilter] = useState<"all"|"today"|"7d"|"30d">("all");
   const [senderFilter,setSenderFilter] = useState("");
@@ -513,6 +512,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
   },[selected?.id,selected?.accountId]);
 
   const now = Date.now();
+  const cachedFolderCount=messages.filter(message=>message.folder===folder.name).length;
   const baseFolderMessages = messages.filter(message=>{
     if (message.folder!==folder.name || !matchesQuickFilter(message,quickFilter)) return false;
     if(senderFilter&&message.from.email.toLocaleLowerCase("pt-BR")!==senderFilter) return false;
@@ -526,12 +526,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
       const until = new Date(message.snoozedUntil).getTime();
       if (Number.isFinite(until) && until > now) return false;
     }
-    if (folder.role==="inbox" && settings.focusInboxEnabled) {
-      const trusted=(settings.trustedSenders??[]).includes(message.from.email.toLocaleLowerCase("pt-BR"));
-      const focused=Boolean(message.isImportant||message.isFlagged||message.isPinned||trusted);
-      if (focusTab==="focused"&&!focused) return false;
-      if (focusTab==="other"&&focused) return false;
-    }
+    if (folder.role==="inbox" && settings.focusInboxEnabled && !matchesInboxTab(message,focusTab,settings.trustedSenders)) return false;
     return true;
   });
   const sortedFolderMessages = [...baseFolderMessages]
@@ -850,7 +845,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
         <div><span className="eyebrow">{folder.name.toUpperCase()}</span><h2>{folder.name}</h2></div>
         <div className="pane-tools">{onImportEml&&activeAccount&&<button className="icon-button" title="Importar EML ou MSG" aria-label="Importar EML ou MSG" onClick={onImportEml}><Icon name="upload" size={16}/></button>}<button className={conversationView?"icon-button active":"icon-button"} title="Visualização por conversa" aria-label="Alternar visualização por conversa" onClick={()=>setConversationView(value=>!value)}><Icon name="people" size={16}/></button><select className="mail-sort" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Ordenar mensagens"><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="sender">Remetente</option><option value="subject">Assunto</option><option value="size">Tamanho</option><option value="status">Status</option><option value="unread">Não lidas primeiro</option></select><div className="icon-group"><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div></div>
       </header>
-      {folder.role==="inbox"&&settings.focusInboxEnabled&&<div className="segmented focus-tabs"><button className={focusTab==="focused"?"active":""} onClick={()=>setFocusTab("focused")}>Prioritária</button><button className={focusTab==="other"?"active":""} onClick={()=>setFocusTab("other")}>Outros</button></div>}
+      {folder.role==="inbox"&&settings.focusInboxEnabled&&<div className="segmented focus-tabs" role="group" aria-label="Tipo de caixa de entrada">{([["all","Todas"],["focused","Prioritária"],["other","Outros"]] as const).map(([tab,label])=><button key={tab} className={focusTab===tab?"active":""} aria-pressed={focusTab===tab} onClick={()=>setFocusTab(tab)}>{label}</button>)}</div>}
       <div className="segmented mail-filters">
         <button className={quickFilter==="all"?"active":""} onClick={()=>setQuickFilter("all")}>Todas</button>
         <button className={quickFilter==="unread"?"active":""} onClick={()=>setQuickFilter("unread")}>Não lidas</button>
@@ -864,7 +859,7 @@ function MailView({accounts,messages,activeAccount,folders,folder,localDrafts,ca
         <select value={priorityFilter} onChange={(event)=>setPriorityFilter(event.target.value as typeof priorityFilter)} aria-label="Filtrar por prioridade"><option value="all">Qualquer prioridade</option><option value="high">Alta</option><option value="normal">Normal</option><option value="low">Baixa</option></select>
         {(periodFilter!=="all"||senderFilter||priorityFilter!=="all")&&<button className="ghost" onClick={()=>{setPeriodFilter("all");setSenderFilter("");setPriorityFilter("all");}}>Limpar</button>}
       </div>
-      {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : folderMessages.length===0 && (folder.role!=="drafts" || localDrafts.length===0) ? <div className="empty-state small"><div className="empty-symbol"><Icon name={folder.role==="drafts"?"draft":"inbox"} size={30}/></div><h3>{folder.role==="drafts"?"Nenhum rascunho":"Tudo limpo"}</h3><p>{folder.role==="drafts"?"Mensagens em edição aparecerão aqui automaticamente.":"As mensagens sincronizadas aparecerão aqui."}</p></div> :
+      {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : folderMessages.length===0 && (folder.role!=="drafts" || localDrafts.length===0) ? <div className="empty-state small"><div className="empty-symbol"><Icon name={folder.role==="drafts"?"draft":"inbox"} size={30}/></div><h3>{syncing&&cachedFolderCount===0?"Sincronizando mensagens…":cachedFolderCount>0?"Nenhuma mensagem neste filtro":folder.role==="drafts"?"Nenhum rascunho":"Tudo limpo"}</h3><p>{cachedFolderCount>0?`${cachedFolderCount} mensagem(ns) nesta pasta. Altere os filtros para exibi-las.`:syncing?"Os e-mails serão exibidos assim que forem recebidos.":folder.role==="drafts"?"Mensagens em edição aparecerão aqui automaticamente.":"As mensagens sincronizadas aparecerão aqui."}</p>{cachedFolderCount>0&&<button className="secondary" onClick={()=>{setFocusTab("all");setQuickFilter("all");setPeriodFilter("all");setSenderFilter("");setPriorityFilter("all");}}>Mostrar todas</button>}</div> :
         <>
           {folder.role==="drafts"&&<div className="draft-list" role="list" aria-label="Rascunhos locais">{localDrafts.map(draft=><button key={draft.id} className="message local-draft-message" onClick={()=>onOpenDraft(draft)}>
             <span className="avatar draft-avatar" aria-hidden="true"><Icon name="draft" size={15}/></span>
@@ -1376,9 +1371,9 @@ function UnlockedApp() {
   },[settings.navOrder,settings.hiddenNavItems]);
 
   const activeProfile = profiles.find((profile)=>profile.id===activeProfileId);
-  const profileAccounts = activeProfile
+  const profileAccounts = useMemo(()=>activeProfile
     ? accounts.filter((account)=>activeProfile.accountIds.includes(account.id))
-    : accounts;
+    : accounts,[activeProfile,accounts]);
   const unified = activeId==="__all__";
   const activeAccount = unified ? undefined : (profileAccounts.find(a=>a.id===activeId)||profileAccounts[0]);
   const composeAccount = activeAccount ?? profileAccounts.find((account)=>account.isDefault) ?? profileAccounts[0];
@@ -2644,7 +2639,10 @@ function UnlockedApp() {
       }
 
       if (!cancelled) {
-        setMessages([...merged.values()].sort((a,b)=>b.receivedAt.localeCompare(a.receivedAt)));
+        // Cloud reconciliation may finish after a newer IMAP sync. Re-read
+        // the persisted cache instead of replacing it with the earlier snapshot.
+        const latest=await bridge.listCachedMessages(unified?undefined:activeAccount?.id).catch(()=>null);
+        if(!cancelled&&latest) setMessages([...latest].sort((a,b)=>b.receivedAt.localeCompare(a.receivedAt)));
       }
     };
 
@@ -2914,8 +2912,9 @@ function UnlockedApp() {
     }
 
     let disposed = false;
+    let running = false;
     const run = async () => {
-      if(disposed) return;
+      if(disposed||running) return;
       if(!navigator.onLine){
         setSyncState("offline");
         setSyncError("Sem conexão com a internet.");
@@ -2929,16 +2928,27 @@ function UnlockedApp() {
         return;
       }
 
+      running=true;
       setSyncState("syncing");
       setSyncError(undefined);
       const errors:string[]=[];
+      try {
       await forEachConcurrent(targets,settings.maxConcurrentSyncs??2,async(account)=>{
         if(disposed) return;
         try {
           const before = await bridge.listCachedMessages(account.id);
           const known = new Set(before.map((message)=>message.id));
 
-          await bridge.syncFolder(account.id,"INBOX","Caixa de entrada",settings.memorySaverEnabled?25:50);
+          const limit=settings.memorySaverEnabled?25:50;
+          // For an empty cache, expose the first small batch before retrieving the rest.
+          if(before.length===0){
+            await bridge.syncFolder(account.id,"INBOX","Caixa de entrada",10);
+            if(!disposed){
+              const initial=await bridge.listCachedMessages(unified?undefined:account.id);
+              if(!disposed&&(unified||activeAccount?.id===account.id)) setMessages(initial);
+            }
+          }
+          await bridge.syncFolder(account.id,"INBOX","Caixa de entrada",before.length===0?limit-10:limit);
           const synced = await bridge.listCachedMessages(account.id);
           await applySenderPolicies(synced);
           const policyApplied = await bridge.listCachedMessages(account.id);
@@ -2948,15 +2958,14 @@ function UnlockedApp() {
             ? []
             : after.filter((message)=>message.folder==="Caixa de entrada"&&!known.has(message.id));
 
+          if (!disposed && activeAccount?.id===account.id) {
+            setMessages(after);
+          }
           await applyFreshAutomations(fresh,account);
           await Promise.all([
             syncDavForAccount(account),
             syncLdapForAccount(account).catch(()=>undefined),
           ]);
-
-          if (!disposed && activeAccount?.id===account.id) {
-            setMessages(after);
-          }
           if (fresh.length>0 && settings.notificationsEnabled && !notificationsMutedNow(settings)) {
             surfaceNewMessages(fresh);
           }
@@ -2978,6 +2987,9 @@ function UnlockedApp() {
         setLastSyncAt(Date.now());
         setSyncError(undefined);
         setSyncState("synced");
+      }
+      } finally {
+        running=false;
       }
     };
 
