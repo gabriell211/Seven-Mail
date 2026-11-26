@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Icon } from "../icons";
+import { ConnectionError } from "./ConnectionError";
+import { connectionGuidance } from "../lib/connection-guidance";
 import { bridge } from "../lib/bridge";
 import { oauthPreset, startOAuthAuthorization } from "../lib/oauth-client";
 import { deleteCloudAccount, pushCloudAccount } from "../lib/neon";
@@ -184,7 +186,7 @@ export function AccountsPanel({
                 <small>{account.muted ? "Conta silenciada" : account.isSharedMailbox ? `Compartilhada · ${account.sendMode==="on-behalf"?"em nome de":"enviar como"}` : account.isDefault ? `Conta padrão · ${account.provider}` : account.provider}</small>
                 <em className={"account-health "+(status[account.id]?.kind??"unknown")}>
                   <i aria-hidden="true"/>
-                  {status[account.id]?.text??`${account.incomingProtocol==="pop3"?"POP3":"IMAP"}: não verificado · SMTP: não verificado`}
+                  {status[account.id]?.kind==="error" ? (connectionGuidance(status[account.id].text,account.email,account.provider)?.title??"Falha na conexão. Veja os detalhes abaixo.") : (status[account.id]?.text??`${account.incomingProtocol==="pop3"?"POP3":"IMAP"}: não verificado · SMTP: não verificado`)}
                 </em>
               </div>
               <div className="account-settings-actions">
@@ -195,6 +197,7 @@ export function AccountsPanel({
                 <button className="icon-button" title="Editar" onClick={() => { setEditing({ ...account }); setSecret(""); }}><Icon name="settings" size={15} /></button>
                 <button className="icon-button danger-icon" title="Remover" disabled={busyId === account.id} onClick={() => void remove(account)}><Icon name="trash" size={15} /></button>
               </div>
+              {status[account.id]?.kind==="error"&&<div className="form-error" style={{gridColumn:"1/-1",width:"100%",margin:0}}><ConnectionError error={status[account.id].text} email={account.email} provider={account.provider}/></div>}
             </article>
           ))}
         </div>
