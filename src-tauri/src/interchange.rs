@@ -660,20 +660,18 @@ pub fn cache_message_attachment(
     // Raw message storage is encrypted. Materialize only for an explicit
     // external-open or drag operation, in an isolated transient directory.
     let root = paths.root.join("attachment-exports");
-    fs::create_dir_all(&root).map_err(|error| error.to_string())?;
-    cleanup_expired_attachment_exports(&root)?;
+    materialize_attachment_export(&root, index, &name, part.contents())
+}
+
+fn materialize_attachment_export(root: &Path, index: usize, name: &str, bytes: &[u8]) -> Result<String, String> {
+    fs::create_dir_all(root).map_err(|error| error.to_string())?;
+    cleanup_expired_attachment_exports(root)?;
     let directory = root.join(uuid::Uuid::new_v4().to_string());
     create_private_export_directory(&directory)?;
     let destination = directory.join(format!("{index:03}-{name}"));
-    use std::io::Write;
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let written = options.open(&destination).and_then(|mut file| file.write_all(part.contents()));
+    // The drag plugin needs a real image file, not an empty icon path.
+    let written = write_new_attachment(&directory.join(".drag-preview.png"), include_bytes!("../icons/32x32.png"))
+        .and_then(|_| write_new_attachment(&destination, bytes));
     if let Err(error) = written {
         let _ = fs::remove_dir_all(&directory);
         return Err(format!("Não foi possível materializar o anexo: {error}"));
@@ -1097,6 +1095,25 @@ mod attachment_export_safety_tests {
         fs::remove_file(&redirected).unwrap();
         #[cfg(windows)]
         fs::remove_dir(&redirected).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn drag_exports_are_fresh_and_have_valid_preview_files() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let first = std::path::PathBuf::from(materialize_attachment_export(&root, 0, "sample.txt", b"attachment").unwrap());
+        let second = std::path::PathBuf::from(materialize_attachment_export(&root, 0, "sample.txt", b"attachment").unwrap());
+        assert_ne!(first, second);
+        for path in [first, second] {
+            assert_eq!(fs::read(&path).unwrap(), b"attachment");
+            let icon = fs::read(path.parent().unwrap().join(".drag-preview.png")).unwrap();
+            assert!(icon.starts_with(b"\x89PNG\r\n\x1a\n"));
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+            }
+        }
         fs::remove_dir_all(&root).unwrap();
     }
 
