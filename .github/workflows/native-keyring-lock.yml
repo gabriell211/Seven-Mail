@@ -7,6 +7,9 @@ on:
       - 'src-tauri/src/credentials.rs'
       - 'src-tauri/src/local_crypto.rs'
       - 'src-tauri/src/storage.rs'
+      - 'src-tauri/src/interchange.rs'
+      - 'src-tauri/src/providers.rs'
+      - 'src-tauri/src/lib.rs'
       - '.github/workflows/native-keyring-lock.yml'
       - 'src-tauri/scripts/prepare-msvc-openssl.ps1'
 permissions:
@@ -134,8 +137,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $env:PATH = "C:\Strawberry\perl\bin;C:\Strawberry\c\bin;$env:PATH"
           ./src-tauri/scripts/prepare-msvc-openssl.ps1
+          $env:CARGO_TERM_COLOR = 'never'
           $log = Join-Path $env:RUNNER_TEMP 'seven-mail-native-vault-windows.log'
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib credentials::native_backend_tests::native_backend_roundtrip -- --ignored --exact 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib interchange::attachment_export_safety_tests -- --nocapture 2>&1 | Tee-Object -FilePath $log -Append
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (Select-String -Path $log -Pattern 'warning LNK[0-9]+|(^|\s)warning:') {
             throw 'Rust compiler or native linker warnings detected.'
@@ -176,3 +182,4 @@ jobs:
           security list-keychains -d user -s "$keychain"
           security default-keychain -d user -s "$keychain"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib credentials::native_backend_tests::native_backend_roundtrip -- --ignored --exact
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib interchange::attachment_export_safety_tests -- --nocapture
