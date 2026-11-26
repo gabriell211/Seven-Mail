@@ -155,3 +155,11 @@ export function matchesQuickFilter(message: MailMessage, filter: MailQuickFilter
   if (filter === "attachments") return message.hasAttachments;
   return true;
 }
+
+export type InboxTab = "all" | "focused" | "other";
+
+export function matchesInboxTab(message: Pick<MailMessage, "from" | "isImportant" | "isFlagged" | "isPinned">, tab: InboxTab, trustedSenders: readonly string[] = []): boolean {
+  if (tab === "all") return true;
+  const focused = Boolean(message.isImportant || message.isFlagged || message.isPinned || trustedSenders.includes(message.from.email.toLocaleLowerCase("pt-BR")));
+  return tab === "focused" ? focused : !focused;
+}

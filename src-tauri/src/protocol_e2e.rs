@@ -328,7 +328,7 @@ fn external_outbox_sent_smoke() {
     };
     storage::queue_operation(&paths, &operation).expect("queue external Sent smoke");
 
-    let result = crate::flush_outbox().expect("Seven Mail outbox flush must succeed");
+    let result = crate::flush_outbox_blocking().expect("Seven Mail outbox flush must succeed");
     assert!(result.sent >= 1, "outbox did not report a sent message");
     assert!(
         result.sent_account_ids.iter().any(|value| value == &account.id),
