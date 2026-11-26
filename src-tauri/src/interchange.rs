@@ -551,12 +551,14 @@ pub fn cache_message_attachment(
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     cleanup_expired_attachment_exports(&root)?;
     let directory = root.join(uuid::Uuid::new_v4().to_string());
-    let mut builder = fs::DirBuilder::new();
+    let builder = fs::DirBuilder::new();
     #[cfg(unix)]
-    {
+    let builder = {
         use std::os::unix::fs::DirBuilderExt;
+        let mut builder = builder;
         builder.mode(0o700);
-    }
+        builder
+    };
     builder.create(&directory).map_err(|error| error.to_string())?;
     let destination = directory.join(format!("{index:03}-{name}"));
     use std::io::Write;
