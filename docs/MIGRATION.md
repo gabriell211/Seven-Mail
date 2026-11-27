@@ -46,7 +46,26 @@ Campos que não existirem no arquivo recebem fallback seguro; uma propriedade au
 
 ## Exportação PST
 
-**Exportar PST** cria um novo arquivo a partir das mensagens existentes no cache local, sem alterar a origem.
+**Exportar PST** cria um novo arquivo Unicode a partir das mensagens existentes no cache local, sem alterar a origem. O destino deve ter um nome ainda inexistente e estar em um sistema de arquivos que suporte hard links (por exemplo, NTFS). A publicação não sobrescreve um PST existente.
+
+O exportador organiza pastas não vazias pela hierarquia local, separa contas por identificador quando há mais de uma e preserva destinatários Para, CC e CCO disponíveis no cache ou na fonte original. O importador lê a tabela de destinatários e os indicadores MAPI de leitura, sinalização ativa e importância. CCO não recebido no cabeçalho original não pode ser reconstruído.
+
+### Limites e próximos critérios de homologação
+
+A biblioteca `outlook-pst-rw` 1.2.9 escreve mensagens, destinatários e hierarquia, mas sua interface de escrita não oferece propriedades MAPI arbitrárias, propriedades nomeadas ou classes de itens de calendário, contatos e tarefas.
+
+- [ ] Escrita e leitura de categorias nativas (`PidNameKeywords`, PS_PUBLIC_STRINGS).
+- [ ] Escrita de sinalizadores, leitura, conclusão de acompanhamento e datas de acompanhamento.
+- [ ] Calendários (`IPM.Appointment`), incluindo recorrência, horários e fuso.
+- [ ] Contatos (`IPM.Contact`), incluindo e-mails e telefones.
+- [ ] Tarefas (`IPM.Task`), incluindo vencimentos, status e conclusão.
+- [ ] Anexos e pastas vazias, bem como pastas especiais e metadados de contas.
+- [ ] Preservação de CC/CCO nas futuras revisões de sincronização em nuvem, com isolamento de privacidade.
+- [ ] Testes de ida e volta com PST produzido e aberto no Outlook clássico real.
+
+Não considere a migração PST integral até esses critérios serem implementados e homologados. Calendários e contatos ainda podem ser migrados separadamente por ICS e CSV/vCard.
+
+Referências: [API do gravador PST 1.2.9](https://docs.rs/outlook-pst-rw/1.2.9/outlook_pst/struct.UnicodePstFile.html) e [propriedades nomeadas do Outlook](https://learn.microsoft.com/en-us/office/client-developer/outlook/mapi/about-named-properties-used-by-outlook).
 
 ## Dados locais de versões anteriores
 
