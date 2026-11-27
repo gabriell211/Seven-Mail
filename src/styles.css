@@ -1061,3 +1061,6 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .reading-pane .message-categories{margin-inline:20px}
 @media(max-width:1200px){.ribbon-command{font-size:11px;padding-inline:6px}.ribbon-group{padding-inline:5px}.reading-command-strip>button{font-size:11px;padding-inline:7px}}
 @media print{.mail-ribbon,.reading-command-strip,.reading-assist-actions,.message-reactions,.command-menu{display:none!important}.mail-workspace{display:block!important;height:auto!important;overflow:visible!important}.reading-sender-row{padding:0!important}}
+
+.command-menu-panel>button.active{background:var(--accent-soft);color:var(--accent)}
+.reading-command-strip>button:focus-visible,.command-menu-trigger:focus-visible,.ribbon-command:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
