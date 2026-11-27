@@ -88,7 +88,7 @@ test("Gemini settings are closed by default and accessed beside new conversation
  assert.match(panel,/Chave da API<input type="password"/);
  assert.match(panel,/\{configured&&!loadingConfig&&!settingsOpen&&<footer>/);
  assert.doesNotMatch(panel,/<details className="gemini-setup"/);
- assert.match(panel,/if\(busy\)return;\s*setApiKey\("");setGoogleClientSecret\("")/);
+ assert.match(panel,/if\(busy\)return;\s*setApiKey\(""\);setGoogleClientSecret\(""\)/);
  assert.match(panel,/settingsTitle\.current\?\.focus\(\)/);
  assert.match(panel,/e\.key==="Escape"&&settingsOpen&&!busy/);
 });
