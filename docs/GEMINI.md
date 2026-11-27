@@ -68,3 +68,13 @@ O aplicativo usa o Client ID público do cliente instalado registrado no projeto
 ## Indicador de tokens e identidade
 
 O anel do botão de envio mostra o saldo do limite de saída por resposta (8.192 tokens), não a cota global, o saldo financeiro nem o contexto completo. Durante streaming, quando não há contagem real disponível, utiliza uma estimativa de quatro caracteres visíveis por token, explicitada no tooltip, sem estimar o raciocínio oculto. Ao concluir, usa candidatesTokenCount + thoughtsTokenCount informados em usageMetadata; ausência de metadados não é interpretada como zero. Uma nova consulta reinicia o indicador. Marca multicolorida Gemini distribuída localmente a partir do espelho https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/gemini-color.svg; marca pertence ao Google, sem implicar endosso. A conversa exige credencial válida armazenada (OAuth ou chave API), com configuração disponível antes da autorização.
+
+## Ferramentas criativas
+
+Escolha Conversar, Criar/editar imagem, Criar assinatura ou Criar documento no seletor compacto. O modo de imagem utiliza gemini-3.1-flash-image via GenerateContent; disponibilidade e cobrança dependem do projeto e credencial. Os modos criativos enviam somente o pedido e anexos escolhidos, sem mensagens do cache ou histórico. A assinatura é retornada em JSON, passa pelo sanitizador local, tem prévia e exige confirmação antes de salvar uma nova assinatura não padrão; não substitui assinaturas existentes. Documentos são texto Markdown copiável e exportável (.md); assinaturas podem ser exportadas como HTML. As imagens são prévias locais e podem ser salvas pelo seletor do sistema; o comando valida formato e extensão e não sobrescreve arquivos existentes. Não há gravação automática. Não há execução arbitrária de comandos, alteração de configurações ou envio de mensagens. Referência: https://ai.google.dev/gemini-api/docs/image-generation.
+
+## Configuração simplificada (API key)
+
+A interface Gemini não inicia mais OAuth Google. Obtenha uma chave no Google AI Studio, cole-a e valide. O modelo padrão é selecionado automaticamente; a seleção avançada fica disponível após a configuração. Autorizações OAuth antigas não liberam a conversa: configure uma chave para substituir a credencial armazenada. O OAuth das contas de e-mail não é alterado. As seções OAuth acima descrevem a implementação legada, não o fluxo atual.
+
+Conexão inicial: diálogo independente, antes de montar a conversa. A engrenagem reabre o mesmo diálogo para substituir a chave após validação. Cancelar mantém a credencial anterior. Preferências avançadas acessíveis por link no diálogo de troca.

@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync,existsSync} from "node:fs";
 const rust=readFileSync(new URL("../src-tauri/src/gemini.rs",import.meta.url),"utf8");
+const gate=readFileSync(new URL("../src/components/GeminiConnectionDialog.tsx",import.meta.url),"utf8");
+const app=readFileSync(new URL("../src/App.tsx",import.meta.url),"utf8");
 const panel=readFileSync(new URL("../src/components/GeminiPanel.tsx",import.meta.url),"utf8");
 test("Gemini uses native HTTPS, scoped vault and no external runtime or mutation tools",()=>{
  assert.match(rust,/generativelanguage\.googleapis\.com/);
@@ -75,7 +77,7 @@ test("Google OAuth is separate from email authorization and uses a native loopba
  assert.match(oauth,/x-goog-user-project/);
  assert.match(oauth,/email_verified/);
  assert.match(rust,/gemini_google_connect/);
- assert.match(panel,/Entrar com Google/);
+ assert.doesNotMatch(panel,/Entrar com Google/);
  assert.doesNotMatch(oauth,/oauth::access_token|mail.google.com\/.*scope/);
 });
 
@@ -83,21 +85,21 @@ test("Google OAuth is separate from email authorization and uses a native loopba
 test("Gemini settings are closed by default and accessed beside new conversation",()=>{
  assert.match(panel,/\[settingsOpen,setSettingsOpen\]=useState\(false\)/);
  assert.match(panel,/aria-label="Nova conversa"[^]*?aria-label="Configurações do Gemini"[^]*?aria-label="Fechar Gemini"/);
- assert.match(panel,/aria-expanded=\{settingsOpen\}/);
- assert.match(panel,/settingsOpen\|\|!configured\?<section className="gemini-setup"/);
- assert.match(panel,/Chave da API<input type="password"/);
+ assert.match(panel,/aria-haspopup="dialog"/);
+ assert.match(panel,/settingsOpen\?<section className="gemini-setup"/);
+ assert.match(gate,/type="password"/);
  assert.match(panel,/\{configured&&!loadingConfig&&!settingsOpen&&<footer>/);
  assert.doesNotMatch(panel,/<details className="gemini-setup"/);
- assert.match(panel,/if\(busy\)return;\s*setApiKey\(""\);setGoogleClientSecret\(""\)/);
+ assert.match(panel,/if\(busy\)return;\s*setModel\(selectedModel\)/);
  assert.match(panel,/settingsTitle\.current\?\.focus\(\)/);
  assert.match(panel,/e\.key==="Escape"&&settingsOpen&&!busy/);
 });
 
 
 test("conversation hides configuration and context filters while retaining explicit read-only and approval controls",()=>{
- const settings=panel.slice(panel.indexOf('settingsOpen||!configured?<section'),panel.indexOf('</section>:<>'));
+ const settings=panel.slice(panel.indexOf('settingsOpen?<section'),panel.indexOf('</section>:<>'));
  const conversation=panel.slice(panel.indexOf('</section>:<>'));
- for(const label of ["Conta de e-mail","Buscar e-mail no cache","Chave da API","Preparar resposta para aprovação"]) {
+ for(const label of ["Conta de e-mail","Buscar e-mail no cache","Preparar resposta para aprovação"]) {
   assert.ok(settings.includes(label),label);
   assert.ok(!conversation.includes(label),label);
  }
@@ -129,7 +131,7 @@ test("compact Gemini composer provides separate image and document pickers",()=>
 
 
 test("Gemini authentication gates conversation and token ring uses bounded provider usage",()=>{
- assert.match(panel,/setSettingsOpen\(!value.configured\)/);
+ assert.ok(panel.includes("if(loadingConfig||!configured)return null;"));
  assert.match(panel,/configured&&!loadingConfig&&!settingsOpen&&<footer>/);
  assert.match(panel,/src="\/providers\/gemini.svg"/);
  assert.match(panel,/gemini-token-ring/);
@@ -140,4 +142,49 @@ test("Gemini authentication gates conversation and token ring uses bounded provi
  assert.match(rust,/metadata.get\("thoughtsTokenCount"\)/);
  assert.match(rust,/output_tokens,output_token_limit:MAX_OUTPUT_TOKENS/);
  assert.ok(existsSync(new URL("../public/providers/gemini.svg",import.meta.url)));
+});
+
+
+test("creative modes use explicit selection and scoped native transport",()=>{
+ const creative=readFileSync(new URL("../src/components/GeminiCreative.tsx",import.meta.url),"utf8");
+ assert.ok(rust.includes("pub async fn gemini_create"));
+ assert.ok(rust.includes("gemini-3.1-flash-image"));
+ assert.ok(rust.includes("responseModalities"));
+ assert.ok(panel.includes('invoke<CreativeResult>("gemini_create"'));
+ assert.ok(creative.includes("sanitizeSignatureHtml(html)"));
+ assert.ok(creative.includes("window.confirm"));
+ assert.ok(creative.includes("isDefault:false,isReplyDefault:false"));
+ assert.ok(creative.includes("GeminiMarkdown"));
+});
+
+
+test("creative exports require an explicit file picker and validate native raster writes",()=>{
+ const creative=readFileSync(new URL("../src/components/GeminiCreative.tsx",import.meta.url),"utf8");
+ assert.ok(creative.includes("await saveDialog("));
+ assert.ok(creative.includes('invoke("gemini_save_image"'));
+ assert.ok(rust.includes("create_new(true)"));
+ assert.ok(rust.includes("destination.is_absolute()"));
+ assert.ok(creative.includes("Salvar documento (.md)"));
+});
+
+
+test("Gemini setup only requires an API key and keeps model settings optional",()=>{
+ assert.ok(panel.includes('value.configured&&value.authMode==="api_key"'));
+ assert.ok(gate.includes("Chave da API Gemini"));
+ assert.ok(panel.includes("Modelo avançado"));
+ assert.doesNotMatch(panel,/gemini_google_connect|gemini_google_cancel|Entrar com Google/);
+ assert.ok(gate.includes("DEFAULT_MODEL"));
+});
+
+
+test("standalone connection gate and gear-based key replacement",()=>{
+ assert.ok(gate.includes("node.showModal()"));
+ assert.ok(gate.includes('await invoke("gemini_configure"'));
+ assert.ok(gate.includes("onConnected(false)"));
+ assert.ok(gate.includes("onConnected(true)"));
+ assert.ok(app.includes('onChangeKey={()=>setGeminiConnectionMode("replace")}'));
+ assert.ok(app.includes('{geminiConnectionMode&&<GeminiConnectionDialog'));
+ assert.ok(panel.includes("onClick={onChangeKey}"));
+ assert.doesNotMatch(panel,/gemini_configure|type="password"|Obter chave da API/);
+ assert.ok(rust.indexOf("validate_model_access(key,model)?")<rust.indexOf("save_config(&GeminiConfig{api_key:key.to_owned()"));
 });

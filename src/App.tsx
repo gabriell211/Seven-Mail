@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -8,6 +8,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Icon, type IconName } from "./icons";
 import { bridge } from "./lib/bridge";
 import { GeminiPanel,GeminiMark } from "./components/GeminiPanel";
+import { GeminiConnectionDialog } from "./components/GeminiConnectionDialog";
 import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, PersistentRulesView, PersistentTasksView } from "./components/WorkspaceViews";
 import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
@@ -1372,6 +1373,11 @@ function UnlockedApp() {
   const [section,setSection] = useState<AppSection>("mail");
   const [meetingDraft,setMeetingDraft]=useState<CalendarEvent|null>(null);
   const [geminiOpen,setGeminiOpen]=useState(false);
+  const [geminiConnectionMode,setGeminiConnectionMode]=useState<"connect"|"replace"|null>(null);
+  const [geminiCredentialEpoch,setGeminiCredentialEpoch]=useState(0);
+  const [geminiPreferencesRequest,setGeminiPreferencesRequest]=useState(0);
+  const requireGeminiConnection=useCallback(()=>{setGeminiOpen(false);setGeminiConnectionMode("connect");},[]);
+  const openConnectedGemini=useCallback((changed:boolean)=>{if(changed)setGeminiCredentialEpoch(value=>value+1);setGeminiConnectionMode(null);setGeminiOpen(true);},[]);
   const [accounts,setAccounts] = useState<AccountProfile[]>([]);
   const [activeId,setActiveId] = useState<string|undefined>(launchAccountId);
   const [messages,setMessages] = useState<MailMessage[]>([]);
@@ -3688,7 +3694,7 @@ function UnlockedApp() {
         <label className="search"><Icon name="search" size={17}/><input list="seven-mail-search-suggestions" value={search} onFocus={()=>setGlobalSearchOpen(true)} onChange={e=>{setSearch(e.target.value);setGlobalSearchOpen(true);}} onKeyDown={e=>{if(e.key==="Enter"){commitSearchHistory();setGlobalSearchOpen(true);}else if(e.key==="Escape"){setGlobalSearchOpen(false);}}} placeholder="Pesquisar em todo o Seven Mail..."/><kbd>Ctrl K</kbd></label><datalist id="seven-mail-search-suggestions">{searchSuggestions.map((value)=><option value={value} key={value}/>)}</datalist>{section==="mail"&&search.trim()&&<button className="icon-button save-search-button" title="Salvar pesquisa" aria-label="Salvar pesquisa" onClick={()=>void saveCurrentSearch()}><Icon name="star" size={17}/></button>}
         {lockConfigured&&<div className="top-actions">{lockConfigured&&<button className="icon-button" title="Bloquear agora" onClick={()=>void lockNativeApp().catch((error)=>window.alert(String(error)))}><Icon name="lock" size={17}/></button>}</div>}
         <span className="mail-sync-announcement" role="status" aria-live="polite" aria-atomic="true" title={syncError??(lastSyncAt?`Última sincronização confirmada: ${new Date(lastSyncAt).toLocaleString()}`:"Nenhuma sincronização confirmada nesta sessão")}>{profileAccounts.length===0?"Sem conta":syncState==="syncing"?"Sincronizando":syncState==="error"?"Falha na sincronização":syncState==="offline"?"Offline":syncState==="synced"?(lastSyncAt?`Sincronizado ${new Date(lastSyncAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}`:"Sincronizado"):"Não verificado"}</span>
-        <button type="button" className="gemini-trigger" aria-label="Google Gemini" title="Google Gemini" aria-expanded={geminiOpen} onClick={()=>setGeminiOpen(value=>!value)}><GeminiMark/><span>Gemini</span></button>
+        <button type="button" className="gemini-trigger" aria-label="Google Gemini" title="Google Gemini" aria-expanded={geminiOpen} aria-haspopup="dialog" disabled={geminiConnectionMode!==null} onClick={()=>{if(geminiOpen)setGeminiOpen(false);else setGeminiConnectionMode("connect");}}><GeminiMark/><span>Gemini</span></button>
         {globalSearchOpen&&search.trim()&&<div className="global-search-popover">
           <header><span><Icon name="search" size={15}/><b>Pesquisa global</b></span><button onClick={()=>setGlobalSearchOpen(false)}><Icon name="x" size={13}/></button></header>
           <div className="global-search-group"><small>E-MAILS</small>{filtered.slice(0,6).map((message)=><button key={message.id} onClick={()=>{setActiveId(message.accountId);setFocusMessageId(message.id);setSection("mail");setGlobalSearchOpen(false);commitSearchHistory();}}><Icon name="mail" size={14}/><span><b>{message.subject||"(sem assunto)"}</b><small>{message.from.name||message.from.email}</small></span></button>)}{filtered.length===0&&<em>Nenhum e-mail encontrado.</em>}</div>
@@ -3705,8 +3711,9 @@ function UnlockedApp() {
         {section==="rules"&&<PersistentRulesView onRunRules={runRulesNow}/>} 
         {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime} accounts={accounts} activeAccountId={activeAccount?.id} onAccountsChange={(next)=>{setAccounts(next);if(!next.some((account)=>account.id===activeId)){setActiveId(next.find((account)=>account.isDefault)?.id??next[0]?.id);}}} signatures={signatures} onSaveSignature={saveSignature} onDeleteSignature={deleteSignature} profiles={profiles} activeProfileId={activeProfileId} onActivateProfile={activateProfile} onSaveProfile={saveProfile} onDeleteProfile={deleteProfile} onUpdateInfo={setUpdateInfo}/>}
       </div>
-      {geminiOpen&&<GeminiPanel key={activeProfileId??"default"} accounts={profileAccounts} initialAccountId={activeAccount?.id} composeOpen={composeOpen} onClose={()=>setGeminiOpen(false)} onDraft={draft=>{setGeminiOpen(false);openDraft(draft);}}/>}
+      {geminiOpen&&<GeminiPanel key={(activeProfileId??"default")+":"+geminiCredentialEpoch} accounts={profileAccounts} initialAccountId={activeAccount?.id} composeOpen={composeOpen} onSaveSignature={saveSignature} onConnectionRequired={requireGeminiConnection} onChangeKey={()=>setGeminiConnectionMode("replace")} preferencesRequest={geminiPreferencesRequest} onClose={()=>setGeminiOpen(false)} onDraft={draft=>{setGeminiOpen(false);openDraft(draft);}}/>}
     </main>
+    {geminiConnectionMode&&<GeminiConnectionDialog mode={geminiConnectionMode} onConnected={openConnectedGemini} onClose={()=>setGeminiConnectionMode(null)} onPreferences={()=>{setGeminiConnectionMode(null);setGeminiPreferencesRequest(value=>value+1);}}/>}
     {composeOpen&&<Composer accounts={profileAccounts} signatures={signatures} initialAccountId={composeAccount?.id} initialDraft={draftToOpen} settings={settings} onClose={closeComposer} onQueued={(info)=>{handleQueuedSend(info);void refreshDrafts();}}/>}
     {undoSend&&<div className="undo-send" role="status"><span><Icon name="send" size={16}/><b>Mensagem na fila</b><small>Envio em instantes</small></span><button onClick={()=>void undoQueuedSend()}>Desfazer</button></div>}
     {sendFeedback&&!undoSend&&<div className={"send-feedback "+sendFeedback.state} role="status" aria-live="polite"><span><Icon name={sendFeedback.state==="error"?"x":"send"} size={16}/><b>{sendFeedback.title}</b><small>{sendFeedback.detail}</small></span><button className="icon-button" aria-label="Fechar status de envio" onClick={()=>setSendFeedback(null)}><Icon name="x" size={13}/></button></div>}
