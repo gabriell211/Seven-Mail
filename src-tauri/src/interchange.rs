@@ -1228,10 +1228,207 @@ fn pst_filetime(value: &str) -> i64 {
     (unix.saturating_add(11_644_473_600)).saturating_mul(10_000_000)
 }
 
+
+mod native_pst_writer {
+    use super::{pst_filetime, MailMessage, MailAddress};
+    use crate::models::WorkspaceDocument;
+    use pstsmith::{UnicodePstBatchMessage as Batch, UnicodePstMessage as Item, UnicodePstRecipient as Recipient,
+        UnicodePstRecipientType as Role, UnicodePstSender as Sender, UnicodePstImportance as Importance,
+        UnicodePstNamedProperty as Named, UnicodePstProperty as Tagged, UnicodePstPropertyName as Name,
+        UnicodePstValue as Value, UnicodePstWriter as Writer};
+    use serde_json::Value as Json;
+
+    const APPOINTMENT: u32 = 0x00062002;
+    const TASK: u32 = 0x00062003;
+    const CONTACT: u32 = 0x00062004;
+    const COMMON: u32 = 0x00062008;
+
+    fn named(set: u32, lid: u32, value: Value<'_>) -> Named<'_> {
+        Named { set: pstsmith::guid_bytes(set, 0, 0, [0xc0, 0, 0, 0, 0, 0, 0, 0x46]),
+            name: Name::Lid(lid), value }
+    }
+
+    fn categories<'a>(values: &'a [&'a str]) -> Named<'a> {
+        Named { set: pstsmith::PS_PUBLIC_STRINGS_SET, name: Name::Name("Keywords"),
+            value: Value::MultipleUnicode(values) }
+    }
+
+    fn role_rows<'a>(to: &'a [MailAddress], cc: &'a [MailAddress], bcc: &'a [MailAddress]) -> Vec<Recipient<'a>> {
+        let mut result = Vec::new();
+        for (addresses, role) in [(to, Role::To), (cc, Role::Cc), (bcc, Role::Bcc)] {
+            result.extend(addresses.iter().map(|a| Recipient { name: a.name.as_deref().unwrap_or(&a.email),
+                email: &a.email, recipient_type: role, properties: &[] }));
+        }
+        result
+    }
+
+    fn importance(value: Option<&str>) -> Importance {
+        match value { Some("low") => Importance::Low, Some("high") => Importance::High, _ => Importance::Normal }
+    }
+
+    fn append(writer: &mut Writer, folder: &[&str], item: Item<'_>, attachments: &[pstsmith::UnicodePstAttachment<'_>]) -> Result<(), String> {
+        writer.append_many_in_folder_with_attachments(folder, &[Batch { message: item, attachments }])
+            .map_err(|e| format!("Falha ao gravar item PST: {e}"))
+    }
+
+    pub fn mail(writer: &mut Writer, folder: &[&str], m: &MailMessage, raw: Option<&[u8]>) -> Result<(), String> {
+        let rows = role_rows(&m.to, &m.cc, &m.bcc);
+        let cats = m.categories.iter().map(String::as_str).collect::<Vec<_>>();
+        let mut named_props = Vec::new();
+        if !cats.is_empty() { named_props.push(categories(&cats)); }
+        let properties = [Tagged { id: 0x1090, value: Value::Integer32(if m.is_flagged { 2 } else { 0 }) }];
+        let time = pst_filetime(&m.received_at);
+        let parsed = raw.and_then(|bytes| mail_parser::MessageParser::default().parse(bytes));
+        let mut parts = Vec::new();
+        if let Some(ref parsed) = parsed {
+            for index in 0..parsed.attachment_count() {
+                if let Some(part) = parsed.attachment(index as u32) {
+                    use mail_parser::MimeHeaders;
+                    parts.push(pstsmith::UnicodePstAttachment {
+                        filename: part.attachment_name().unwrap_or("attachment"),
+                        mime_type: "application/octet-stream",
+                        content_id: part.content_id(),
+                        data: part.contents(), stream: None, hidden: part.content_id().is_some(),
+                        attached_message: None,
+                    });
+                }
+            }
+        }
+        if m.has_attachments && parts.is_empty() {
+            return Err("Uma mensagem possui anexos cuja fonte original está indisponível; exportação interrompida para evitar perda de dados.".into());
+        }
+        append(writer, folder, Item {
+            message_class: "IPM.Note", subject: &m.subject,
+            sender: Some(Sender { name: m.from.name.as_deref().unwrap_or(&m.from.email), email: &m.from.email, address_type: "SMTP" }),
+            recipients: &rows, body: m.body_text.as_deref().unwrap_or(&m.preview), html_body: m.body_html.as_deref(),
+            message_id: Some(&m.id), delivery_time: Some(time), creation_time: time, last_modification_time: time,
+            unsent: false, properties: &properties, named_properties: &named_props, search_key: None,
+            is_read: m.is_read, importance: importance(m.importance.as_deref()), client_submit_time: None,
+            categories: &[], transport_headers: None,
+        }, &parts)
+    }
+
+    fn string<'a>(p: &'a Json, key: &str) -> &'a str { p.get(key).and_then(Json::as_str).unwrap_or("") }
+
+    fn strings<'a>(p: &'a Json, key: &str) -> Vec<&'a str> {
+        p.get(key).and_then(Json::as_array).into_iter().flatten().filter_map(Json::as_str)
+            .filter(|s| !s.trim().is_empty()).collect()
+    }
+
+    fn time(p: &Json, key: &str) -> Result<Option<i64>, String> {
+        let Some(v) = p.get(key).and_then(Json::as_str).filter(|s| !s.is_empty()) else { return Ok(None); };
+        let d = chrono::DateTime::parse_from_rfc3339(v).map_err(|_| format!("Data PST inválida em {key}."))?;
+        let ticks = (d.timestamp() + 11_644_473_600).checked_mul(10_000_000)
+            .and_then(|s| s.checked_add(i64::from(d.timestamp_subsec_nanos() / 100)))
+            .filter(|v| *v >= 0).ok_or_else(|| format!("Data PST fora do intervalo em {key}."))?;
+        Ok(Some(ticks))
+    }
+
+    fn add_text<'a>(props: &mut Vec<Tagged<'a>>, id: u16, value: &'a str) {
+        if !value.is_empty() { props.push(Tagged { id, value: Value::Unicode(value) }); }
+    }
+
+    fn add_date(props: &mut Vec<Named<'_>>, p: &Json, set: u32, lid: u32, key: &str) -> Result<(), String> {
+        if let Some(value) = time(p, key)? { props.push(named(set, lid, Value::Time(value))); }
+        Ok(())
+    }
+
+    pub fn workspace(writer: &mut Writer, doc: &WorkspaceDocument) -> Result<(), String> {
+        let p = &doc.payload;
+        let cats = strings(p, "categories");
+        let mut props = Vec::new();
+        let mut names = Vec::new();
+        if !cats.is_empty() { names.push(categories(&cats)); }
+        let modified = chrono::DateTime::parse_from_rfc3339(&doc.updated_at)
+            .map_err(|_| "Versão de documento inválida para PST.".to_string())?;
+        let stamp = pst_filetime(&modified.to_rfc3339());
+        let mut recipients = Vec::new();
+        let emails = strings(p, "emails");
+        let phones = strings(p, "phones");
+        let (class, folder, subject, body) = match doc.kind.as_str() {
+            "calendar" => {
+                if !matches!(string(p, "recurrence"), "" | "none") || !strings(p, "recurrenceExceptions").is_empty() {
+                    return Err("O evento possui recorrência que ainda não pode ser gravada sem perda de dados.".into());
+                }
+                let start = time(p, "startAt")?.ok_or("Evento sem início.")?;
+                let end = time(p, "endAt")?.ok_or("Evento sem término.")?;
+                if end < start { return Err("Intervalo de calendário inválido.".into()); }
+                names.extend([
+                    named(APPOINTMENT, 0x820D, Value::Time(start)),
+                    named(APPOINTMENT, 0x820E, Value::Time(end)),
+                    named(APPOINTMENT, 0x8208, Value::Unicode(string(p, "location"))),
+                    named(APPOINTMENT, 0x8215, Value::Boolean(p.get("allDay").and_then(Json::as_bool).unwrap_or(false))),
+                    named(APPOINTMENT, 0x8223, Value::Boolean(false)),
+                    named(APPOINTMENT, 0x8205, Value::Integer32(match string(p, "freeBusyStatus") { "free"=>0, "tentative"=>1, _=>2 })),
+                    named(COMMON, 0x8516, Value::Time(start)), named(COMMON, 0x8517, Value::Time(end)),
+                    named(COMMON, 0x8506, Value::Boolean(p.get("isPrivate").and_then(Json::as_bool).unwrap_or(false))),
+                ]);
+                add_date(&mut names, p, COMMON, 0x8502, "reminderAt")?;
+                names.push(named(COMMON, 0x8503, Value::Boolean(time(p,"reminderAt")?.is_some())));
+                for address in strings(p, "participants") {
+                    recipients.push(Recipient { name: address, email: address, recipient_type: Role::To, properties: &[] });
+                }
+                ("IPM.Appointment", "Calendar", string(p,"title"), string(p,"description"))
+            }
+            "contact" => {
+                for (id, key) in [(0x3A06,"firstName"),(0x3A11,"lastName"),(0x3A16,"company"),(0x3A17,"jobTitle"),(0x3A4F,"nickname")] {
+                    add_text(&mut props,id,string(p,key));
+                }
+                let display = string(p, "displayName");
+                names.push(named(CONTACT,0x8005,Value::Unicode(display)));
+                let selected_emails = if emails.is_empty() { vec![string(p,"email")] } else { emails.clone() };
+                if selected_emails.len() > 3 { return Err("Contato possui mais de três endereços de e-mail; não é possível exportá-los sem perda.".into()); }
+                for (index,email) in selected_emails.into_iter().filter(|e| !e.is_empty()).enumerate() {
+                    let base=0x8080 + index as u32 * 0x10;
+                    names.extend([named(CONTACT,base,Value::Unicode(display)),
+                        named(CONTACT,base+2,Value::Unicode("SMTP")), named(CONTACT,base+3,Value::Unicode(email))]);
+                }
+                let selected_phones=if phones.is_empty() { vec![string(p,"phone")] } else { phones.clone() };
+                if selected_phones.len() > 5 { return Err("Contato possui telefones além dos campos de exportação.".into()); }
+                for (id, phone) in [0x3A08,0x3A09,0x3A1C,0x3A1B,0x3A2F].into_iter().zip(selected_phones) { add_text(&mut props,id,phone); }
+                ("IPM.Contact", "Contacts", display, string(p,"notes"))
+            }
+            "task" => {
+                if !matches!(string(p,"recurrence"), ""|"none") {
+                    return Err("A tarefa possui recorrência ainda não representável sem perda de dados.".into());
+                }
+                let completed=time(p,"completedAt")?;
+                names.extend([named(TASK,0x8101,Value::Integer32(if completed.is_some(){2}else{0})),
+                    named(TASK,0x811C,Value::Boolean(completed.is_some())),
+                    named(TASK,0x8126,Value::Boolean(false))]);
+                for (key,lid) in [("startsAt",0x8104),("dueAt",0x8105),("completedAt",0x810F)] {
+                    add_date(&mut names,p,TASK,lid,key)?;
+                }
+                add_date(&mut names,p,COMMON,0x8502,"reminderAt")?;
+                names.push(named(COMMON,0x8503,Value::Boolean(time(p,"reminderAt")?.is_some())));
+                ("IPM.Task", "Tasks", string(p,"title"), string(p,"notes"))
+            }
+            _ => return Err(format!("Tipo de documento PST desconhecido: {}",doc.kind)),
+        };
+        let imported_folder = string(p, "pstFolder");
+        let mut path = vec!["Seven Workspace", folder];
+        if !imported_folder.is_empty() && imported_folder != folder { path.extend(imported_folder.split('/').filter(|s| !s.is_empty())); }
+        else if doc.kind == "task" && !string(p,"listName").is_empty() { path.push(string(p,"listName")); }
+        append(writer, &path, Item {
+            message_class: class, subject, sender: None, recipients: &recipients, body, html_body: None,
+            message_id: None, delivery_time: None, creation_time: stamp, last_modification_time: stamp, unsent: false,
+            properties: &props, named_properties: &names, search_key: Some(doc.id.as_bytes()), is_read: true,
+            importance: importance(p.get("priority").and_then(Json::as_str)), client_submit_time: None,
+            categories: &[], transport_headers: None,
+        }, &[])
+    }
+}
+
 pub fn export_pst(paths: &AppPaths, account_id: Option<&str>, destination: &str) -> Result<usize, String> {
     let mut messages = storage::list_cached_messages(paths, account_id)?;
-    if messages.is_empty() {
-        return Err("Não há mensagens em cache para exportar.".to_string());
+    let mut documents = Vec::new();
+    for kind in ["calendar", "contact", "task"] {
+        documents.extend(crate::workspace::list(paths, kind)?.into_iter().filter(|doc| {
+            account_id.is_none() || doc.payload.get("accountId").and_then(|v| v.as_str()) == account_id
+        }));
+    }
+    if messages.is_empty() && documents.is_empty() {
+        return Err("Não há mensagens nem itens de workspace para exportar.".to_string());
     }
 
     let destination = Path::new(destination);
@@ -1275,33 +1472,18 @@ pub fn export_pst(paths: &AppPaths, account_id: Option<&str>, destination: &str)
     directory.create(&temporary).map_err(|error| format!("Não foi possível preparar a exportação: {error}"))?;
     let archive = temporary.join("archive.pst");
     let result = (|| -> Result<(), String> {
-        let mut initialized = false;
+        let mut writer = pstsmith::UnicodePstWriter::create(&archive)
+            .map_err(|error| format!("Falha ao criar PST: {error}"))?;
         for (folder, items) in folders {
-            let recipient_rows = items.iter().map(|message|
-                pst_export_recipients(&message.to, &message.cc, &message.bcc)
-            ).collect::<Vec<_>>();
-            let batch = items.iter().zip(&recipient_rows).map(|(message, recipients)| UnicodePstMessage {
-                subject: message.subject.as_str(),
-                sender_name: message.from.name.as_deref().unwrap_or(message.from.email.as_str()),
-                sender_email: message.from.email.as_str(),
-                recipients,
-                body: message.body_text.as_deref().unwrap_or(message.preview.as_str()),
-                html_body: message.body_html.as_deref(),
-                message_id: message.id.as_str(),
-                delivery_time: pst_filetime(&message.received_at),
-            }).collect::<Vec<_>>();
-
-            let pending = if initialized { batch.as_slice() } else {
-                UnicodePstFile::create_in_folder(&archive, &folder, &batch[0])
-                    .map_err(|error| format!("Falha ao criar PST: {error}"))?;
-                initialized = true;
-                &batch[1..]
-            };
-            if !pending.is_empty() {
-                UnicodePstFile::append_many_in_folder(&archive, &folder, pending)
-                    .map_err(|error| format!("Falha ao adicionar mensagens ao PST: {error}"))?;
+            for message in items {
+                let raw = storage::read_raw_message(paths, &message.account_id, &message.id).ok();
+                native_pst_writer::mail(&mut writer, &folder, message, raw.as_deref())?;
             }
         }
+        for document in &documents {
+            native_pst_writer::workspace(&mut writer, document)?;
+        }
+        writer.close().map_err(|error| format!("Falha ao finalizar PST: {error}"))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -1314,7 +1496,7 @@ pub fn export_pst(paths: &AppPaths, account_id: Option<&str>, destination: &str)
     })();
     let _ = fs::remove_dir_all(&temporary);
     result?;
-    Ok(messages.len())
+    Ok(messages.len() + documents.len())
 }
 
 #[cfg(test)]
