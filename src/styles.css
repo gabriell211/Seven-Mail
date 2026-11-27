@@ -1205,7 +1205,7 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .gemini-setup{display:grid;gap:14px}
 .gemini-setup>.gemini-settings-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .gemini-settings-heading h3{margin:0;font-size:15px;color:var(--text);outline-offset:4px}
-.gemini-settings-card{display:grid;gap:10px;padding:12px;border:1px solid var(--line);border-radius:10px;min-width:0;background:var(--solid)}
+.gemini-setup>.gemini-settings-card{display:grid;gap:10px;padding:12px;border:1px solid var(--line);border-radius:10px;min-width:0;background:var(--solid)}
 .gemini-settings-card h4{font-size:13px;color:var(--text);margin:0}
 .gemini-settings-card p{margin:0}
 .gemini-settings-card .gemini-label{margin:0}

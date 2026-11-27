@@ -116,7 +116,7 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   function newConversation(){
     if(busy)return;
     if(settingsOpen)closeSettings();
-    void revoke();
+    setFiles([]);setHistory([]);setAnswer(null);setQuestion("");setError("");
   }
   function changeContext(value:boolean){
     if(includeMail===value)return;
