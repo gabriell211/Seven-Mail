@@ -1064,3 +1064,6 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 
 .command-menu-panel>button.active{background:var(--accent-soft);color:var(--accent)}
 .reading-command-strip>button:focus-visible,.command-menu-trigger:focus-visible,.ribbon-command:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* Keep sync announcements accessible without duplicating status/settings in the top bar. */
+.mail-sync-announcement{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;pointer-events:none}
