@@ -1248,6 +1248,14 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .gemini-token-ring .gemini-composer-send{position:relative;margin:0}
 @media(prefers-reduced-motion:reduce){.gemini-token-value{transition:none}}
 
+/* Explicit unread state: independent of selection, hover, sender photo or theme. */
+.message.unread{background:color-mix(in srgb,var(--accent) 8%,var(--solid));border-color:color-mix(in srgb,var(--accent) 12%,transparent)}
+.message.unread.selected{background:var(--accent-soft);border-color:var(--accent)}
+.message.unread .message-meta b,.message.unread .message-copy>strong{font-weight:850;color:var(--text)}
+.message:not(.unread) .message-meta b,.message:not(.unread) .message-copy>strong{font-weight:500;color:var(--muted)}
+.message-unread-dot{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--accent);align-self:center}
+.unread-filter-count{font-size:10px;font-weight:750;color:var(--accent);margin-left:3px}
+
 .gemini-creative-mode{display:grid;gap:4px;padding:2px 0}.gemini-creative-mode select{align-self:start;width:fit-content;max-width:100%;border:0;border-radius:6px;background:var(--soft);color:var(--text);font-size:11px;padding:4px}.gemini-creative-mode small{color:var(--muted);font-size:10px}.gemini-creative-result{display:grid;gap:8px;min-width:0}.gemini-generated-image{display:block;max-width:100%;max-height:380px;object-fit:contain;border-radius:9px}.gemini-signature-preview{background:white;color:#222;border:1px solid var(--line);padding:10px;overflow:auto;max-height:280px}.gemini-markdown p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}.gemini-markdown hr{border:0;border-top:1px solid var(--line);margin:9px 0}.gemini-md-heading{font-weight:750}.gemini-md-bullet{padding-left:8px}.gemini-markdown code{background:var(--soft);border-radius:3px;padding:1px 3px}
 
 .gemini-connection-dialog{box-sizing:border-box;width:min(480px,calc(100vw - 32px));max-width:none;margin:auto;padding:22px;border:1px solid var(--line);border-radius:15px;background:var(--solid);color:var(--text);box-shadow:0 18px 60px #0003}
