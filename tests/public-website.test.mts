@@ -12,7 +12,10 @@ test("public Seven Mail pages have local navigation, branding and canonical URLs
   assert.match(html,/href="privacy\.html"/);
   assert.match(html,/href="terms\.html"/);
   assert.match(html,/href="mailto:barcelosgabriel211@gmail\.com"/);
-  assert.doesNotMatch(html,/<script\b|<iframe\b|<form\b/i);
+  assert.doesNotMatch(html,/<iframe\b|<form\b|\son[a-z]+\s*=/i);
+  const scripts=[...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi)].map(match=>match[0]);
+  assert.equal([...html.matchAll(/<script\b/gi)].length,scripts.length);
+  assert.deepEqual(scripts,page==="index.html"?['<script src="demo.js" defer></script>']:[]);
   for(const match of html.matchAll(/(?:href|src)="([^"]+)"/g)){
     const target=match[1];
     if(/^(?:https?:|mailto:|#)/.test(target)||target==="./")continue;
@@ -30,7 +33,14 @@ test("public Seven Mail pages have local navigation, branding and canonical URLs
 test("redesigned website displays a clearly labelled illustrative product preview",()=>{
  const html=read("index.html");
  assert.match(html,/class="app-window"/);
- assert.match(html,/Prévia ilustrativa da interface · mensagens fictícias/);
+ assert.match(html,/aria-label="Demonstração interativa do Seven Mail com mensagens fictícias"/);
+ assert.match(html,/<figcaption>[^<]*Mensagens fictícias\.<\/figcaption>/);
+ const demo=read("demo.js");
+ assert.match(demo,/addEventListener\("click"/);
+ for(const id of ["app","list","read","sw","gem"]){
+  assert.ok(html.includes('id="'+id+'"'),id);
+ }
+ assert.doesNotMatch(demo,/\b(?:fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB|eval|Function)\b|document\.cookie/);
  assert.match(html,/id="recursos"/);
  assert.match(html,/seven-mail-logo\.svg/);
  for(const page of ["privacy.html","terms.html"]){
