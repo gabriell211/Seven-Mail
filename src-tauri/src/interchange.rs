@@ -1005,6 +1005,7 @@ fn pst_workspace_item(
     const APPT: u32 = 0x00062002;
     const TASK: u32 = 0x00062003;
     const ADDRESS: u32 = 0x00062004;
+    const COMMON: u32 = 0x00062008;
     let props = message.properties();
     let class = pst_property_text(props.get(0x001A)).unwrap_or_else(|| "IPM.Note".into());
     let class = class.to_ascii_lowercase();
@@ -1033,7 +1034,10 @@ fn pst_workspace_item(
             "allDay": matches!(named.get(message, APPT, 0x8215), Some(PropertyValue::Boolean(true))),
             "color": "#64748b", "participants": recipients.to.iter().chain(recipients.cc.iter()).map(|r| &r.email).collect::<Vec<_>>(),
             "accountId": account.id, "categories": categories, "status": "confirmed", "recurrence": "none",
-            "pstFolder": folder
+            "pstFolder": folder,
+            "freeBusyStatus": match pst_integer(named.get(message, APPT, 0x8205)) { Some(0) => "free", Some(1) => "tentative", _ => "busy" },
+            "isPrivate": matches!(named.get(message, COMMON, 0x8506), Some(PropertyValue::Boolean(true))),
+            "reminderAt": if matches!(named.get(message, COMMON, 0x8503), Some(PropertyValue::Boolean(true))) { date(COMMON, 0x8502) } else { None }
         }))
     } else if class == "ipm.contact" {
         let first = text(0x3A06);
@@ -1047,7 +1051,7 @@ fn pst_workspace_item(
         ("contact", json!({"id": id, "displayName": name, "firstName": first, "lastName": last,
             "email": emails.first().cloned().unwrap_or_default(), "emails": emails,
             "phone": phones.first().cloned().unwrap_or_default(), "phones": phones,
-            "company": text(0x3A16), "jobTitle": text(0x3A17), "notes": body,
+            "company": text(0x3A16), "jobTitle": text(0x3A17), "nickname": text(0x3A4F), "notes": body,
             "favorite": false, "accountId": account.id, "categories": categories, "pstFolder": folder}))
     } else if class == "ipm.task" {
         if matches!(named.get(message, TASK, 0x8126), Some(PropertyValue::Boolean(true))) || named.get(message, TASK, 0x8116).is_some() {
@@ -1057,7 +1061,7 @@ fn pst_workspace_item(
         let completed = date(TASK, 0x810F);
         let mut payload = json!({"id": id, "title": title, "notes": body, "priority": priority,
             "listName": folder, "categories": categories, "pstFolder": folder});
-        for (key, value) in [("startsAt", date(TASK, 0x8104)), ("dueAt", date(TASK, 0x8105)), ("completedAt", completed)] {
+        for (key, value) in [("startsAt", date(TASK, 0x8104)), ("dueAt", date(TASK, 0x8105)), ("completedAt", completed), ("reminderAt", if matches!(named.get(message, COMMON, 0x8503), Some(PropertyValue::Boolean(true))) { date(COMMON, 0x8502) } else { None })] {
             if let Some(value) = value { payload[key] = json!(value); }
         }
         ("task", payload)
