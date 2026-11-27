@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-export type IconName = "mail"|"calendar"|"people"|"check"|"note"|"rule"|"settings"|"search"|"plus"|"inbox"|"send"|"draft"|"archive"|"trash"|"spam"|"star"|"flag"|"paperclip"|"refresh"|"chevron"|"more"|"reply"|"forward"|"filter"|"cloud"|"shield"|"moon"|"sun"|"x"|"userplus"|"clock"|"lock"|"pin"|"upload"|"download"|"copy"|"volume"|"expand"|"mic";
+export type IconName = "mail"|"calendar"|"people"|"check"|"note"|"rule"|"settings"|"search"|"plus"|"inbox"|"send"|"draft"|"archive"|"trash"|"spam"|"star"|"flag"|"paperclip"|"refresh"|"chevron"|"more"|"reply"|"forward"|"filter"|"cloud"|"shield"|"moon"|"sun"|"x"|"userplus"|"clock"|"lock"|"pin"|"upload"|"download"|"copy"|"volume"|"expand"|"mic"|"speaking";
 
 const paths: Record<IconName, string[]> = {
   mail:["M4 6h16v12H4z","m4 7 8 6 8-6"], calendar:["M5 5h14v14H5z","M8 3v4M16 3v4M5 9h14"],
@@ -27,6 +27,7 @@ const paths: Record<IconName, string[]> = {
   copy:["M8 8h11v11H8z","M5 16H4V5h11v1"],
   volume:["M11 5 6 9H3v6h3l5 4z","M15 9a4 4 0 0 1 0 6","M17.5 6.5a8 8 0 0 1 0 11"],
   expand:["M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"],
+  speaking:["M11 21v-4H7v-4H4l2-4a7 7 0 0 1 13 0v1","M13 13h3","M18 12c2 1 2 4 0 5","M21 10c3 2 3 7 0 9"],
   mic:["M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z","M5 11a7 7 0 0 0 14 0","M12 18v3","M9 21h6"]
 };
 

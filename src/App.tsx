@@ -12,6 +12,7 @@ import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, Pers
 import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { SignaturesPanel } from "./components/SignaturesPanel";
+import { defaultSignature,signatureHtml,signatureTextHtml } from "./lib/signatures";
 import { SmimePanel } from "./components/SmimePanel";
 import { CorporatePoliciesPanel } from "./components/CorporatePoliciesPanel";
 import { MessageDetailsModal, SenderPoliciesPanel } from "./components/AdvancedMailPanels";
@@ -503,15 +504,12 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
   useEffect(()=>{try{localStorage.setItem("seven-mail:expanded-mailboxes",JSON.stringify(expandedMailboxes));}catch{/* optional preference */}},[expandedMailboxes]);
   const toggleMailbox=(id:string)=>setExpandedMailboxes(current=>current.includes(id)?current.filter(item=>item!==id):[...current,id]);
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
-  const [advancedFiltersOpen,setAdvancedFiltersOpen]=useState(false);
   const [readingToolsOpen,setReadingToolsOpen]=useState(false);
-  useEffect(()=>{setReadingToolsOpen(false);},[selectedId]);
+  const [immersiveOpen,setImmersiveOpen]=useState(false);
+  useEffect(()=>{setReadingToolsOpen(false);setImmersiveOpen(false);},[selectedId]);
   const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread"|"size"|"status">("newest");
   const [focusTab,setFocusTab] = useState<InboxTab>("all");
   const [conversationView,setConversationView] = useState(false);
-  const [periodFilter,setPeriodFilter] = useState<"all"|"today"|"7d"|"30d">("all");
-  const [senderFilter,setSenderFilter] = useState("");
-  const [priorityFilter,setPriorityFilter] = useState<"all"|"low"|"normal"|"high">("all");
   const [visibleCount,setVisibleCount] = useState<number>(settings.mailPageSize ?? 50);
   const [details,setDetails] = useState<{message:MailMessage;tab:"attachments"|"headers"|"source"}|null>(null);
   const [providerPolicy,setProviderPolicy] = useState<{sensitivityLabelId?:string;canForward:boolean;canCopy:boolean;reactionsAllowed:boolean;rights:string[]} | undefined>();
@@ -534,13 +532,6 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
   const cachedFolderCount=messages.filter(message=>message.folder===folder.name).length;
   const baseFolderMessages = messages.filter(message=>{
     if (message.folder!==folder.name || !matchesQuickFilter(message,quickFilter)) return false;
-    if(senderFilter&&message.from.email.toLocaleLowerCase("pt-BR")!==senderFilter) return false;
-    if(priorityFilter!=="all"&&(message.importance??"normal")!==priorityFilter) return false;
-    if(periodFilter!=="all"){
-      const age=now-new Date(message.receivedAt).getTime();
-      const max=periodFilter==="today"?24*60*60*1000:periodFilter==="7d"?7*24*60*60*1000:30*24*60*60*1000;
-      if(!Number.isFinite(age)||age<0||age>max) return false;
-    }
     if (message.snoozedUntil) {
       const until = new Date(message.snoozedUntil).getTime();
       if (Number.isFinite(until) && until > now) return false;
@@ -648,8 +639,6 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
   const favoriteFolderPaths=settings.favoriteFolders?.[folderPrefKey]??[];
   const favoriteFolders=visibleFolders.filter((item)=>favoriteFolderPaths.includes(item.path));
   const favoriteCategories=categories.filter((item)=>item.favorite);
-  const senderOptions=[...new Map(messages.map((message)=>[message.from.email.toLocaleLowerCase("pt-BR"),message.from])).values()]
-    .sort((a,b)=>(a.name||a.email).localeCompare(b.name||b.email));
   const messageGroups=useMemo(()=>{
     const today=new Date();
     const todayStart=new Date(today.getFullYear(),today.getMonth(),today.getDate()).getTime();
@@ -856,7 +845,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
     </div>
     <div className="ribbon-group">
       <button type="button" className="ribbon-command" onClick={onOpenPeople}><Icon name="people" size={18}/><span>Pesquisar pessoas</span></button>
-      <button type="button" className="ribbon-command ribbon-icon" title="Filtros de mensagens" aria-label="Filtros de mensagens" aria-expanded={advancedFiltersOpen} onClick={()=>setAdvancedFiltersOpen(value=>!value)}><Icon name="filter" size={18}/></button>
+      
     </div>
     <div className="ribbon-group">
       <button type="button" className="ribbon-command" disabled={accounts.length===0||syncing} onClick={onRefreshAll}><Icon name="refresh" size={18}/><span>{syncing?"Sincronizando…":"Enviar/Receber contas"}</span></button>
@@ -900,7 +889,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
     <section className="message-pane">
       <header className="pane-header">
         <div><span className="eyebrow">{folder.name.toUpperCase()}</span><h2>{folder.name}</h2></div>
-        <div className="pane-tools">{onImportEml&&activeAccount&&<button className="icon-button" title="Importar EML ou MSG" aria-label="Importar EML ou MSG" onClick={onImportEml}><Icon name="upload" size={16}/></button>}<button className={conversationView?"icon-button active":"icon-button"} title="Visualização por conversa" aria-label="Alternar visualização por conversa" onClick={()=>setConversationView(value=>!value)}><Icon name="people" size={16}/></button><select className="mail-sort" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Ordenar mensagens"><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="sender">Remetente</option><option value="subject">Assunto</option><option value="size">Tamanho</option><option value="status">Status</option><option value="unread">Não lidas primeiro</option></select><div className="icon-group"><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button" title="Filtros de mensagens" aria-label="Filtros de mensagens" aria-expanded={advancedFiltersOpen} onClick={()=>setAdvancedFiltersOpen(value=>!value)}><Icon name="filter" size={16}/></button></div></div>
+        <div className="pane-tools">{onImportEml&&activeAccount&&<button className="icon-button" title="Importar EML ou MSG" aria-label="Importar EML ou MSG" onClick={onImportEml}><Icon name="upload" size={16}/></button>}<button className={conversationView?"icon-button active":"icon-button"} title="Visualização por conversa" aria-label="Alternar visualização por conversa" onClick={()=>setConversationView(value=>!value)}><Icon name="people" size={16}/></button><select className="mail-sort" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Ordenar mensagens"><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="sender">Remetente</option><option value="subject">Assunto</option><option value="size">Tamanho</option><option value="status">Status</option><option value="unread">Não lidas primeiro</option></select><div className="icon-group"><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button></div></div>
       </header>
       {folder.role==="inbox"&&settings.focusInboxEnabled&&<div className="segmented focus-tabs" role="group" aria-label="Tipo de caixa de entrada">{([["all","Todas"],["focused","Prioritária"],["other","Outros"]] as const).map(([tab,label])=><button key={tab} className={focusTab===tab?"active":""} aria-pressed={focusTab===tab} onClick={()=>setFocusTab(tab)}>{label}</button>)}</div>}
       <div className="segmented mail-filters">
@@ -910,13 +899,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
         <button className={quickFilter==="pinned"?"active":""} onClick={()=>setQuickFilter("pinned")}>Fixadas</button>
         <button className={quickFilter==="attachments"?"active":""} onClick={()=>setQuickFilter("attachments")}>Anexos</button>
       </div>
-      <div className="mail-advanced-filters" hidden={!advancedFiltersOpen&&periodFilter==="all"&&!senderFilter&&priorityFilter==="all"}>
-        <select value={periodFilter} onChange={(event)=>setPeriodFilter(event.target.value as typeof periodFilter)} aria-label="Filtrar por período"><option value="all">Qualquer período</option><option value="today">Últimas 24h</option><option value="7d">Últimos 7 dias</option><option value="30d">Últimos 30 dias</option></select>
-        <select value={senderFilter} onChange={(event)=>setSenderFilter(event.target.value)} aria-label="Filtrar por remetente"><option value="">Qualquer remetente</option>{senderOptions.map((sender)=><option key={sender.email} value={sender.email.toLocaleLowerCase("pt-BR")}>{sender.name||sender.email}</option>)}</select>
-        <select value={priorityFilter} onChange={(event)=>setPriorityFilter(event.target.value as typeof priorityFilter)} aria-label="Filtrar por prioridade"><option value="all">Qualquer prioridade</option><option value="high">Alta</option><option value="normal">Normal</option><option value="low">Baixa</option></select>
-        {(periodFilter!=="all"||senderFilter||priorityFilter!=="all")&&<button className="ghost" onClick={()=>{setPeriodFilter("all");setSenderFilter("");setPriorityFilter("all");}}>Limpar</button>}
-      </div>
-      {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : folderMessages.length===0 && (folder.role!=="drafts" || localDrafts.length===0) ? <div className="empty-state small"><div className="empty-symbol"><Icon name={folder.role==="drafts"?"draft":"inbox"} size={30}/></div><h3>{syncing&&cachedFolderCount===0?"Sincronizando mensagens…":cachedFolderCount>0?"Nenhuma mensagem neste filtro":folder.role==="drafts"?"Nenhum rascunho":"Tudo limpo"}</h3><p>{cachedFolderCount>0?`${cachedFolderCount} mensagem(ns) nesta pasta. Altere os filtros para exibi-las.`:syncing?"Os e-mails serão exibidos assim que forem recebidos.":folder.role==="drafts"?"Mensagens em edição aparecerão aqui automaticamente.":"As mensagens sincronizadas aparecerão aqui."}</p>{cachedFolderCount>0&&<button className="secondary" onClick={()=>{setFocusTab("all");setQuickFilter("all");setPeriodFilter("all");setSenderFilter("");setPriorityFilter("all");}}>Mostrar todas</button>}</div> :
+      {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : folderMessages.length===0 && (folder.role!=="drafts" || localDrafts.length===0) ? <div className="empty-state small"><div className="empty-symbol"><Icon name={folder.role==="drafts"?"draft":"inbox"} size={30}/></div><h3>{syncing&&cachedFolderCount===0?"Sincronizando mensagens…":cachedFolderCount>0?"Nenhuma mensagem neste filtro":folder.role==="drafts"?"Nenhum rascunho":"Tudo limpo"}</h3><p>{cachedFolderCount>0?`${cachedFolderCount} mensagem(ns) nesta pasta. Altere os filtros para exibi-las.`:syncing?"Os e-mails serão exibidos assim que forem recebidos.":folder.role==="drafts"?"Mensagens em edição aparecerão aqui automaticamente.":"As mensagens sincronizadas aparecerão aqui."}</p>{cachedFolderCount>0&&<button className="secondary" onClick={()=>{setFocusTab("all");setQuickFilter("all");}}>Mostrar todas</button>}</div> :
         <>
           {folder.role==="drafts"&&<div className="draft-list" role="list" aria-label="Rascunhos locais">{localDrafts.map(draft=><button key={draft.id} className="message local-draft-message" onClick={()=>onOpenDraft(draft)}>
             <span className="avatar draft-avatar" aria-hidden="true"><Icon name="draft" size={15}/></span>
@@ -948,6 +931,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
             <button type="button" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={17}/><span>Responder</span></button>
             <button type="button" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people" size={17}/><span>Responder a todos</span></button>
             <button type="button" disabled={!canForward} onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward" size={17}/><span>Encaminhar</span></button>
+            <ReadingAssist key={selected.id} message={selected} immersiveOpen={immersiveOpen} onImmersiveClose={()=>setImmersiveOpen(false)}/>
             <CommandMenu label="Mais opções da mensagem" className="reading-more">
           <button className="secondary seven-desk-meeting" onClick={()=>onCreateEventFromMessage(selected)}><img src="/integrations/seven-desk.svg" alt="" width={18} height={18}/> Reunião</button>
           <button className="secondary" disabled={!canCopy} title={providerPolicy?.canCopy===false?"Bloqueado pela política de sensibilidade":undefined} onClick={()=>onForwardAsAttachment(selected)}><Icon name="paperclip" size={15}/> Encaminhar como anexo</button>{selected.hasAttachments&&<button className="secondary" disabled={!canCopy} onClick={()=>onComposeWithAttachments(selected)}><Icon name="copy" size={15}/> Usar anexos</button>}
@@ -972,7 +956,8 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
           {isBlocked(selected)?<button className="secondary" onClick={()=>onReleaseSender(selected.from.email)}>Liberar remetente</button>:<button className="secondary" onClick={()=>onBlockSender(selected.from.email)}>Bloquear remetente</button>}
           {!isTrusted(selected)&&<button className="secondary" onClick={()=>onTrustSender(selected.from.email)}>Confiar remetente</button>}
               <button type="button" onClick={()=>messageCommand(selected.isPinned?"unpin":"pin")}><Icon name="pin" size={16}/> {selected.isPinned?"Desafixar":"Fixar"}</button>
-              <button type="button" onClick={()=>setReadingToolsOpen(value=>!value)}><Icon name="volume" size={16}/> Ferramentas de leitura</button>
+              <button type="button" onClick={()=>setImmersiveOpen(true)}><Icon name="expand" size={16}/> Leitura imersiva</button>
+              <button type="button" onClick={()=>setReadingToolsOpen(value=>!value)}><Icon name="more" size={16}/> Ferramentas de leitura</button>
               <button type="button" onClick={()=>messageCommand("delete")}><Icon name="trash" size={16}/> Excluir</button>
               <button type="button" onClick={()=>messageCommand("archive")}><Icon name="archive" size={16}/> Arquivar</button>
             </CommandMenu>
@@ -981,7 +966,6 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
         {categories.length>0&&<div className="message-categories">{categories.map(category=>{const active=selected.categories.includes(category.name);return <button key={category.id} className={active?"category-chip active":"category-chip"} onClick={()=>onToggleCategory(selected,category)}><i style={{background:category.color}}/>{category.name}</button>;})}</div>}
         {readingToolsOpen&&activeAccount&&folders.length>1&&<div className="move-folder-row"><span>Organizar</span>{onMoveToFolder&&<select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onMoveToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Mover para...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select>}{onCopyToFolder&&<select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onCopyToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Copiar para...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select>}</div>}
         <SafeMessageBody message={selected} settings={settings} onAllowRemote={onAllowRemoteContent}/>
-        {readingToolsOpen&&<ReadingAssist key={selected.id} message={selected}/>}
         {providerPolicy&&(providerPolicy.sensitivityLabelId||!providerPolicy.reactionsAllowed||!providerPolicy.canForward||!providerPolicy.canCopy)&&<div className="provider-policy-banner"><Icon name="shield" size={14}/><div><b>Política do provedor aplicada</b><span>{providerPolicy.sensitivityLabelId?`Rótulo ${providerPolicy.sensitivityLabelId}. `:""}{!providerPolicy.canForward?"Encaminhamento bloqueado. ":""}{!providerPolicy.canCopy?"Cópia bloqueada. ":""}{!providerPolicy.reactionsAllowed?"Reações desativadas pelo remetente/servidor.":""}</span></div></div>}
         {readingToolsOpen&&providerPolicy?.reactionsAllowed!==false&&folder.role!=="sent"&&<div className="message-reactions" aria-label="Reagir à mensagem">
           {["👍","❤️","😂","🎉","😮","🙏"].map((emoji)=><button key={emoji} disabled={reactionBusy} title={`Reagir com ${emoji}`} onClick={()=>{setReactionBusy(true);void bridge.sendMessageReaction(selected.accountId,selected.id,emoji).then(()=>window.alert(`Reação ${emoji} enviada.`)).catch((reason)=>window.alert(reason instanceof Error?reason.message:String(reason))).finally(()=>setReactionBusy(false));}}>{emoji}</button>)}
@@ -1038,7 +1022,7 @@ function RulesView() {
   </div></Workspace>;
 }
 
-function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signatures,onSaveSignature,onDeleteSignature,profiles,activeProfileId,onActivateProfile,onSaveProfile,onDeleteProfile,onUpdateInfo}:{settings:AppSettings;onChange:(s:AppSettings)=>void;runtime?:RuntimeInfo;accounts:AccountProfile[];onAccountsChange:(accounts:AccountProfile[])=>void;signatures:SignatureItem[];onSaveSignature:(signature:SignatureItem)=>Promise<void>;onDeleteSignature:(signature:SignatureItem)=>Promise<void>;profiles:ProfileItem[];activeProfileId?:string;onActivateProfile:(profile:ProfileItem|null)=>void;onSaveProfile:(profile:ProfileItem)=>Promise<void>;onDeleteProfile:(profile:ProfileItem)=>Promise<void>;onUpdateInfo:(info:UpdateInfo)=>void}) {
+function SettingsView({settings,onChange,runtime,accounts,activeAccountId,onAccountsChange,signatures,onSaveSignature,onDeleteSignature,profiles,activeProfileId,onActivateProfile,onSaveProfile,onDeleteProfile,onUpdateInfo}:{settings:AppSettings;onChange:(s:AppSettings)=>void;runtime?:RuntimeInfo;accounts:AccountProfile[];activeAccountId?:string;onAccountsChange:(accounts:AccountProfile[])=>void;signatures:SignatureItem[];onSaveSignature:(signature:SignatureItem)=>Promise<void>;onDeleteSignature:(signature:SignatureItem)=>Promise<void>;profiles:ProfileItem[];activeProfileId?:string;onActivateProfile:(profile:ProfileItem|null)=>void;onSaveProfile:(profile:ProfileItem)=>Promise<void>;onDeleteProfile:(profile:ProfileItem)=>Promise<void>;onUpdateInfo:(info:UpdateInfo)=>void}) {
   const set = <K extends keyof AppSettings>(key:K,value:AppSettings[K])=>onChange({...settings,[key]:value});
 
   function toggleWorkDay(day:number){
@@ -1292,7 +1276,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
         <SenderPoliciesPanel settings={settings} onChange={onChange}/>
     <ProfilesPanel accounts={accounts} profiles={profiles} activeProfileId={activeProfileId} onActivate={onActivateProfile} onSave={onSaveProfile} onDelete={onDeleteProfile}/>
     <AccountsPanel accounts={accounts} onChange={onAccountsChange}/>
-    <SignaturesPanel accounts={accounts} signatures={signatures} onSave={onSaveSignature} onDelete={onDeleteSignature}/>
+    <SignaturesPanel accounts={accounts} activeAccountId={activeAccountId} signatures={signatures} onSave={onSaveSignature} onDelete={onDeleteSignature}/>
     <SmimePanel accounts={accounts}/>
     <CorporatePoliciesPanel accounts={accounts}/>
     <ComposerAssetsPanel/>
@@ -1865,10 +1849,11 @@ function UnlockedApp() {
     const now = new Date().toISOString();
     const cloudDocuments: Array<WorkspaceDocument<SignatureItem>> = [];
 
-    if (signature.isDefault) {
+    if (signature.isDefault||signature.isReplyDefault) {
       for (const item of signatures) {
-        if (item.accountId !== signature.accountId || item.id === signature.id || !item.isDefault) continue;
-        const demoted = {...item,isDefault:false};
+        if(item.accountId!==signature.accountId||item.id===signature.id)continue;
+        const demoted={...item,isDefault:signature.isDefault?false:item.isDefault,isReplyDefault:signature.isReplyDefault?false:(item.isReplyDefault??item.isDefault)};
+        if(demoted.isDefault===item.isDefault&&demoted.isReplyDefault===(item.isReplyDefault??item.isDefault))continue;
         const document: WorkspaceDocument<SignatureItem> = {
           id: demoted.id,
           kind: "signature",
@@ -1891,8 +1876,8 @@ function UnlockedApp() {
 
     setSignatures((current)=>{
       const normalized = current.map((item)=>{
-        if (signature.isDefault && item.accountId===signature.accountId && item.id!==signature.id) {
-          return {...item,isDefault:false};
+        if ((signature.isDefault||signature.isReplyDefault) && item.accountId===signature.accountId && item.id!==signature.id) {
+          return {...item,isDefault:signature.isDefault?false:item.isDefault,isReplyDefault:signature.isReplyDefault?false:(item.isReplyDefault??item.isDefault)};
         }
         return item;
       });
@@ -1958,8 +1943,7 @@ function UnlockedApp() {
     const quoted = originalText
       ? originalText.split("\n").map((line)=>`> ${line}`).join("\n")
       : ">";
-    const signature = signatures.find((item)=>item.accountId===message.accountId&&item.isDefault)
-      ?? signatures.find((item)=>item.accountId===message.accountId);
+    const signature = defaultSignature(signatures,message.accountId,true);
     const signatureText = signature?.bodyText.trim() ?? "";
 
     const draft: ComposeDraft = {
@@ -1977,8 +1961,8 @@ function UnlockedApp() {
         ? (/^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject || "(sem assunto)"}`)
         : (/^(enc|fw|fwd):/i.test(message.subject) ? message.subject : `Enc: ${message.subject || "(sem assunto)"}`),
       bodyText: `${signatureText ? `\n\n${signatureText}` : ""}\n\nEm ${new Date(message.receivedAt).toLocaleString()}, ${message.from.name || message.from.email} escreveu:\n${quoted}`,
-      bodyHtml: "",
-      mode: "plain",
+      bodyHtml: `<br><br>${signatureHtml(signature)}<br><br>${signatureTextHtml(`Em ${new Date(message.receivedAt).toLocaleString()}, ${message.from.name||message.from.email} escreveu:\n${quoted}`)}`,
+      mode: "rich",
       attachments: [],
     };
 
@@ -1990,8 +1974,7 @@ function UnlockedApp() {
     const id=crypto.randomUUID();
     try{
       const attachment=await bridge.stageMessageAsEml(id,message.accountId,message.id,safeExportName(message.subject,"mensagem"));
-      const signature=signatures.find((item)=>item.accountId===message.accountId&&item.isDefault)
-        ?? signatures.find((item)=>item.accountId===message.accountId);
+      const signature=defaultSignature(signatures,message.accountId,true);
       const draft:ComposeDraft={
         id,
         accountId:message.accountId,
@@ -1999,9 +1982,9 @@ function UnlockedApp() {
         cc:"",
         bcc:"",
         subject:/^(enc|fw|fwd):/i.test(message.subject)?message.subject:`Enc: ${message.subject||"(sem assunto)"}`,
-        bodyText:signature?.bodyText.trim()?signature.bodyText.trim():"",
-        bodyHtml:"",
-        mode:"plain",
+        bodyText:signature?.bodyText.trim()??"",
+        bodyHtml:signatureHtml(signature),
+        mode:"rich",
         attachments:[attachment],
       };
       setDraftToOpen(draft);
@@ -2018,8 +2001,7 @@ function UnlockedApp() {
       ?? profileAccounts.find((item)=>item.isDefault)
       ?? profileAccounts[0];
     const signature=account
-      ? signatures.find((item)=>item.accountId===account.id&&item.isDefault)
-        ?? signatures.find((item)=>item.accountId===account.id)
+      ? defaultSignature(signatures,account.id)
       : undefined;
     const draft:ComposeDraft={
       id,
@@ -2030,8 +2012,8 @@ function UnlockedApp() {
       bcc:"",
       subject:"",
       bodyText:signature?.bodyText.trim()??"",
-      bodyHtml:"",
-      mode:"plain",
+      bodyHtml:signatureHtml(signature),
+      mode:"rich",
       attachments,
     };
     setDraftToOpen(draft);
@@ -3690,7 +3672,8 @@ function UnlockedApp() {
       <header className="topbar" data-tauri-drag-region>
         <div className="product"><strong>Seven Mail</strong><span>{NAV.find(n=>n.id===section)?.label}</span></div>
         <label className="search"><Icon name="search" size={17}/><input list="seven-mail-search-suggestions" value={search} onFocus={()=>setGlobalSearchOpen(true)} onChange={e=>{setSearch(e.target.value);setGlobalSearchOpen(true);}} onKeyDown={e=>{if(e.key==="Enter"){commitSearchHistory();setGlobalSearchOpen(true);}else if(e.key==="Escape"){setGlobalSearchOpen(false);}}} placeholder="Pesquisar em todo o Seven Mail..."/><kbd>Ctrl K</kbd></label><datalist id="seven-mail-search-suggestions">{searchSuggestions.map((value)=><option value={value} key={value}/>)}</datalist>{section==="mail"&&search.trim()&&<button className="icon-button save-search-button" title="Salvar pesquisa" aria-label="Salvar pesquisa" onClick={()=>void saveCurrentSearch()}><Icon name="star" size={17}/></button>}
-        <div className="top-actions">{lockConfigured&&<button className="icon-button" title="Bloquear agora" onClick={()=>void lockNativeApp().catch((error)=>window.alert(String(error)))}><Icon name="lock" size={17}/></button>}<span className={"sync "+syncState} role="status" aria-live="polite" aria-atomic="true" title={syncError??(lastSyncAt?`Última sincronização confirmada: ${new Date(lastSyncAt).toLocaleString()}`:"Nenhuma sincronização confirmada nesta sessão")}><i aria-hidden="true"/> {profileAccounts.length===0?"Sem conta":syncState==="syncing"?"Sincronizando":syncState==="error"?"Falha na sincronização":syncState==="offline"?"Offline":syncState==="synced"?(lastSyncAt?`Sincronizado ${new Date(lastSyncAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}`:"Sincronizado"):"Não verificado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
+        {lockConfigured&&<div className="top-actions">{lockConfigured&&<button className="icon-button" title="Bloquear agora" onClick={()=>void lockNativeApp().catch((error)=>window.alert(String(error)))}><Icon name="lock" size={17}/></button>}</div>}
+        <span className="mail-sync-announcement" role="status" aria-live="polite" aria-atomic="true" title={syncError??(lastSyncAt?`Última sincronização confirmada: ${new Date(lastSyncAt).toLocaleString()}`:"Nenhuma sincronização confirmada nesta sessão")}>{profileAccounts.length===0?"Sem conta":syncState==="syncing"?"Sincronizando":syncState==="error"?"Falha na sincronização":syncState==="offline"?"Offline":syncState==="synced"?(lastSyncAt?`Sincronizado ${new Date(lastSyncAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}`:"Sincronizado"):"Não verificado"}</span>
         <button type="button" className="gemini-trigger" aria-label="Google Gemini" title="Google Gemini" aria-expanded={geminiOpen} onClick={()=>setGeminiOpen(value=>!value)}><GeminiMark/><span>Gemini</span></button>
         {globalSearchOpen&&search.trim()&&<div className="global-search-popover">
           <header><span><Icon name="search" size={15}/><b>Pesquisa global</b></span><button onClick={()=>setGlobalSearchOpen(false)}><Icon name="x" size={13}/></button></header>
@@ -3706,7 +3689,7 @@ function UnlockedApp() {
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
         {section==="notes"&&<PersistentNotesView query={search}/>}
         {section==="rules"&&<PersistentRulesView onRunRules={runRulesNow}/>} 
-        {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime} accounts={accounts} onAccountsChange={(next)=>{setAccounts(next);if(!next.some((account)=>account.id===activeId)){setActiveId(next.find((account)=>account.isDefault)?.id??next[0]?.id);}}} signatures={signatures} onSaveSignature={saveSignature} onDeleteSignature={deleteSignature} profiles={profiles} activeProfileId={activeProfileId} onActivateProfile={activateProfile} onSaveProfile={saveProfile} onDeleteProfile={deleteProfile} onUpdateInfo={setUpdateInfo}/>}
+        {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime} accounts={accounts} activeAccountId={activeAccount?.id} onAccountsChange={(next)=>{setAccounts(next);if(!next.some((account)=>account.id===activeId)){setActiveId(next.find((account)=>account.isDefault)?.id??next[0]?.id);}}} signatures={signatures} onSaveSignature={saveSignature} onDeleteSignature={deleteSignature} profiles={profiles} activeProfileId={activeProfileId} onActivateProfile={activateProfile} onSaveProfile={saveProfile} onDeleteProfile={deleteProfile} onUpdateInfo={setUpdateInfo}/>}
       </div>
       {geminiOpen&&<GeminiPanel key={activeProfileId??"default"} accounts={profileAccounts} initialAccountId={activeAccount?.id} composeOpen={composeOpen} onClose={()=>setGeminiOpen(false)} onDraft={draft=>{setGeminiOpen(false);openDraft(draft);}}/>}
     </main>

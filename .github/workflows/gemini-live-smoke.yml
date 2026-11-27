@@ -41,7 +41,7 @@ jobs:
           workspaces: "./src-tauri -> target"
       - name: Compile smoke tests without credentials
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --no-run
-      - name: Verify text then multimodal streaming on alternate stable Flash-Lite
+      - name: Verify text then validated PNG and PDF streaming on stable Flash-Lite
         env:
           SEVEN_MAIL_GEMINI_TEST_API_KEY: ${{ secrets.SEVEN_MAIL_GEMINI_TEST_API_KEY }}
           SEVEN_MAIL_GEMINI_TEST_MODEL: ${{ vars.SEVEN_MAIL_GEMINI_TEST_MODEL }}
