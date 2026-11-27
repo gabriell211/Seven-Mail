@@ -1,6 +1,6 @@
 //! Gemini's model sees only a bounded text snapshot. It never receives tools
 //! that can modify mail, run commands, fetch URLs or read arbitrary files.
-use crate::{app_lock, credentials, models::MailMessage, storage::{self, AppPaths}};
+use crate::{app_lock, gemini_google, credentials, models::MailMessage, storage::{self, AppPaths}};
 use serde::{Deserialize, Serialize};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::{io::{BufRead, BufReader, Read}, sync::Mutex, time::{Duration, Instant}};
@@ -72,14 +72,20 @@ const DEFAULT_MODEL: &str = "gemini-3.8-flash";
 struct GeminiConfig {
     api_key: String,
     model: String,
+    #[serde(default, skip_serializing_if="Option::is_none")]
+    google: Option<gemini_google::GoogleGrant>,
+}
+impl GeminiConfig {
+    fn valid(&self)->bool{valid_model(&self.model)&&match &self.google{Some(grant)=>self.api_key.is_empty()&&grant.valid(),None=>valid_key(&self.api_key)}}
+    fn apply(&self,request:reqwest::blocking::RequestBuilder)->reqwest::blocking::RequestBuilder{match &self.google{Some(grant)=>grant.apply(request),None=>request.header("x-goog-api-key",self.api_key.as_str())}}
 }
 fn decode_config(record:&str)->Result<GeminiConfig,String>{
     let config=if valid_key(record){
-        GeminiConfig{api_key:record.to_owned(),model:DEFAULT_MODEL.to_owned()}
+        GeminiConfig{api_key:record.to_owned(),model:DEFAULT_MODEL.to_owned(),google:None}
     }else{
         serde_json::from_str::<GeminiConfig>(record).map_err(|_|"Configuração Gemini inválida no cofre.")?
     };
-    if !valid_key(&config.api_key)||!valid_model(&config.model){return Err("Configuração Gemini inválida no cofre.".into());}
+    if !config.valid(){return Err("Configuração Gemini inválida no cofre.".into());}
     Ok(config)
 }
 fn read_config()->Result<Option<GeminiConfig>,String>{
@@ -89,6 +95,11 @@ fn read_config()->Result<Option<GeminiConfig>,String>{
 fn save_config(config:&GeminiConfig)->Result<(),String>{
     let record=serde_json::to_string(config).map_err(|_|"Configuração Gemini inválida.")?;
     credentials::store_scoped(KEY_SCOPE,KEY_ID,&record).map_err(|_|"Não foi possível salvar a configuração no cofre.".into())
+}
+fn active_config()->Result<GeminiConfig,String>{
+    let mut config=read_config()?.ok_or("Configure o Gemini no painel.")?;
+    if let Some(grant)=config.google.as_mut(){if grant.needs_refresh(){grant.refresh()?;app_lock::require_unlocked()?;save_config(&config)?;}}
+    Ok(config)
 }
 fn valid_key(key: &str) -> bool {
     (20..=4096).contains(&key.len()) && key.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b,b'-'|b'_'|b'.'))
@@ -115,7 +126,7 @@ fn check_status(status: reqwest::StatusCode) -> Result<(), String> {
 }
 #[derive(Serialize)]
 #[serde(rename_all="camelCase")]
-pub struct GeminiStatus { configured: bool, selected_model: String }
+pub struct GeminiStatus { configured: bool, selected_model: String, auth_mode: String, google_email: Option<String>, google_project: Option<String> }
 #[derive(Deserialize)]
 #[serde(rename_all="camelCase")]
 struct ModelMetadata {
@@ -149,9 +160,12 @@ fn decode_metadata<T:serde::de::DeserializeOwned>(response:reqwest::blocking::Re
     serde_json::from_slice(&data).map_err(|_|"Catálogo Gemini inválido.".into())
 }
 fn validate_model_access(key:&str,model:&str)->Result<(),String>{
-    if !valid_key(key)||!valid_model(model){return Err("Chave ou modelo Gemini inválido.".into());}
-    // Only metadata is sent; no email contents or inference charges.
-    let response=http_client()?.get(format!("{API_BASE}/{model}")).header("x-goog-api-key",key)
+    let config=GeminiConfig{api_key:key.to_owned(),model:model.to_owned(),google:None};
+    validate_config_model(&config,model)
+}
+fn validate_config_model(config:&GeminiConfig,model:&str)->Result<(),String>{
+    if !config.valid()||!valid_model(model){return Err("Credencial ou modelo Gemini inválido.".into());}
+    let response=config.apply(http_client()?.get(format!("{API_BASE}/{model}")))
         .timeout(Duration::from_secs(15)).send().map_err(|_|"Não foi possível verificar o modelo Gemini.")?;
     let metadata:ModelMetadata=decode_metadata(response)?;
     if text_model(&metadata)!=Some(model){return Err("Modelo não compatível com geração de texto no Seven Mail.".into());}
@@ -162,11 +176,11 @@ pub async fn gemini_list_models(api_key:Option<String>)->Result<Vec<ModelOption>
     tauri::async_runtime::spawn_blocking(move||{
         app_lock::require_unlocked()?;
         let _running=REQUEST.try_lock().map_err(|_|"Já existe uma consulta em andamento.")?;
-        let key=match api_key.filter(|v|!v.trim().is_empty()){
-            Some(key)=>key.trim().to_owned(),
-            None=>read_config()?.ok_or("Configure a chave Gemini no painel.")?.api_key,
+        let config=match api_key.filter(|v|!v.trim().is_empty()){
+            Some(key)=>GeminiConfig{api_key:key.trim().to_owned(),model:DEFAULT_MODEL.to_owned(),google:None},
+            None=>active_config()?,
         };
-        if !valid_key(&key){return Err("Chave Gemini inválida.".into());}
+        if !config.valid(){return Err("Credencial Gemini inválida.".into());}
         let client=http_client()?;
         let mut token:Option<String>=None;
         let mut models=std::collections::BTreeMap::new();
@@ -175,7 +189,7 @@ pub async fn gemini_list_models(api_key:Option<String>)->Result<Vec<ModelOption>
             app_lock::require_unlocked()?;
             let remaining=deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero(){return Err("Tempo limite do catálogo Gemini excedido.".into());}
-            let mut request=client.get(API_BASE).header("x-goog-api-key",key.as_str()).query(&[("pageSize","100")]).timeout(remaining.min(Duration::from_secs(15)));
+            let mut request=config.apply(client.get(API_BASE)).query(&[("pageSize","100")]).timeout(remaining.min(Duration::from_secs(15)));
             if let Some(page)=token.as_deref(){request=request.query(&[("pageToken",page)]);}
             let page:ModelPage=decode_metadata(request.send().map_err(|_|"Não foi possível consultar modelos Gemini.")?)?;
             for metadata in page.models{
@@ -198,9 +212,9 @@ pub async fn gemini_set_model(model:String)->Result<(),String>{
     tauri::async_runtime::spawn_blocking(move||{
         app_lock::require_unlocked()?;
         let _running=REQUEST.try_lock().map_err(|_|"Já existe uma consulta em andamento.")?;
-        let mut config=read_config()?.ok_or("Configure a chave Gemini no painel.")?;
+        let mut config=active_config()?;
         let model=model.trim();
-        validate_model_access(&config.api_key,model)?;
+        validate_config_model(&config,model)?;
         app_lock::require_unlocked()?;
         config.model=model.to_owned();
         save_config(&config)?;
@@ -214,7 +228,8 @@ pub async fn gemini_status() -> Result<GeminiStatus,String> {
     tauri::async_runtime::spawn_blocking(|| {
         app_lock::require_unlocked()?;
         let config=read_config()?;
-        Ok(GeminiStatus{configured:config.is_some(),selected_model:config.map(|c|c.model).unwrap_or_else(||DEFAULT_MODEL.to_owned())})
+        let google=config.as_ref().and_then(|c|c.google.as_ref());
+        Ok(GeminiStatus{configured:config.is_some(),selected_model:config.as_ref().map(|c|c.model.clone()).unwrap_or_else(||DEFAULT_MODEL.to_owned()),auth_mode:if google.is_some(){"google"}else if config.is_some(){"api_key"}else{"none"}.into(),google_email:google.map(|g|g.email.clone()),google_project:google.map(|g|g.project.clone())})
     }).await.map_err(|_| "Falha ao consultar configuração Gemini.".to_string())?
 }
 #[tauri::command]
@@ -226,10 +241,56 @@ pub async fn gemini_configure(api_key:String,model:String) -> Result<(),String> 
         let model=model.trim();
         validate_model_access(key,model)?;
         app_lock::require_unlocked()?;
-        save_config(&GeminiConfig{api_key:key.to_owned(),model:model.to_owned()})?;
+        save_config(&GeminiConfig{api_key:key.to_owned(),model:model.to_owned(),google:None})?;
         revoke_all();
         Ok(())
     }).await.map_err(|_|"Falha ao configurar Gemini.".to_string())?
+}
+static GOOGLE_PENDING:Mutex<Option<String>>=Mutex::new(None);
+#[tauri::command]
+pub fn gemini_google_cancel(attempt_id:String)->Result<(),String>{
+    let mut pending=GOOGLE_PENDING.lock().map_err(|_|"OAuth indisponível.")?;
+    if pending.as_deref()==Some(attempt_id.as_str()){*pending=None;}
+    Ok(())
+}
+#[tauri::command]
+pub async fn gemini_google_connect(app:tauri::AppHandle,attempt_id:String,account_id:Option<String>,client_id:String,client_secret:String,project:String,model:String)->Result<(),String>{
+    tauri::async_runtime::spawn_blocking(move||{
+        use tauri_plugin_opener::OpenerExt;
+        app_lock::require_unlocked()?;
+        let _running=REQUEST.try_lock().map_err(|_|"Já existe uma consulta em andamento.")?;
+        if Uuid::parse_str(&attempt_id).is_err()||!valid_model(model.trim()){return Err("Solicitação OAuth inválida.".into());}
+        let expected=match account_id{
+            Some(id)=>{
+                let account=storage::list_accounts(&AppPaths::resolve()?)?.into_iter().find(|a|a.id==id).ok_or("Conta não encontrada.")?;
+                if account.provider=="gmail"{Some(account)}else{None}
+            },
+            None=>None,
+        };
+        let client_id=if client_id.trim().is_empty(){
+            option_env!("SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID").map(str::to_owned)
+                .or_else(||expected.as_ref().and_then(|a|a.oauth_client_id.clone())).unwrap_or_default()
+        }else{client_id.trim().to_owned()};
+        let client_secret=if client_secret.is_empty(){option_env!("SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_SECRET").unwrap_or_default().to_owned()}else{client_secret};
+        let project=if project.trim().is_empty(){option_env!("SEVEN_MAIL_GEMINI_GOOGLE_PROJECT").unwrap_or_default().to_owned()}else{project.trim().to_owned()};
+        *GOOGLE_PENDING.lock().map_err(|_|"OAuth indisponível.")?=Some(attempt_id.clone());
+        let check=||{app_lock::require_unlocked()?;if GOOGLE_PENDING.lock().map_err(|_|"OAuth indisponível.")?.as_deref()!=Some(attempt_id.as_str()){return Err("Autorização Google cancelada.".into());}Ok(())};
+        let result=(||{
+            let grant=gemini_google::authorize(client_id,client_secret,project,expected.as_ref().map(|a|a.email.clone()),
+                |url|app.opener().open_url(url,None::<&str>).map_err(|_|"Não foi possível abrir o navegador.".into()),check)?;
+            let config=GeminiConfig{api_key:String::new(),model:model.trim().to_owned(),google:Some(grant)};
+            validate_config_model(&config,&config.model)?;
+            check()?;
+            let pending=GOOGLE_PENDING.lock().map_err(|_|"OAuth indisponível.")?;
+            if pending.as_deref()!=Some(attempt_id.as_str()){return Err("Autorização Google cancelada.".into());}
+            app_lock::require_unlocked()?;
+            save_config(&config)?;
+            revoke_all();
+            Ok(())
+        })();
+        let _=gemini_google_cancel(attempt_id);
+        result
+    }).await.map_err(|_|"Falha ao conectar conta Google.".to_string())?
 }
 #[tauri::command]
 pub async fn gemini_disconnect() -> Result<(),String> {
@@ -372,13 +433,13 @@ fn media_parts(files:Vec<MediaInput>)->Result<Vec<serde_json::Value>,String>{
     Ok(parts)
 }
 fn invoke_gemini(prompt:String,files:Vec<MediaInput>,on_delta:impl FnMut(&str)->Result<(),String>,check_active:impl FnMut()->Result<(),String>)->Result<String,String>{
-    let config=read_config()?.ok_or("Configure a chave Gemini no painel.")?;
+    let config=active_config()?;
     generate_stream(config,prompt,files,on_delta,check_active)
 }
 fn retryable_status(status:reqwest::StatusCode)->bool{matches!(status.as_u16(),500|502|503|504)}
 fn generate_stream(config:GeminiConfig,prompt:String,files:Vec<MediaInput>,on_delta:impl FnMut(&str)->Result<(),String>,mut check_active:impl FnMut()->Result<(),String>)->Result<String,String>{
-    let GeminiConfig{api_key:key,model}=config;
-    if !valid_key(&key)||!valid_model(&model){return Err("Configuração Gemini inválida.".into());}
+    let model=&config.model;
+    if !config.valid(){return Err("Configuração Gemini inválida.".into());}
     if prompt.len()>MAX_PROMPT{return Err("Contexto muito grande. Reduza a pergunta.".into());}
     let mut parts=vec![serde_json::json!({"text":prompt})];
     parts.extend(media_parts(files)?);
@@ -400,8 +461,8 @@ fn generate_stream(config:GeminiConfig,prompt:String,files:Vec<MediaInput>,on_de
         check_active()?;
         let remaining=deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero(){return Err("Tempo limite da consulta Gemini excedido.".into());}
-        let response=client.post(format!("{API_BASE}/{model}:streamGenerateContent?alt=sse"))
-            .header("x-goog-api-key",key.as_str()).header("Content-Type","application/json").header("Accept","text/event-stream")
+        let response=config.apply(client.post(format!("{API_BASE}/{model}:streamGenerateContent?alt=sse")))
+            .header("Content-Type","application/json").header("Accept","text/event-stream")
             .timeout(remaining).body(body.clone()).send().map_err(|_|"Não foi possível consultar o Gemini.")?;
         let status=response.status();
         if !retryable_status(status)||attempt>=2{check_status(status)?;break response;}
@@ -497,7 +558,7 @@ mod tests{
         let legacy=decode_config(key).unwrap();
         assert_eq!(legacy.api_key,key);
         assert_eq!(legacy.model,DEFAULT_MODEL);
-        let config=GeminiConfig{api_key:key.into(),model:"gemini-test-pro".into()};
+        let config=GeminiConfig{api_key:key.into(),model:"gemini-test-pro".into(),google:None};
         let record=serde_json::to_string(&config).unwrap();
         let loaded=decode_config(&record).unwrap();
         assert_eq!(loaded.api_key,key);
@@ -573,7 +634,7 @@ mod tests{
         let model=std::env::var("SEVEN_MAIL_GEMINI_TEST_MODEL").ok().filter(|value|!value.trim().is_empty()).unwrap_or_else(||"gemini-3.5-flash-lite".to_owned());
         assert!(valid_key(&key),"Chave de teste inválida.");
         assert!(valid_model(&model),"Modelo de teste inválido.");
-        GeminiConfig{api_key:key,model}
+        GeminiConfig{api_key:key,model,google:None}
     }
     fn live_answer(config:GeminiConfig,prompt:&str,files:Vec<MediaInput>,expected:&str){
         let mut received=String::new();

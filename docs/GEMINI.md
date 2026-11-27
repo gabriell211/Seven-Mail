@@ -1,6 +1,6 @@
 # Google Gemini (integração opcional)
 
-O backend Rust utiliza a API REST Gemini via HTTPS; não há runtime adicional no instalador. A chave é fornecida pelo usuário no painel, validada por consulta de metadados do modelo e armazenada no cofre nativo. Não é login Google OAuth nem acesso à assinatura pessoal Gemini.
+O backend Rust utiliza a API REST Gemini via HTTPS; não há runtime adicional no instalador. A chave é fornecida pelo usuário no painel, validada por consulta de metadados do modelo e armazenada no cofre nativo. Também há autorização Google OAuth separada da conta de e-mail; nenhuma modalidade equivale à assinatura pessoal Gemini.
 
 1. Obtenha a chave em https://aistudio.google.com/apikey.
 2. Informe a chave e o modelo no painel e clique em Validar e salvar.
@@ -46,6 +46,10 @@ Validar geração real, compatibilidade do modelo escolhido e cotas com chave de
 
 O modelo 3.8 Flash retornou HTTP 503 mesmo após as tentativas limitadas. O workflow usa por padrão o Gemini 3.5 Flash-Lite, documentado como estável e multimodal (https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite), com teste textual antes das mídias para evitar solicitações desnecessárias quando o provedor está indisponível. A variável de repositório SEVEN_MAIL_GEMINI_TEST_MODEL continua podendo substituir esse modelo. Não há troca automática do modelo salvo pelo usuário nem aprovação de testes que não foram executados.
 
-### OAuth (proposta, ainda não implementada)
+### Entrar com Google (OAuth desktop)
 
-A API Gemini admite OAuth vinculado a projeto Google Cloud com API habilitada, autorização e atribuição de cota/faturamento. O login desktop deve usar navegador do sistema, callback loopback, PKCE e tokens protegidos no cofre nativo. O login de identidade por si só não concede acesso à API nem transfere a assinatura de consumidor Gemini. Referências: https://ai.google.dev/gemini-api/docs/oauth e https://developers.google.com/identity/protocols/oauth2/native-app. A configuração de OAuth de produção depende do projeto e credenciais próprios do Seven Mail; não reutilizar cookies ou credenciais de outro aplicativo.
+O botão usa o navegador padrão, callback loopback aleatório em 127.0.0.1, state e PKCE S256 nativos. Para uma conta Gmail selecionada, utiliza login_hint e confirma o endereço verificado pelo endpoint userinfo. Não reutiliza token Gmail nem solicita escopo de e-mail. O token de geração e refresh fica no registro nativo Gemini, separado do cofre de e-mail; a API recebe Bearer e x-goog-user-project. O modelo continua persistido. A autorização pode ser cancelada; desconectar remove a credencial local, não revoga toda a conta Google.
+
+Antes de distribuir, configure um projeto Cloud com Generative Language API habilitada e OAuth desktop, tela de consentimento, escopo generative-language.retriever, usuário autorizado e permissão serviceusage.services.use no projeto de cota. O usuário pode fornecer os dados desktop na configuração avançada; o build pode incluir SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID e SEVEN_MAIL_GEMINI_GOOGLE_PROJECT como padrões públicos, e opcionalmente SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_SECRET de cliente instalado (nunca um segredo de cliente web). Se não houver Client ID no build, a conta Gmail selecionada pode fornecer seu Client ID desktop existente. O login não garante cota ou assinatura de consumidor. A chave de API segue como alternativa. Não foi homologado com credenciais OAuth reais.
+
+Referências: https://ai.google.dev/gemini-api/docs/oauth e https://developers.google.com/identity/protocols/oauth2/native-app.

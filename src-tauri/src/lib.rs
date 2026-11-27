@@ -1,6 +1,7 @@
 mod app_lock;
 mod cloud_binding;
 mod gemini;
+mod gemini_google;
 mod credentials;
 mod dav_sync;
 mod dav_xml;
@@ -1498,6 +1499,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             gemini::gemini_status,
+            gemini::gemini_google_connect,
+            gemini::gemini_google_cancel,
             gemini::gemini_configure,
             gemini::gemini_set_model,
             gemini::gemini_list_models,
