@@ -28,8 +28,13 @@ test("storage connections use aligned tiles and locally bundled provider logos",
  assert.doesNotMatch(ui,/src=["']https?:/);
 });
 
-test("bundled Drive and OneDrive marks are real local files",()=>{
- const png=readFileSync(new URL("../public/providers/google-drive.png",import.meta.url));
- assert.equal(png.subarray(0,8).toString("hex"),"89504e470d0a1a0a");
+test("all bundled provider marks are real local files",()=>{
+ for (const name of ["google-drive.png","terabox.png"]) {
+  const png=readFileSync(new URL("../public/providers/"+name,import.meta.url));
+  assert.equal(png.subarray(0,8).toString("hex"),"89504e470d0a1a0a");
+  assert.equal(png.subarray(12,16).toString(),"IHDR");
+  assert.ok(png.readUInt32BE(16)>0 && png.readUInt32BE(16)<=4096);
+  assert.ok(png.readUInt32BE(20)>0 && png.readUInt32BE(20)<=4096);
+ }
  assert.match(read("public/providers/onedrive.svg"),/<svg\b/);
 });
