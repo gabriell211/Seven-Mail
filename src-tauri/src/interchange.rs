@@ -976,9 +976,12 @@ impl PstNamedIds {
 fn pst_optional_date(value: Option<&PropertyValue>) -> Option<String> {
     let Some(PropertyValue::Time(ticks)) = value else { return None; };
     // Outlook uses a far-future sentinel for unset dates.
-    if *ticks <= 0 || *ticks >= 2_650_467_744_000_000_000 { return None; }
+    if *ticks <= 0 { return None; }
     let seconds = ticks / 10_000_000 - 11_644_473_600;
-    chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, 0).map(|date| date.to_rfc3339())
+    let date = chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, 0)?;
+    use chrono::Datelike;
+    if date.year() >= 4501 { return None; }
+    Some(date.to_rfc3339())
 }
 
 fn pst_register_categories(paths: &AppPaths, names: &[String], existing: &mut std::collections::BTreeSet<String>) -> Result<(), String> {
@@ -1557,6 +1560,15 @@ mod pst_interop_tests {
             assert_eq!(decoded.bcc[0].email, "bcc@example.test");
         }
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn pst_named_dates_reject_missing_and_unset_values() {
+        assert!(pst_optional_date(None).is_none());
+        assert!(pst_optional_date(Some(&PropertyValue::Time(0))).is_none());
+        assert!(pst_optional_date(Some(&PropertyValue::Time(pst_filetime("4501-01-01T00:00:00Z")))).is_none());
+        let encoded = pst_filetime("2026-11-27T14:00:00Z");
+        assert_eq!(pst_optional_date(Some(&PropertyValue::Time(encoded))).as_deref(), Some("2026-11-27T14:00:00+00:00"));
     }
 
     #[test]
