@@ -18,3 +18,11 @@ A sincronização existente mantém o mesmo isolamento e consentimento. O nome c
 
 ## Próximas etapas
 Homologar consentimento real Google e Microsoft, renovar e desconectar; implementar snapshots criptografados, versão de esquema, restauração confirmada, isolamento de proprietário e tratamento de conflitos. Não enviar mensagens, anexos, senhas ou tokens a armazenamento externo até autorização específica. Não apresentar conexão como sincronização ativa.
+
+## Marcas dos provedores
+
+Arquivos oficiais para distribuição local, sem consultas a CDNs durante a utilização:
+- Google Drive: https://www.gstatic.com/images/branding/productlogos/drive_2026/v2/web-64dp/logo_drive_2026_color_2x_web_64dp.png (https://developers.google.com/workspace/drive/api/guides/branding).
+- OneDrive: https://www.microsoft.com/content/dam/microsoft/bade/images/icons/en-us/m365-app-icons-fy26/OneDrive-Icon-FY26.svg.
+- TeraBox: https://s5.teraboxcdn.com/common-static/favicon.ico (favicon da página oficial).
+As marcas identificam seus respectivos serviços e não representam endosso do Seven Mail. O layout apenas redimensiona preservando a proporção. A obtenção inicial dos arquivos é isolada em uma tarefa de CI; os arquivos serão versionados para que builds e execução sejam independentes das CDNs.

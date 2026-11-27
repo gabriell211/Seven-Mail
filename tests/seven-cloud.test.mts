@@ -18,3 +18,12 @@ test("Nuvem Seven hides infrastructure details and external authorization is sep
  assert.match(native,/credentials::store_scoped/);
  assert.doesNotMatch(native,/list_cached_messages|pushCloud|flush_outbox/);
 });
+
+test("storage connections use aligned tiles and locally bundled provider logos",()=>{
+ const ui=read("src/components/ExternalStoragePanel.tsx");
+ const css=read("src/styles.css");
+ assert.match(ui,/seven-storage-grid/);
+ assert.match(css,/grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+ for(const logo of ["google-drive.png","onedrive.svg","terabox.ico"])assert.ok(ui.includes("/providers/"+logo));
+ assert.doesNotMatch(ui,/src=["']https?:/);
+});
