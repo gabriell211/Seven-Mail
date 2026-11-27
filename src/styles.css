@@ -1009,3 +1009,9 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .mailbox-children .folder-organizer>.folder-actions{display:none}
 .mailbox-children .folder-organizer:hover>.folder-actions,.mailbox-children .folder-organizer:focus-within>.folder-actions{display:flex;position:absolute;right:0;top:100%;background:var(--solid);border:1px solid var(--line2);border-radius:8px;z-index:5;padding:3px;box-shadow:var(--shadow)}
 .mailbox-status{margin:6px 5px;color:var(--muted);font-size:11px;line-height:1.5}
+
+/* Seven Desk brand mark from the canonical website asset. */
+.seven-desk-meeting img{display:block;object-fit:contain;flex:none}
+.topbar-meeting{flex:none;min-height:38px;white-space:nowrap;gap:7px}
+.topbar-meeting span{font-size:12px}
+@media(max-width:1180px){.topbar-meeting{padding-inline:9px}.topbar-meeting span{display:none}}

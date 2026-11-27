@@ -941,7 +941,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
           <button className="secondary" onClick={()=>window.print()}><Icon name="note" size={15}/> Imprimir</button>
           <button className="secondary" onClick={()=>openMessageWindow(selected)}><Icon name="plus" size={15}/> Nova janela</button>
           <button className="secondary" onClick={()=>onCreateTaskFromMessage(selected)}><Icon name="check" size={15}/> Criar tarefa</button>
-          <button className="secondary" onClick={()=>onCreateEventFromMessage(selected)}><Icon name="calendar" size={15}/> Criar evento</button>
+          <button className="secondary seven-desk-meeting" onClick={()=>onCreateEventFromMessage(selected)}><img src="/integrations/seven-desk.svg" alt="" width={18} height={18}/> Reunião</button>
           <button className="secondary" onClick={()=>onExportEml(selected)}><Icon name="download" size={15}/> Salvar EML</button>
           <button className="secondary danger-lite" onClick={()=>{onUpdateMetadata(selected,{isPhishing:true});void act(selected.id,"spam");}}><Icon name="shield" size={15}/> Phishing</button>
           {isBlocked(selected)?<button className="secondary" onClick={()=>onReleaseSender(selected.from.email)}>Liberar remetente</button>:<button className="secondary" onClick={()=>onBlockSender(selected.from.email)}>Bloquear remetente</button>}
@@ -1333,6 +1333,7 @@ function UnlockedApp() {
   const launchMessageId = launchParams.get("message") ?? undefined;
   const launchAccountId = launchParams.get("account") ?? undefined;
   const [section,setSection] = useState<AppSection>("mail");
+  const [meetingDraft,setMeetingDraft]=useState<CalendarEvent|null>(null);
   const [accounts,setAccounts] = useState<AccountProfile[]>([]);
   const [activeId,setActiveId] = useState<string|undefined>(launchAccountId);
   const [messages,setMessages] = useState<MailMessage[]>([]);
@@ -2430,33 +2431,34 @@ function UnlockedApp() {
     window.alert("Redirecionamento adicionado à caixa de saída.");
   }
 
-  async function createEventFromMessage(message: MailMessage) {
-    const start = new Date(Date.now()+60*60*1000);
-    const end = new Date(start.getTime()+60*60*1000);
-    const event: CalendarEvent = {
+  function startMeeting(message?:MailMessage) {
+    const localInput=(minutes:number)=>{
+      const date=new Date(Date.now()+minutes*60_000);
+      return new Date(date.getTime()-date.getTimezoneOffset()*60_000).toISOString().slice(0,16);
+    };
+    const participants=message?.from.email?[message.from.email]:[];
+    setMeetingDraft({
       id:crypto.randomUUID(),
-      title:message.subject || "Evento a partir de e-mail",
-      description:`Criado a partir de e-mail de ${message.from.name || message.from.email}.\n\n${message.preview}`,
+      title:message?.subject||"",
+      description:message?`Criado a partir de e-mail de ${message.from.name||message.from.email}.\n\n${message.preview}`:"",
       location:"",
-      startAt:start.toISOString(),
-      endAt:end.toISOString(),
+      startAt:localInput(60),
+      endAt:localInput(120),
       allDay:false,
-      color:"#3d83f6",
-      participants:[message.from.email],
-      organizer:message.from.email,
-      invitationMessageId:message.id,
-      keepInvitationInInbox:true,
-      attendeeResponse:"needs-action",
-    };
-    const document: WorkspaceDocument<CalendarEvent> = {
-      id:event.id,
-      kind:"calendar",
-      updatedAt:new Date().toISOString(),
-      payload:event,
-    };
-    await bridge.upsertWorkspace(document);
-    void pushCloudDocument(document).catch(() => undefined);
+      color:"#7868ff",
+      participants,
+      requiredParticipants:participants,
+      optionalParticipants:[],
+      calendarId:"local",
+      recurrence:"none",
+      status:"confirmed",
+      timezone:settings.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
     setSection("calendar");
+  }
+
+  function createEventFromMessage(message:MailMessage) {
+    startMeeting(message);
   }
 
   async function createTaskFromMessage(message: MailMessage, navigate = true) {
@@ -3644,6 +3646,7 @@ function UnlockedApp() {
     <main className="main" id="seven-mail-main" tabIndex={-1}>
       <header className="topbar" data-tauri-drag-region>
         <div className="product"><strong>Seven Mail</strong><span>{NAV.find(n=>n.id===section)?.label}</span></div>
+        {section==="mail"&&<button type="button" className="secondary seven-desk-meeting topbar-meeting" onClick={()=>startMeeting()} title="Criar uma reunião no calendário" aria-label="Nova reunião"><img src="/integrations/seven-desk.svg" alt="" width={20} height={20}/><span>Nova reunião</span></button>}
         <label className="search"><Icon name="search" size={17}/><input list="seven-mail-search-suggestions" value={search} onFocus={()=>setGlobalSearchOpen(true)} onChange={e=>{setSearch(e.target.value);setGlobalSearchOpen(true);}} onKeyDown={e=>{if(e.key==="Enter"){commitSearchHistory();setGlobalSearchOpen(true);}else if(e.key==="Escape"){setGlobalSearchOpen(false);}}} placeholder="Pesquisar em todo o Seven Mail..."/><kbd>Ctrl K</kbd></label><datalist id="seven-mail-search-suggestions">{searchSuggestions.map((value)=><option value={value} key={value}/>)}</datalist>{section==="mail"&&search.trim()&&<button className="icon-button save-search-button" title="Salvar pesquisa" aria-label="Salvar pesquisa" onClick={()=>void saveCurrentSearch()}><Icon name="star" size={17}/></button>}
         <div className="top-actions">{lockConfigured&&<button className="icon-button" title="Bloquear agora" onClick={()=>void lockNativeApp().catch((error)=>window.alert(String(error)))}><Icon name="lock" size={17}/></button>}<span className={"sync "+syncState} role="status" aria-live="polite" aria-atomic="true" title={syncError??(lastSyncAt?`Última sincronização confirmada: ${new Date(lastSyncAt).toLocaleString()}`:"Nenhuma sincronização confirmada nesta sessão")}><i aria-hidden="true"/> {profileAccounts.length===0?"Sem conta":syncState==="syncing"?"Sincronizando":syncState==="error"?"Falha na sincronização":syncState==="offline"?"Offline":syncState==="synced"?(lastSyncAt?`Sincronizado ${new Date(lastSyncAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}`:"Sincronizado"):"Não verificado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
         {globalSearchOpen&&search.trim()&&<div className="global-search-popover">
@@ -3655,7 +3658,7 @@ function UnlockedApp() {
       </header>
       <div className="content" role="region" aria-label={NAV.find((item)=>item.id===section)?.label??"Conteúdo"}>
         {section==="mail"&&<MailView accounts={profileAccounts} messages={filtered} unfilteredMessages={scoped} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onForwardAsAttachment={(message)=>void forwardAsAttachment(message)} onComposeWithAttachments={(message)=>void composeWithAttachments(message)} onResendMessage={(message)=>void resendMessage(message)} onRedirectMessage={(message)=>void redirectMessage(message)} onRecallMessage={(message)=>void recallMessage(message)} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onCreateSubfolder={activeAccount?(folder)=>void createCustomFolder(folder):undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onMoveToAccount={(message,targetAccountId)=>void moveMessageAcrossAccounts(message,targetAccountId)} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onIgnoreConversation={(message)=>void ignoreConversation(message)} onSetSenderCleanup={setSenderCleanup} onAllowRemoteContent={(sender)=>setSettings((current)=>({...current,remoteContentAllowedSenders:[...new Set([...(current.remoteContentAllowedSenders??[]),sender.toLocaleLowerCase("pt-BR")])]}))} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={next=>selectAccountFolder(activeAccount?.id??"__all__",next)} onAccountFolderChange={selectAccountFolder} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={{...settings,mailPageSize:settings.memorySaverEnabled?25:(settings.mailPageSize??50)}}/>} 
-        {section==="calendar"&&<PersistentCalendarView accounts={profileAccounts} settings={settings}/>} 
+        {section==="calendar"&&<PersistentCalendarView accounts={profileAccounts} settings={settings} initialMeeting={meetingDraft} onMeetingOpened={()=>setMeetingDraft(null)}/>} 
         {section==="people"&&<PersistentPeopleView query={search} accounts={profileAccounts}/>}
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
         {section==="notes"&&<PersistentNotesView query={search}/>}

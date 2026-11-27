@@ -185,11 +185,14 @@ function Empty({ icon, title, text }: { icon: IconName; title: string; text: str
   );
 }
 
-export function PersistentCalendarView({ accounts = [], settings }: { accounts?: AccountProfile[]; settings: AppSettings }) {
+export function PersistentCalendarView({ accounts = [], settings, initialMeeting, onMeetingOpened }: { accounts?: AccountProfile[]; settings: AppSettings; initialMeeting?: CalendarEvent|null; onMeetingOpened?:()=>void }) {
   const store = useWorkspace<CalendarEvent>("calendar");
   const calendars = useWorkspace<CalendarListItem>("calendar-list");
   const extensions = useWorkspace<ExtensionManifestItem>("extension");
-  const [editing, setEditing] = useState<CalendarEvent | null>(null);
+  const [editing, setEditing] = useState<CalendarEvent | null>(initialMeeting??null);
+  useEffect(()=>{
+    if(initialMeeting){setEditing(initialMeeting);onMeetingOpened?.();}
+  },[initialMeeting,onMeetingOpened]);
   const [editingOccurrence,setEditingOccurrence]=useState<{sourceId:string;originalStart:string}|null>(null);
   const [cursor, setCursor] = useState(() => new Date());
   const [view, setView] = useState<"day" | "three" | "week" | "workweek" | "month" | "agenda" | "side">("month");
