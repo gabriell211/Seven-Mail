@@ -499,15 +499,11 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
   useEffect(()=>{try{localStorage.setItem("seven-mail:expanded-mailboxes",JSON.stringify(expandedMailboxes));}catch{/* optional preference */}},[expandedMailboxes]);
   const toggleMailbox=(id:string)=>setExpandedMailboxes(current=>current.includes(id)?current.filter(item=>item!==id):[...current,id]);
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
-  const [advancedFiltersOpen,setAdvancedFiltersOpen]=useState(false);
   const [readingToolsOpen,setReadingToolsOpen]=useState(false);
   useEffect(()=>{setReadingToolsOpen(false);},[selectedId]);
   const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread"|"size"|"status">("newest");
   const [focusTab,setFocusTab] = useState<InboxTab>("all");
   const [conversationView,setConversationView] = useState(false);
-  const [periodFilter,setPeriodFilter] = useState<"all"|"today"|"7d"|"30d">("all");
-  const [senderFilter,setSenderFilter] = useState("");
-  const [priorityFilter,setPriorityFilter] = useState<"all"|"low"|"normal"|"high">("all");
   const [visibleCount,setVisibleCount] = useState<number>(settings.mailPageSize ?? 50);
   const [details,setDetails] = useState<{message:MailMessage;tab:"attachments"|"headers"|"source"}|null>(null);
   const [providerPolicy,setProviderPolicy] = useState<{sensitivityLabelId?:string;canForward:boolean;canCopy:boolean;reactionsAllowed:boolean;rights:string[]} | undefined>();
@@ -530,13 +526,6 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
   const cachedFolderCount=messages.filter(message=>message.folder===folder.name).length;
   const baseFolderMessages = messages.filter(message=>{
     if (message.folder!==folder.name || !matchesQuickFilter(message,quickFilter)) return false;
-    if(senderFilter&&message.from.email.toLocaleLowerCase("pt-BR")!==senderFilter) return false;
-    if(priorityFilter!=="all"&&(message.importance??"normal")!==priorityFilter) return false;
-    if(periodFilter!=="all"){
-      const age=now-new Date(message.receivedAt).getTime();
-      const max=periodFilter==="today"?24*60*60*1000:periodFilter==="7d"?7*24*60*60*1000:30*24*60*60*1000;
-      if(!Number.isFinite(age)||age<0||age>max) return false;
-    }
     if (message.snoozedUntil) {
       const until = new Date(message.snoozedUntil).getTime();
       if (Number.isFinite(until) && until > now) return false;
@@ -644,8 +633,6 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
   const favoriteFolderPaths=settings.favoriteFolders?.[folderPrefKey]??[];
   const favoriteFolders=visibleFolders.filter((item)=>favoriteFolderPaths.includes(item.path));
   const favoriteCategories=categories.filter((item)=>item.favorite);
-  const senderOptions=[...new Map(messages.map((message)=>[message.from.email.toLocaleLowerCase("pt-BR"),message.from])).values()]
-    .sort((a,b)=>(a.name||a.email).localeCompare(b.name||b.email));
   const messageGroups=useMemo(()=>{
     const today=new Date();
     const todayStart=new Date(today.getFullYear(),today.getMonth(),today.getDate()).getTime();
@@ -852,7 +839,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
     </div>
     <div className="ribbon-group">
       <button type="button" className="ribbon-command" onClick={onOpenPeople}><Icon name="people" size={18}/><span>Pesquisar pessoas</span></button>
-      <button type="button" className="ribbon-command ribbon-icon" title="Filtros de mensagens" aria-label="Filtros de mensagens" aria-expanded={advancedFiltersOpen} onClick={()=>setAdvancedFiltersOpen(value=>!value)}><Icon name="filter" size={18}/></button>
+      
     </div>
     <div className="ribbon-group">
       <button type="button" className="ribbon-command" disabled={accounts.length===0||syncing} onClick={onRefreshAll}><Icon name="refresh" size={18}/><span>{syncing?"Sincronizando…":"Enviar/Receber contas"}</span></button>
@@ -896,7 +883,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
     <section className="message-pane">
       <header className="pane-header">
         <div><span className="eyebrow">{folder.name.toUpperCase()}</span><h2>{folder.name}</h2></div>
-        <div className="pane-tools">{onImportEml&&activeAccount&&<button className="icon-button" title="Importar EML ou MSG" aria-label="Importar EML ou MSG" onClick={onImportEml}><Icon name="upload" size={16}/></button>}<button className={conversationView?"icon-button active":"icon-button"} title="Visualização por conversa" aria-label="Alternar visualização por conversa" onClick={()=>setConversationView(value=>!value)}><Icon name="people" size={16}/></button><select className="mail-sort" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Ordenar mensagens"><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="sender">Remetente</option><option value="subject">Assunto</option><option value="size">Tamanho</option><option value="status">Status</option><option value="unread">Não lidas primeiro</option></select><div className="icon-group"><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button" title="Filtros de mensagens" aria-label="Filtros de mensagens" aria-expanded={advancedFiltersOpen} onClick={()=>setAdvancedFiltersOpen(value=>!value)}><Icon name="filter" size={16}/></button></div></div>
+        <div className="pane-tools">{onImportEml&&activeAccount&&<button className="icon-button" title="Importar EML ou MSG" aria-label="Importar EML ou MSG" onClick={onImportEml}><Icon name="upload" size={16}/></button>}<button className={conversationView?"icon-button active":"icon-button"} title="Visualização por conversa" aria-label="Alternar visualização por conversa" onClick={()=>setConversationView(value=>!value)}><Icon name="people" size={16}/></button><select className="mail-sort" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Ordenar mensagens"><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="sender">Remetente</option><option value="subject">Assunto</option><option value="size">Tamanho</option><option value="status">Status</option><option value="unread">Não lidas primeiro</option></select><div className="icon-group"><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button></div></div>
       </header>
       {folder.role==="inbox"&&settings.focusInboxEnabled&&<div className="segmented focus-tabs" role="group" aria-label="Tipo de caixa de entrada">{([["all","Todas"],["focused","Prioritária"],["other","Outros"]] as const).map(([tab,label])=><button key={tab} className={focusTab===tab?"active":""} aria-pressed={focusTab===tab} onClick={()=>setFocusTab(tab)}>{label}</button>)}</div>}
       <div className="segmented mail-filters">
@@ -906,13 +893,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
         <button className={quickFilter==="pinned"?"active":""} onClick={()=>setQuickFilter("pinned")}>Fixadas</button>
         <button className={quickFilter==="attachments"?"active":""} onClick={()=>setQuickFilter("attachments")}>Anexos</button>
       </div>
-      <div className="mail-advanced-filters" hidden={!advancedFiltersOpen&&periodFilter==="all"&&!senderFilter&&priorityFilter==="all"}>
-        <select value={periodFilter} onChange={(event)=>setPeriodFilter(event.target.value as typeof periodFilter)} aria-label="Filtrar por período"><option value="all">Qualquer período</option><option value="today">Últimas 24h</option><option value="7d">Últimos 7 dias</option><option value="30d">Últimos 30 dias</option></select>
-        <select value={senderFilter} onChange={(event)=>setSenderFilter(event.target.value)} aria-label="Filtrar por remetente"><option value="">Qualquer remetente</option>{senderOptions.map((sender)=><option key={sender.email} value={sender.email.toLocaleLowerCase("pt-BR")}>{sender.name||sender.email}</option>)}</select>
-        <select value={priorityFilter} onChange={(event)=>setPriorityFilter(event.target.value as typeof priorityFilter)} aria-label="Filtrar por prioridade"><option value="all">Qualquer prioridade</option><option value="high">Alta</option><option value="normal">Normal</option><option value="low">Baixa</option></select>
-        {(periodFilter!=="all"||senderFilter||priorityFilter!=="all")&&<button className="ghost" onClick={()=>{setPeriodFilter("all");setSenderFilter("");setPriorityFilter("all");}}>Limpar</button>}
-      </div>
-      {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : folderMessages.length===0 && (folder.role!=="drafts" || localDrafts.length===0) ? <div className="empty-state small"><div className="empty-symbol"><Icon name={folder.role==="drafts"?"draft":"inbox"} size={30}/></div><h3>{syncing&&cachedFolderCount===0?"Sincronizando mensagens…":cachedFolderCount>0?"Nenhuma mensagem neste filtro":folder.role==="drafts"?"Nenhum rascunho":"Tudo limpo"}</h3><p>{cachedFolderCount>0?`${cachedFolderCount} mensagem(ns) nesta pasta. Altere os filtros para exibi-las.`:syncing?"Os e-mails serão exibidos assim que forem recebidos.":folder.role==="drafts"?"Mensagens em edição aparecerão aqui automaticamente.":"As mensagens sincronizadas aparecerão aqui."}</p>{cachedFolderCount>0&&<button className="secondary" onClick={()=>{setFocusTab("all");setQuickFilter("all");setPeriodFilter("all");setSenderFilter("");setPriorityFilter("all");}}>Mostrar todas</button>}</div> :
+      {accounts.length===0 ? <EmptyInbox onAdd={onAdd}/> : folderMessages.length===0 && (folder.role!=="drafts" || localDrafts.length===0) ? <div className="empty-state small"><div className="empty-symbol"><Icon name={folder.role==="drafts"?"draft":"inbox"} size={30}/></div><h3>{syncing&&cachedFolderCount===0?"Sincronizando mensagens…":cachedFolderCount>0?"Nenhuma mensagem neste filtro":folder.role==="drafts"?"Nenhum rascunho":"Tudo limpo"}</h3><p>{cachedFolderCount>0?`${cachedFolderCount} mensagem(ns) nesta pasta. Altere os filtros para exibi-las.`:syncing?"Os e-mails serão exibidos assim que forem recebidos.":folder.role==="drafts"?"Mensagens em edição aparecerão aqui automaticamente.":"As mensagens sincronizadas aparecerão aqui."}</p>{cachedFolderCount>0&&<button className="secondary" onClick={()=>{setFocusTab("all");setQuickFilter("all");}}>Mostrar todas</button>}</div> :
         <>
           {folder.role==="drafts"&&<div className="draft-list" role="list" aria-label="Rascunhos locais">{localDrafts.map(draft=><button key={draft.id} className="message local-draft-message" onClick={()=>onOpenDraft(draft)}>
             <span className="avatar draft-avatar" aria-hidden="true"><Icon name="draft" size={15}/></span>
