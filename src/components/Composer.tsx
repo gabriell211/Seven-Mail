@@ -795,19 +795,15 @@ export function Composer({
                 onChange={(event) => {
                   const next=accounts.find((item)=>item.id===event.target.value);
                   if(!next)return;
-                  setDraft(current=>{
-                    const old=defaultSignature(signatures,current.accountId);
-                    const nextSignature=defaultSignature(signatures,next.id);
-                    const oldHtml=signatureHtml(old);
-                    const oldText=old?.bodyText.trim()??"";
-                    const textOnlySignature=current.bodyText.trim()===oldText;
-                    const htmlOnlySignature=!current.bodyHtml.trim()||current.bodyHtml===`<br><br>${oldHtml}`;
-                    if(textOnlySignature&&htmlOnlySignature)return {...current,accountId:next.id,fromAddress:next.email,bodyText:nextSignature?.bodyText??"",bodyHtml:current.mode==="rich"?signatureHtml(nextSignature):""};
-                    // Do not silently send the previous account's signature with a different sender.
-                    const text=oldText&&current.bodyText.trimEnd().endsWith(oldText)?current.bodyText.trimEnd().slice(0,-oldText.length).trimEnd():current.bodyText;
-                    const html=oldHtml&&current.bodyHtml.endsWith(oldHtml)?current.bodyHtml.slice(0,-oldHtml.length):current.bodyHtml;
-                    return {...current,accountId:next.id,fromAddress:next.email,bodyText:text,bodyHtml:html};
-                  });
+                  const previous=defaultSignature(signatures,draft.accountId);
+                  const previousHtml=signatureHtml(previous);
+                  const previousText=previous?.bodyText.trim()??"";
+                  const nextSignature=defaultSignature(signatures,next.id);
+                  const onlySignature=draft.bodyText.trim()===previousText&&(!draft.bodyHtml.trim()||draft.bodyHtml===`<br><br>${previousHtml}`||draft.bodyHtml===previousHtml);
+                  if(!onlySignature&&!window.confirm("Trocar a conta remetente? Revise a assinatura e o conteúdo antes de enviar."))return;
+                  setDraft(current=>onlySignature
+                    ? {...current,accountId:next.id,fromAddress:next.email,bodyText:nextSignature?.bodyText??"",bodyHtml:current.mode==="rich"?signatureHtml(nextSignature):""}
+                    : {...current,accountId:next.id,fromAddress:next.email});
                 }}
                 disabled={accounts.length === 0}
               >

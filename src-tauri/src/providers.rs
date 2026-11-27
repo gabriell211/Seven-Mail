@@ -15,11 +15,10 @@ use lettre::{
 use std::{fs, net::IpAddr, time::Duration};
 use base64::Engine as _;
 
-// Convert bounded raster data URLs into real MIME inline attachments. Outlook
-// and other clients do not reliably render data URLs in delivered mail.
+// Convert bounded raster data URLs to MIME inline attachments.
 fn embed_signature_images(html: &str) -> Result<(String, Vec<SinglePart>), String> {
     static IMAGE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(r#"(?i)(<img\b[^>]*?\bsrc\s*=\s*["'])data:image/(png|jpeg|gif);base64,([A-Za-z0-9+/]+={0,2})(["'])"#).expect("static image regex")
+        regex::Regex::new(r#"(?i)(<img\b[^>]*?\s+src\s*=\s*["'])data:image/(png|jpeg|gif);base64,([A-Za-z0-9+/]+={0,2})(["'])"#).expect("static image regex")
     });
     let mut output=String::with_capacity(html.len());
     let mut parts=Vec::new();

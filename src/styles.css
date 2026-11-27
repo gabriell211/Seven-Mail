@@ -1065,7 +1065,7 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .command-menu-panel>button.active{background:var(--accent-soft);color:var(--accent)}
 .reading-command-strip>button:focus-visible,.command-menu-trigger:focus-visible,.ribbon-command:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 
-/* Outlook-inspired signature editor, with independent defaults and bounded modal. */
+/* Rich signature editor with independent defaults and bounded modal. */
 .signature-panel{width:100%}
 .signature-panel-head>span,.signature-main b{font-size:13px}
 .signature-main small,.signature-main p,.signature-empty{font-size:12px}
