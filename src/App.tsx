@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { applyTheme, nextTheme, resolveTheme } from "./lib/theme";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -1423,6 +1424,17 @@ function UnlockedApp() {
   const [settings,setSettings] = useState<AppSettings>(()=>{
     try { return {...DEFAULT_SETTINGS,...JSON.parse(localStorage.getItem("seven-mail:settings")||"{}")}; } catch { return DEFAULT_SETTINGS; }
   });
+  const [systemDark,setSystemDark]=useState(()=>window.matchMedia("(prefers-color-scheme: dark)").matches);
+  useEffect(()=>{
+    const media=window.matchMedia("(prefers-color-scheme: dark)");
+    const update=()=>setSystemDark(media.matches);
+    update();media.addEventListener("change",update);
+    return()=>media.removeEventListener("change",update);
+  },[]);
+  const effectiveTheme=resolveTheme(settings.theme,systemDark);
+  useEffect(()=>{applyTheme(effectiveTheme,systemDark);},[effectiveTheme,systemDark]);
+  const toggleTheme=()=>setSettings(current=>({...current,theme:nextTheme(current.theme,systemDark)}));
+
 
   const navItems=useMemo(()=>{
     const order=settings.navOrder??NAV.map((item)=>item.id);
@@ -2806,8 +2818,6 @@ function UnlockedApp() {
   useEffect(()=>{
     localStorage.setItem("seven-mail:settings",JSON.stringify(settings));
     const root=document.documentElement;
-    const theme = settings.theme==="system" ? (matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light") : settings.theme;
-    root.dataset.theme=theme;
     root.dataset.density=settings.compact?"compact":"comfortable";
     root.dataset.contrast=settings.highContrast?"high":"normal";
     root.dataset.motion=settings.reduceMotion?"reduce":"full";
@@ -3690,6 +3700,7 @@ function UnlockedApp() {
         <label className="search"><Icon name="search" size={17}/><input list="seven-mail-search-suggestions" value={search} onFocus={()=>setGlobalSearchOpen(true)} onChange={e=>{setSearch(e.target.value);setGlobalSearchOpen(true);}} onKeyDown={e=>{if(e.key==="Enter"){commitSearchHistory();setGlobalSearchOpen(true);}else if(e.key==="Escape"){setGlobalSearchOpen(false);}}} placeholder="Pesquisar em todo o Seven Mail..."/><kbd>Ctrl K</kbd></label><datalist id="seven-mail-search-suggestions">{searchSuggestions.map((value)=><option value={value} key={value}/>)}</datalist>{section==="mail"&&search.trim()&&<button className="icon-button save-search-button" title="Salvar pesquisa" aria-label="Salvar pesquisa" onClick={()=>void saveCurrentSearch()}><Icon name="star" size={17}/></button>}
         {lockConfigured&&<div className="top-actions">{lockConfigured&&<button className="icon-button" title="Bloquear agora" onClick={()=>void lockNativeApp().catch((error)=>window.alert(String(error)))}><Icon name="lock" size={17}/></button>}</div>}
         <span className="mail-sync-announcement" role="status" aria-live="polite" aria-atomic="true" title={syncError??(lastSyncAt?`Última sincronização confirmada: ${new Date(lastSyncAt).toLocaleString()}`:"Nenhuma sincronização confirmada nesta sessão")}>{profileAccounts.length===0?"Sem conta":syncState==="syncing"?"Sincronizando":syncState==="error"?"Falha na sincronização":syncState==="offline"?"Offline":syncState==="synced"?(lastSyncAt?`Sincronizado ${new Date(lastSyncAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}`:"Sincronizado"):"Não verificado"}</span>
+        <button type="button" className="icon-button theme-toggle" title={effectiveTheme==="dark"?"Ativar tema claro":"Ativar tema escuro"} aria-label="Alternar tema escuro" aria-pressed={effectiveTheme==="dark"} onClick={toggleTheme}><Icon name={effectiveTheme==="dark"?"sun":"moon"} size={19}/></button>
         <button type="button" className="gemini-trigger" aria-label="Google Gemini" title="Google Gemini" aria-expanded={geminiOpen} aria-haspopup="dialog" disabled={geminiConnectionMode!==null} onClick={()=>{if(geminiOpen)setGeminiOpen(false);else setGeminiConnectionMode("connect");}}><GeminiMark/><span>Gemini</span></button>
         {globalSearchOpen&&search.trim()&&<div className="global-search-popover">
           <header><span><Icon name="search" size={15}/><b>Pesquisa global</b></span><button onClick={()=>setGlobalSearchOpen(false)}><Icon name="x" size={13}/></button></header>
