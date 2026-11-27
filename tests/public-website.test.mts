@@ -11,7 +11,7 @@ test("public Seven Mail pages have local navigation, branding and canonical URLs
   assert.match(html,/rel="canonical" href="https:\/\/gabriell211\.github\.io\/Seven-Mail\//);
   assert.match(html,/href="privacy\.html"/);
   assert.match(html,/href="terms\.html"/);
-  assert.match(html,/href="mailto:suporte\.santaprint@gmail\.com"/);
+  assert.match(html,/href="mailto:barcelosgabriel211@gmail\.com"/);
   assert.doesNotMatch(html,/<script\b|<iframe\b|<form\b/i);
   for(const match of html.matchAll(/(?:href|src)="([^"]+)"/g)){
     const target=match[1];
