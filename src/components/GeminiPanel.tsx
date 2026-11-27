@@ -1,7 +1,8 @@
 import { useEffect,useRef,useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { Icon } from "../icons";
+import { CreativePreview,GeminiMarkdown,type CreativeMode,type CreativeResult } from "./GeminiCreative";
+import type { SignatureItem } from "../types";
 import { bridge } from "../lib/bridge";
 import type { AccountProfile,MailMessage } from "../types";
 import type { ComposeDraft } from "./Composer";
@@ -45,9 +46,8 @@ function AttachmentPreview({item,onRemove,disabled}:{item:SelectedFile;onRemove:
   },[item]);
   return <div className="gemini-attachment">{url&&<img src={url} alt="" loading="lazy"/>}<span><b>{item.file.name}</b><small>{Math.max(1,Math.ceil(item.file.size/1024))} KiB</small></span><button type="button" className="icon-button" title="Remover arquivo" aria-label={`Remover ${item.file.name}`} disabled={disabled} onClick={onRemove}><Icon name="x" size={15}/></button></div>;
 }
-const docs="https://aistudio.google.com/apikey";
 export function GeminiMark(){return <img className="gemini-brand-mark" src="/providers/gemini.svg" width={21} height={21} alt="" aria-hidden="true"/>}
-export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOpen}:{accounts:AccountProfile[];initialAccountId?:string;onClose:()=>void;onDraft:(draft:ComposeDraft)=>void;composeOpen:boolean}){
+export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOpen,onSaveSignature,onConnectionRequired,onChangeKey,preferencesRequest}:{accounts:AccountProfile[];initialAccountId?:string;onClose:()=>void;onDraft:(draft:ComposeDraft)=>void;composeOpen:boolean;onSaveSignature:(signature:SignatureItem)=>Promise<void>;onConnectionRequired:()=>void;onChangeKey:()=>void;preferencesRequest:number}){
   const [accountId,setAccountId]=useState(initialAccountId??accounts[0]?.id??"");
   const grantRef=useRef<Grant|null>(null);
   const alive=useRef(true);
@@ -55,6 +55,8 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   const [messageId,setMessageId]=useState("");
   const [history,setHistory]=useState<Turn[]>([]);
   const [question,setQuestion]=useState("");
+  const [creativeMode,setCreativeMode]=useState<CreativeMode>("chat");
+  const [creativeResult,setCreativeResult]=useState<CreativeResult|null>(null);
   const [busy,setBusy]=useState(false);
   const [streaming,setStreaming]=useState(false);
   const [partial,setPartial]=useState("");
@@ -62,14 +64,6 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   const [error,setError]=useState("");
   const [answer,setAnswer]=useState<Answer|null>(null);
   const [configured,setConfigured]=useState(false);
-  const [authMode,setAuthMode]=useState<GeminiStatus["authMode"]>("none");
-  const [googleEmail,setGoogleEmail]=useState("");
-  const [googleProject,setGoogleProject]=useState("");
-  const [googleClientId,setGoogleClientId]=useState("");
-  const [googleClientSecret,setGoogleClientSecret]=useState("");
-  const [googleConnecting,setGoogleConnecting]=useState(false);
-  const googleAttempt=useRef<string|null>(null);
-  const [apiKey,setApiKey]=useState("");
   const [settingsOpen,setSettingsOpen]=useState(false);
   const settingsButton=useRef<HTMLButtonElement>(null);
   const settingsTitle=useRef<HTMLHeadingElement>(null);
@@ -95,9 +89,11 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   useEffect(()=>{
     alive.current=true;
     let active=true;
-    void invoke<GeminiStatus>("gemini_status").then(value=>{if(active){setConfigured(value.configured);setSettingsOpen(!value.configured);setModel(value.selectedModel);setSelectedModel(value.selectedModel);setAuthMode(value.authMode);setGoogleEmail(value.googleEmail??"");setGoogleProject(value.googleProject??"");}}).catch(reason=>{if(active)setError(String(reason));}).finally(()=>{if(active)setLoadingConfig(false);});
-    return()=>{active=false;alive.current=false;requestActive.current=false;const pending=googleAttempt.current;googleAttempt.current=null;if(pending)void invoke("gemini_google_cancel",{attemptId:pending}).catch(()=>{});const token=grantRef.current?.token;grantRef.current=null;if(token)void invoke("gemini_revoke",{token}).catch(()=>{});};
-  },[]);
+    void invoke<GeminiStatus>("gemini_status").then(value=>{if(active){const ready=value.configured&&value.authMode==="api_key";if(!ready){onConnectionRequired();return;}setConfigured(true);setModel(value.selectedModel);setSelectedModel(value.selectedModel);}}).catch(()=>{if(active)onConnectionRequired();}).finally(()=>{if(active)setLoadingConfig(false);});
+    return()=>{active=false;alive.current=false;requestActive.current=false;const token=grantRef.current?.token;grantRef.current=null;if(token)void invoke("gemini_revoke",{token}).catch(()=>{});};
+  },[onConnectionRequired]);
+  const lastPreferences=useRef(preferencesRequest);
+  useEffect(()=>{if(lastPreferences.current!==preferencesRequest){lastPreferences.current=preferencesRequest;setSettingsOpen(true);}},[preferencesRequest]);
   useEffect(()=>{if(!settingsOpen)bottom.current?.scrollIntoView({block:"nearest"});},[history,busy,partial,settingsOpen]);
   useEffect(()=>{if(settingsOpen){settingsScroll.current?.scrollTo({top:0});settingsTitle.current?.focus();}},[settingsOpen]);
   useEffect(()=>{
@@ -108,7 +104,7 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   },[accountId,readable]);
   function closeSettings(){
     if(busy)return;
-    setApiKey("");setGoogleClientSecret("");setModel(selectedModel);
+    setModel(selectedModel);
     setModelStatus("");setError("");if(!configured){onClose();return;}setSettingsOpen(false);
     settingsButton.current?.focus();
   }
@@ -119,7 +115,7 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   function newConversation(){
     if(busy||!configured)return;
     if(settingsOpen)closeSettings();
-    setFiles([]);setHistory([]);setAnswer(null);setQuestion("");setError("");
+    setFiles([]);setHistory([]);setAnswer(null);setCreativeResult(null);setQuestion("");setError("");
   }
   function changeContext(value:boolean){
     if(includeMail===value)return;
@@ -141,37 +137,14 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   }
   async function revoke(){
     const token=grantRef.current?.token;
-    grantRef.current=null;setFiles([]);setIncludeMail(true);setPartial("");setHistory([]);setAnswer(null);setMessageId("");setSearch("");setQuestion("");setReplyMode(false);
+    grantRef.current=null;setCreativeResult(null);setFiles([]);setIncludeMail(true);setPartial("");setHistory([]);setAnswer(null);setMessageId("");setSearch("");setQuestion("");setReplyMode(false);
     if(token)await invoke("gemini_revoke",{token}).catch(()=>{});
   }
-  async function connectGoogle(){
-    if(busy||loadingConfig||!model.trim())return;
-    const attemptId=crypto.randomUUID();googleAttempt.current=attemptId;
-    setBusy(true);setGoogleConnecting(true);setError("");
-    try{
-      await invoke("gemini_google_connect",{attemptId,accountId:account?.provider==="gmail"?account.id:null,clientId:googleClientId.trim(),clientSecret:googleClientSecret,project:googleProject.trim(),model:model.trim()});
-      if(!alive.current||googleAttempt.current!==attemptId)return;
-      const value=await invoke<GeminiStatus>("gemini_status");
-      if(!alive.current||googleAttempt.current!==attemptId)return;
-      await revoke();setConfigured(value.configured);setAuthMode(value.authMode);setGoogleEmail(value.googleEmail??"");setGoogleProject(value.googleProject??"");setSelectedModel(value.selectedModel);setModel(value.selectedModel);setModels([]);setModelStatus("Conta Google conectada.");setSettingsOpen(!value.configured);
-    }catch(reason){if(alive.current)setError(String(reason));}
-    finally{googleAttempt.current=null;if(alive.current){setGoogleClientSecret("");setGoogleConnecting(false);setBusy(false);}}
-  }
-  function cancelGoogle(){
-    const attemptId=googleAttempt.current;if(attemptId)void invoke("gemini_google_cancel",{attemptId}).catch(reason=>setError(String(reason)));
-  }
-  async function configure(){
-    if(busy||loadingConfig||!apiKey.trim()||!model.trim())return;
-    setBusy(true);setError("");
-    try{await invoke("gemini_configure",{apiKey:apiKey.trim(),model:model.trim()});if(alive.current){await revoke();setConfigured(true);setAuthMode("api_key");setGoogleEmail("");setSelectedModel(model.trim());setModel(model.trim());setModels([]);setModelStatus("Configuração salva.");setSettingsOpen(false);}}
-    catch(reason){if(alive.current)setError(String(reason));}
-    finally{if(alive.current){setApiKey("");setBusy(false);}}
-  }
   async function loadModels(){
-    if(busy||loadingConfig||(!configured&&!apiKey.trim()))return;
+    if(busy||loadingConfig||!configured)return;
     setBusy(true);setError("");setModelStatus("");
     try{
-      const options=await invoke<ModelOption[]>("gemini_list_models",{apiKey:apiKey.trim()||null});
+      const options=await invoke<ModelOption[]>("gemini_list_models",{apiKey:null});
       if(alive.current){setModels(options);setModelStatus(options.length?"Catálogo atualizado. Escolha um modelo.":"Nenhum modelo de texto encontrado.");}
     }catch(reason){if(alive.current)setError(String(reason));}
     finally{if(alive.current)setBusy(false);}
@@ -189,7 +162,7 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   }
   async function disconnect(){
     if(busy)return;setBusy(true);setError("");
-    try{await revoke();await invoke("gemini_disconnect");if(alive.current){setConfigured(false);setSettingsOpen(true);setAuthMode("none");setGoogleEmail("");setModels([]);setModelStatus("");}}
+    try{await revoke();await invoke("gemini_disconnect");if(alive.current){setConfigured(false);onClose();}}
     catch(reason){if(alive.current)setError(String(reason));}
     finally{if(alive.current)setBusy(false);}
   }
@@ -197,9 +170,9 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
     const text=question.trim()||(files.length?"Analise os arquivos anexados.":"");
     if(!text||busy||requestActive.current||!account||!configured)return;
     const id=account.id;
-    if(replyMode&&!messageId){setError("Selecione o e-mail para responder.");return;}
+    if(creativeMode==="chat"&&replyMode&&!messageId){setError("Selecione o e-mail para responder.");return;}
     requestActive.current=true;
-    setBusy(true);setStreaming(true);setPartial("");setError("");setAnswer(null);setQuestion("");
+    setBusy(true);setStreaming(creativeMode==="chat");setPartial("");setError("");setAnswer(null);setCreativeResult(null);setQuestion("");
     const prior=history.slice(-6).map(turn=>({...turn,text:Array.from(turn.text).slice(0,1200).join("")}));
     const displayText=files.length?`${text}\nArquivos: ${files.map(item=>item.file.name).join(", ")}`:text;
     setHistory(value=>[...value,{role:"user",text:displayText}]);
@@ -213,6 +186,11 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
         current={token,accountId:id};grantRef.current=current;
       }
       const sessionToken=current.token;
+      if(creativeMode!=="chat"){
+        const result=await invoke<CreativeResult>("gemini_create",{token:sessionToken,accountId:id,mode:creativeMode,question:text,files:payloadFiles});
+        if(!alive.current||!requestActive.current||grantRef.current?.token!==sessionToken)return;
+        setCreativeResult(result);setHistory(value=>[...value,{role:"assistant",text:result.text||"Imagem criada."}]);setFiles([]);return;
+      }
       const onDelta=new Channel<string>();
       onDelta.onmessage=delta=>{if(alive.current&&requestActive.current&&grantRef.current?.token===sessionToken)setPartial(value=>value+delta);};
       const result=await invoke<Answer>("gemini_ask",{token:sessionToken,accountId:current.accountId,question:text,history:prior,messageId:includeMail?(messageId||null):null,draftReply:includeMail&&replyMode,includeMail,files:payloadFiles,onDelta});
@@ -248,23 +226,25 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   const remainingTokens=Math.max(0,tokenLimit-usedTokens);
   const tokenPercent=Math.min(100,Math.max(0,remainingTokens/tokenLimit*100));
   const tokenTitle=streaming?`Estimativa pelo texto visível: ${remainingTokens} de ${tokenLimit} tokens de saída restantes (não inclui raciocínio oculto).`:answer?(reportedTokens==null?"Consumo não informado pelo Gemini.":`Última resposta: ${remainingTokens} de ${tokenLimit} tokens de saída restantes (inclui raciocínio reportado).`):`Limite de saída por resposta: ${tokenLimit} tokens. Não representa a cota da conta.`;
+  if(loadingConfig||!configured)return null;
   return <aside className="gemini-panel" aria-label="Google Gemini">
-    <header><span className="gemini-heading"><GeminiMark/><b>Google Gemini</b></span><button type="button" className="icon-button" title="Nova conversa" aria-label="Nova conversa" disabled={busy||loadingConfig||!configured} onClick={newConversation}><Icon name="plus" size={17}/></button><button ref={settingsButton} type="button" className="icon-button gemini-settings-toggle" title="Configurações do Gemini" aria-label="Configurações do Gemini" aria-expanded={settingsOpen} aria-controls="gemini-panel-content" disabled={busy||loadingConfig} onClick={settingsOpen?closeSettings:openSettings}><Icon name="settings" size={17}/></button><button type="button" className="icon-button" title="Fechar" aria-label="Fechar Gemini" onClick={onClose}><Icon name="x" size={18}/></button></header>
+    <header><span className="gemini-heading"><GeminiMark/><b>Google Gemini</b></span><button type="button" className="icon-button" title="Nova conversa" aria-label="Nova conversa" disabled={busy||loadingConfig||!configured} onClick={newConversation}><Icon name="plus" size={17}/></button><button ref={settingsButton} type="button" className="icon-button gemini-settings-toggle" title="Configurações do Gemini" aria-label="Configurações do Gemini" aria-haspopup="dialog" disabled={busy||loadingConfig} onClick={onChangeKey}><Icon name="settings" size={17}/></button><button type="button" className="icon-button" title="Fechar" aria-label="Fechar Gemini" onClick={onClose}><Icon name="x" size={18}/></button></header>
     <div id="gemini-panel-content" ref={settingsScroll} className="gemini-scroll" onKeyDown={e=>{if(e.key==="Escape"&&settingsOpen&&!busy){e.stopPropagation();closeSettings();}}}>
-      {loadingConfig?<p role="status">Verificando conexão Gemini…</p>:settingsOpen||!configured?<section className="gemini-setup" aria-labelledby="gemini-settings-title">
+      {loadingConfig?<p role="status">Verificando conexão Gemini…</p>:settingsOpen?<section className="gemini-setup" aria-labelledby="gemini-settings-title">
         <div className="gemini-settings-heading"><h3 id="gemini-settings-title" ref={settingsTitle} tabIndex={-1}>Configurações</h3><button type="button" className="secondary" disabled={busy} onClick={closeSettings}>{configured?"Voltar":"Fechar"}</button></div>
-        <div className="gemini-settings-card"><h4>Conta Google</h4>{authMode==="google"&&<p>Conectado como {googleEmail} · projeto {googleProject}</p>}<p>{account?.provider==="gmail"?`Usar a conta Google ${account.email}`:"Autorizar uma conta Google"} para Gemini. O Google pedirá consentimento separado. O projeto Cloud deve estar autorizado para consumo e faturamento.</p><button className="primary" type="button" disabled={busy||loadingConfig||!model.trim()} onClick={()=>void connectGoogle()}>Entrar com Google</button>{googleConnecting&&<button className="secondary" type="button" onClick={cancelGoogle}>Cancelar login</button>}<details><summary>Configuração OAuth avançada</summary><label className="gemini-label">ID do projeto Google Cloud<input value={googleProject} disabled={busy} onChange={e=>setGoogleProject(e.target.value)} placeholder="Projeto autorizado" maxLength={30}/></label><label className="gemini-label">Client ID desktop<input value={googleClientId} disabled={busy} onChange={e=>setGoogleClientId(e.target.value)} placeholder={account?.oauthClientId||"Client ID do Seven Mail"} maxLength={256}/></label><label className="gemini-label">Client secret desktop (se necessário)<input type="password" value={googleClientSecret} disabled={busy} onChange={e=>setGoogleClientSecret(e.target.value)} maxLength={512} autoComplete="off"/></label></details></div><div className="gemini-settings-card"><h4>Chave da API e modelo</h4><p>Crie uma chave da API no Google AI Studio. A chave será guardada no cofre do sistema operacional. Ao configurar, você habilita leitura local das contas selecionadas e o envio de contexto de e-mail ao Google somente quando fizer uma pergunta. Alterações exigem aprovação. Não é necessário instalar programas adicionais.</p><button className="secondary" type="button" onClick={()=>void openUrl(docs).catch(()=>setError("Não foi possível abrir o Google AI Studio."))}>Obter chave da API</button><label className="gemini-label">Modelo<input list="gemini-model-catalog" value={model} disabled={busy||loadingConfig} onChange={e=>{setModel(e.target.value);setModelStatus("");}} maxLength={100}/></label><datalist id="gemini-model-catalog">{models.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</datalist><div><button type="button" className="secondary" disabled={busy||loadingConfig||(!configured&&!apiKey.trim())} onClick={()=>void loadModels()}>Atualizar lista de modelos</button>{configured&&<button type="button" className="primary" disabled={busy||loadingConfig||!model.trim()||model.trim()===selectedModel} onClick={()=>void saveModel()}>Salvar modelo</button>}</div>{modelStatus&&<small role="status">{modelStatus}</small>}<label className="gemini-label">Chave da API<input type="password" autoComplete="off" spellCheck={false} value={apiKey} disabled={busy} onChange={e=>setApiKey(e.target.value)} placeholder={authMode==="api_key"?"Chave armazenada":"Informe a chave"} maxLength={4096}/></label><div><button className="primary" type="button" disabled={busy||loadingConfig||!apiKey.trim()||!model.trim()} onClick={()=>void configure()}>Validar e salvar chave</button>{configured&&<button className="secondary" type="button" disabled={busy} onClick={()=>void disconnect()}>Desconectar</button>}</div><small>{configured?"Credencial armazenada no cofre.":"Nenhuma credencial configurada."} A chave gratuita não deve ser usada para dados sensíveis ou confidenciais; use um projeto faturado e autorizado pela organização.</small></div>
-        <div className="gemini-settings-card"><h4>Contexto de e-mail</h4><label className="gemini-label">Conta de e-mail<select value={accountId} disabled={busy} onChange={e=>{void revoke();setAccountId(e.target.value);}}><option value="">Selecione uma conta</option>{accounts.map(item=><option key={item.id} value={item.id}>{item.email}</option>)}</select></label>{readable&&<><label className="gemini-check"><input type="checkbox" checked={includeMail} disabled={busy} onChange={e=>changeContext(e.target.checked)}/> Incluir contexto de e-mails</label>
+        <div className="gemini-settings-card"><h4>Modelo avançado</h4><p>Credencial armazenada no cofre do sistema. Não use dados sensíveis em projetos não autorizados.</p><label className="gemini-label">Modelo<input list="gemini-model-catalog" value={model} disabled={busy||loadingConfig} onChange={e=>{setModel(e.target.value);setModelStatus("");}} maxLength={100}/></label><datalist id="gemini-model-catalog">{models.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</datalist><div><button type="button" className="secondary" disabled={busy||loadingConfig||!configured} onClick={()=>void loadModels()}>Atualizar lista de modelos</button>{configured&&<button type="button" className="primary" disabled={busy||loadingConfig||!model.trim()||model.trim()===selectedModel} onClick={()=>void saveModel()}>Salvar modelo</button>}</div>{modelStatus&&<small role="status">{modelStatus}</small>}<button type="button" className="secondary" disabled={busy} onClick={()=>void disconnect()}>Desconectar</button></div>
+        {configured&&<div className="gemini-settings-card"><h4>Contexto de e-mail</h4><label className="gemini-label">Conta de e-mail<select value={accountId} disabled={busy} onChange={e=>{void revoke();setAccountId(e.target.value);}}><option value="">Selecione uma conta</option>{accounts.map(item=><option key={item.id} value={item.id}>{item.email}</option>)}</select></label>{readable&&<><label className="gemini-check"><input type="checkbox" checked={includeMail} disabled={busy} onChange={e=>changeContext(e.target.checked)}/> Incluir contexto de e-mails</label>
         {includeMail&&<><label className="gemini-label">Buscar e-mail no cache<input value={search} disabled={busy} onChange={e=>{setSearch(e.target.value);setMessageId("");setAnswer(null);}} placeholder="Assunto, remetente ou texto"/></label>
-        <label className="gemini-label">Contexto<select disabled={busy} value={messageId} onChange={e=>{setMessageId(e.target.value);setAnswer(null);}}><option value="">Até 20 e-mails recentes da conta</option>{matchingMessages.slice(0,100).map(item=><option key={item.id} value={item.id}>{item.subject||"(sem assunto)"}</option>)}</select></label></>}<label className="gemini-check"><input type="checkbox" checked={replyMode} disabled={!readable||busy||!includeMail} onChange={e=>setReplyMode(e.target.checked)}/> Preparar resposta para aprovação</label></>}</div>
+        <label className="gemini-label">Contexto<select disabled={busy} value={messageId} onChange={e=>{setMessageId(e.target.value);setAnswer(null);}}><option value="">Até 20 e-mails recentes da conta</option>{matchingMessages.slice(0,100).map(item=><option key={item.id} value={item.id}>{item.subject||"(sem assunto)"}</option>)}</select></label></>}<label className="gemini-check"><input type="checkbox" checked={replyMode} disabled={!readable||busy||!includeMail} onChange={e=>setReplyMode(e.target.checked)}/> Preparar resposta para aprovação</label></>}</div>}
         {error&&<div role="alert" className="gemini-error">{error}</div>}
       </section>:<>
 
-      {!readable?<div className="gemini-welcome"><GeminiMark/><h3>Seu assistente de e-mail</h3><p>{configured?"Selecione uma conta de e-mail nas configurações.":"Entre com Google ou configure uma chave da API nas configurações."}</p>{<button type="button" className="secondary gemini-welcome-setup" disabled={busy} onClick={openSettings}><Icon name="settings" size={16}/> Configurar Gemini</button>}</div>:<>
+      {!readable?<div className="gemini-welcome"><GeminiMark/><h3>Seu assistente de e-mail</h3><p>{configured?"Selecione uma conta de e-mail nas configurações.":"Selecione uma conta de e-mail nas configurações."}</p>{<button type="button" className="secondary gemini-welcome-setup" disabled={busy} onClick={openSettings}><Icon name="settings" size={16}/> Configurar Gemini</button>}</div>:<>
         <div className="gemini-permission gemini-compact-context"><Icon name="shield" size={14}/><span>{includeMail?`Contexto: ${account?.email}`:"Contexto de e-mail desativado"} · somente leitura</span></div>
         {!history.length&&!streaming&&<div className="gemini-empty-conversation"><GeminiMark/><h3>Como posso ajudar?</h3><p>Pergunte sobre seus e-mails ou arquivos.</p></div>}
 
-        <div className="gemini-history" aria-live="polite">{history.map((turn,index)=><div key={index} className={`gemini-turn ${turn.role}`}><b>{turn.role==="user"?"Você":"Gemini"}</b><p>{turn.text}</p></div>)}{streaming&&<div className="gemini-turn assistant" aria-busy="true"><b>Gemini</b><p>{partial||"Consultando Gemini…"}</p></div>}{busy&&!streaming&&<p role="status">Processando…</p>}</div>
+        <div className="gemini-history" aria-live="polite">{history.map((turn,index)=><div key={index} className={`gemini-turn ${turn.role}`}><b>{turn.role==="user"?"Você":"Gemini"}</b>{turn.role==="assistant"?<GeminiMarkdown text={turn.text}/>:<p>{turn.text}</p>}</div>)}{streaming&&<div className="gemini-turn assistant" aria-busy="true"><b>Gemini</b><GeminiMarkdown text={partial||"Consultando Gemini…"}/></div>}{busy&&!streaming&&<p role="status">Processando…</p>}</div>
+        {creativeResult&&account&&<CreativePreview key={account.id+creativeMode} result={creativeResult} mode={creativeMode} accountId={account.id} email={account.email} onSaveSignature={onSaveSignature} busy={busy}/>}
         {answer&&<small className="gemini-context-count">Contexto: {answer.messageCount} mensagem(ns) armazenada(s) localmente.</small>}
         {answer?.proposalId&&answer.draft&&<div className="gemini-approval"><b><Icon name="shield" size={16}/> Autorização necessária</b><small>Conta: {account?.email}</small><small>Para: {answer.draft.to}</small><small>Assunto: {answer.draft.subject}</small><p>Nenhum e-mail será enviado.</p><div><button type="button" className="secondary" onClick={()=>setAnswer(null)}>Recusar</button><button type="button" className="primary" disabled={busy||composeOpen} onClick={()=>void approve()}>Criar rascunho</button></div></div>}
       </>}
@@ -281,6 +261,7 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
           addFiles(images);
         }}/>
         {files.length>0&&<div className="gemini-attachments"><small>Arquivos serão enviados ao Google ao clicar em enviar.</small>{files.map(item=><AttachmentPreview key={item.id} item={item} disabled={busy} onRemove={()=>setFiles(value=>value.filter(file=>file.id!==item.id))}/>)}</div>}
+        <div className="gemini-creative-mode"><select aria-label="Modo Gemini" value={creativeMode} disabled={busy} onChange={e=>{setCreativeMode(e.target.value as CreativeMode);setCreativeResult(null);setError("");}}><option value="chat">Conversar</option><option value="image">Criar / editar imagem</option><option value="signature">Criar assinatura</option><option value="document">Criar documento</option></select>{creativeMode!=="chat"&&<small>Envia somente sua solicitação e anexos selecionados. Pode consumir cota paga.</small>}</div>
         <textarea ref={input} aria-label="Pergunte ao Gemini" disabled={!readable||busy} value={question} maxLength={4000} rows={2} onChange={e=>setQuestion(e.target.value)} placeholder="Pergunte ao Gemini..." onPaste={e=>{const pasted=Array.from(e.clipboardData.files);if(pasted.length){e.preventDefault();addFiles(pasted);}}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void ask();}}}/>
         <div className="gemini-composer-toolbar">
           <button type="button" className="icon-button gemini-composer-attach" title="Anexar arquivo · até 4 arquivos, 8 MiB no total" aria-label="Anexar arquivo" disabled={!readable||busy||files.length>=MAX_FILES} onClick={()=>fileInput.current?.click()}><Icon name="paperclip" size={17}/></button>
