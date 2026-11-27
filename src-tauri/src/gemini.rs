@@ -371,8 +371,13 @@ fn media_parts(files:Vec<MediaInput>)->Result<Vec<serde_json::Value>,String>{
     }
     Ok(parts)
 }
-fn invoke_gemini(prompt:String,files:Vec<MediaInput>,on_delta:impl FnMut(&str)->Result<(),String>,mut check_active:impl FnMut()->Result<(),String>)->Result<String,String>{
-    let GeminiConfig{api_key:key,model}=read_config()?.ok_or("Configure a chave Gemini no painel.")?;
+fn invoke_gemini(prompt:String,files:Vec<MediaInput>,on_delta:impl FnMut(&str)->Result<(),String>,check_active:impl FnMut()->Result<(),String>)->Result<String,String>{
+    let config=read_config()?.ok_or("Configure a chave Gemini no painel.")?;
+    generate_stream(config,prompt,files,on_delta,check_active)
+}
+fn generate_stream(config:GeminiConfig,prompt:String,files:Vec<MediaInput>,on_delta:impl FnMut(&str)->Result<(),String>,mut check_active:impl FnMut()->Result<(),String>)->Result<String,String>{
+    let GeminiConfig{api_key:key,model}=config;
+    if !valid_key(&key)||!valid_model(&model){return Err("Configuração Gemini inválida.".into());}
     if prompt.len()>MAX_PROMPT{return Err("Contexto muito grande. Reduza a pergunta.".into());}
     let mut parts=vec![serde_json::json!({"text":prompt})];
     parts.extend(media_parts(files)?);
@@ -535,6 +540,62 @@ mod tests{
         let mut bytes=vec![0;MAX_FILE_BYTES];
         bytes[..5].copy_from_slice(b"%PDF-");
         assert!(media_parts(vec![media("a.pdf","application/pdf",&bytes),media("b.pdf","application/pdf",&bytes)]).is_err());
+    }
+    // Real API test: opt-in only, never use mailbox data or application credentials.
+    fn live_config()->GeminiConfig{
+        let key=std::env::var("SEVEN_MAIL_GEMINI_TEST_API_KEY").expect("Configure uma chave de teste autorizada.");
+        let model=std::env::var("SEVEN_MAIL_GEMINI_TEST_MODEL").unwrap_or_else(|_|DEFAULT_MODEL.to_owned());
+        assert!(valid_key(&key),"Chave de teste inválida.");
+        assert!(valid_model(&model),"Modelo de teste inválido.");
+        GeminiConfig{api_key:key,model}
+    }
+    fn live_answer(config:GeminiConfig,prompt:&str,files:Vec<MediaInput>,expected:&str){
+        let mut received=String::new();
+        let mut chunks=0usize;
+        let answer=generate_stream(config,prompt.to_owned(),files,|delta|{
+            chunks+=1;received.push_str(delta);Ok(())
+        },||Ok(())).expect("A API Gemini deve completar a geração SSE.");
+        assert!(chunks>0,"Nenhum fragmento recebido.");
+        assert_eq!(received,answer,"Fluxo e resposta final devem coincidir.");
+        assert!(answer.to_ascii_uppercase().contains(expected),"Resposta não contém o marcador sintético esperado.");
+        println!("Gemini live smoke passed: {chunks} text fragments.");
+    }
+    #[test]
+    #[ignore = "requires explicitly authorized Gemini API test key; may incur charges"]
+    fn live_text_and_stream(){
+        let config=live_config();
+        validate_model_access(&config.api_key,&config.model).expect("Modelo não disponível.");
+        live_answer(config,"Responda apenas com o marcador SEVEN_READY_824.",vec![],"SEVEN_READY_824");
+    }
+    #[test]
+    #[ignore = "requires explicitly authorized multimodal Gemini API test key"]
+    fn live_image_and_stream(){
+        // Valid 160x160 RGB PNG: a red square centered on a white background.
+        let png=STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAKAAAACgCAIAAAAErfB6AAABHElEQVR42u3asQkAIAxFQSPuv/J3BhUE5V6fJkesrCRN/9atALAAC7AAC7AACzBgARZgARZgARZgwAIswAKsm42j6SobvNTu1zkX7IkWYAEWYAEWYAEGLMACLMACLMACDFiABViABViABViAAQuwAAuwAAuwAAMWYAEWYAEWYAEGLMACLMACLMACLMCABViABViABViAAQuwAAuwAAuwAAO2AsACLMACLMACLMCABViABViABViAAQuwAAuwAAuwAAswYAEWYAEWYAEWYMACLMACLMACLMCABViABViABViABRiwAAuwAAuwAAswYAEWYAEWYAEWYMACrHcbR9OJDbpgARZgARZgwAIswAIswAIswIAFWIAFWIAFWEtNhs4IP8F9lCQAAAAASUVORK5CYII=").expect("PNG fixture");
+        live_answer(live_config(),"Qual a cor do quadrado central da imagem? Responda em inglês, somente com o nome da cor.",vec![media("fixture.png","image/png",&png)],"RED");
+    }
+    fn synthetic_pdf()->Vec<u8>{
+        let stream="BT /F1 18 Tf 40 100 Td (SEVEN_PDF_471) Tj ET\n";
+        let objects=[
+            "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 200] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_owned(),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+            format!("<< /Length {} >>\nstream\n{}endstream",stream.len(),stream),
+        ];
+        let mut pdf=String::from("%PDF-1.4\n");
+        let mut offsets=Vec::new();
+        for (i,object) in objects.iter().enumerate(){offsets.push(pdf.len());pdf.push_str(&format!("{} 0 obj\n{}\nendobj\n",i+1,object));}
+        let xref=pdf.len();
+        pdf.push_str("xref\n0 6\n0000000000 65535 f \n");
+        for offset in offsets{pdf.push_str(&format!("{offset:010} 00000 n \n"));}
+        pdf.push_str(&format!("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n"));
+        pdf.into_bytes()
+    }
+    #[test]
+    #[ignore = "requires explicitly authorized multimodal Gemini API test key"]
+    fn live_pdf_and_stream(){
+        live_answer(live_config(),"Extraia somente o identificador escrito no documento.",vec![media("fixture.pdf","application/pdf",&synthetic_pdf())],"SEVEN_PDF_471");
     }
     #[test]
     fn context_is_bounded_without_breaking_unicode(){assert_eq!(clipped("ação",3),"açã");}

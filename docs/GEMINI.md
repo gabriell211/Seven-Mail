@@ -26,6 +26,18 @@ Use Anexar arquivo ou cole uma imagem no campo de pergunta. São aceitos PNG, JP
 
 A API utiliza SSE (streamGenerateContent?alt=sse), com entrega progressiva por canal IPC individual do Tauri. A resposta final só gera proposta de rascunho após STOP e validação de sessão. Erro, truncamento, bloqueio, revogação ou cancelamento descartam o texto parcial. Parar geração encerra a entrega local imediatamente; a conexão HTTP é abandonada ao próximo evento recebido ou timeout de até 90 segundos. Não há garantia de cancelamento instantâneo do processamento ou cobrança no servidor remoto.
 
+## Homologação real (opt-in)
+
+Os testes ignorados `gemini::tests::live_` usam a mesma função de geração HTTPS/SSE do aplicativo, sem ler caixas de e-mail, cofre real ou arquivos pessoais. São três chamadas separadas: texto, PNG sintético e PDF sintético. Cada uma exige conteúdo esperado, fragmentos não vazios e igualdade entre o texto acumulado e a resposta final. A chave deve ser de um projeto de teste autorizado; chamadas podem consumir cota ou gerar custos. Nunca coloque a chave no repositório, no comando como literal ou em logs.
+
+Em uma cópia revisada da branch, configure `SEVEN_MAIL_GEMINI_TEST_API_KEY` por um mecanismo seguro de injeção de segredos; opcionalmente defina `SEVEN_MAIL_GEMINI_TEST_MODEL`. Execute:
+
+```sh
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib gemini::tests::live_ -- --ignored --test-threads=1
+```
+
+A ausência da chave causa falha explícita, não aprovação fictícia. Teste real de áudio, vídeo, interface Tauri, cofre e instalação limpa permanece separado. A suíte não é disparada pelo CI padrão para impedir chamadas pagas não autorizadas.
+
 ## Homologação pendente
 
 Validar geração real, compatibilidade do modelo escolhido e cotas com chave de teste autorizada; executar CI e testar o cofre no Windows, Linux e macOS. Não considerar homologado apenas pela validação de metadados.
