@@ -921,11 +921,160 @@ fn pst_received_iso(value: Option<&PropertyValue>) -> String {
         .unwrap_or_else(|| chrono::Utc::now().to_rfc3339())
 }
 
+
+#[derive(Default)]
+struct PstNamedIds {
+    numeric: std::collections::BTreeMap<(u32, u32), u16>,
+    keywords: Option<u16>,
+}
+
+impl PstNamedIds {
+    fn read(store: &dyn outlook_pst::messaging::store::Store) -> Result<Self, String> {
+        use outlook_pst::messaging::named_prop::NamedPropertyId;
+        let map = store.named_property_map().map_err(|e| format!("Mapa MAPI PST: {e}"))?;
+        let props = map.properties();
+        let mut ids = Self::default();
+        for entry in props.stream_entry().map_err(|e| format!("Propriedades MAPI PST: {e}"))? {
+            let guid = props.lookup_guid(entry.guid()).map_err(|e| format!("GUID MAPI PST: {e}"))?;
+            if guid.data2() != 0 || guid.data3() != 0 || guid.data4() != &[0xC0, 0, 0, 0, 0, 0, 0, 0x46] {
+                continue;
+            }
+            match entry.id() {
+                NamedPropertyId::Number(lid) if matches!(guid.data1(), 0x00062002 | 0x00062003 | 0x00062004 | 0x00062008) => {
+                    ids.numeric.insert((guid.data1(), lid), entry.prop_id());
+                }
+                NamedPropertyId::StringOffset(offset) if guid.data1() == 0x00020329 => {
+                    let name = props.lookup_string(offset).map_err(|e| format!("Nome MAPI PST: {e}"))?;
+                    if name.to_string().trim_end_matches('\0') == "Keywords" {
+                        ids.keywords = Some(entry.prop_id());
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(ids)
+    }
+
+    fn get<'a>(&self, message: &'a dyn PstMessage, set: u32, lid: u32) -> Option<&'a PropertyValue> {
+        self.numeric.get(&(set, lid)).and_then(|id| message.properties().get(*id))
+    }
+
+    fn categories(&self, message: &dyn PstMessage) -> Vec<String> {
+        let mut result: Vec<String> = match self.keywords.and_then(|id| message.properties().get(id)) {
+            Some(PropertyValue::MultipleUnicode(values)) => values.iter().map(ToString::to_string).collect(),
+            Some(PropertyValue::MultipleString8(values)) => values.iter().map(ToString::to_string).collect(),
+            _ => Vec::new(),
+        };
+        for value in &mut result { *value = value.trim_end_matches('\0').trim().to_owned(); }
+        result.retain(|value| !value.is_empty());
+        result.sort();
+        result.dedup();
+        result
+    }
+}
+
+fn pst_optional_date(value: Option<&PropertyValue>) -> Option<String> {
+    let Some(PropertyValue::Time(ticks)) = value else { return None; };
+    // Outlook uses a far-future sentinel for unset dates.
+    if *ticks <= 0 || *ticks >= 2_650_467_744_000_000_000 { return None; }
+    let seconds = ticks / 10_000_000 - 11_644_473_600;
+    chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, 0).map(|date| date.to_rfc3339())
+}
+
+fn pst_register_categories(paths: &AppPaths, names: &[String], existing: &mut std::collections::BTreeSet<String>) -> Result<(), String> {
+    for name in names {
+        if existing.contains(name) { continue; }
+        let id = uuid::Uuid::new_v4().to_string();
+        crate::workspace::upsert(paths, crate::models::WorkspaceDocument {
+            id: id.clone(), kind: "category".into(), updated_at: chrono::Utc::now().to_rfc3339(),
+            payload: serde_json::json!({"id": id, "name": name, "color": "#64748b", "favorite": false}),
+            deleted_at: None,
+        })?;
+        existing.insert(name.clone());
+    }
+    Ok(())
+}
+
+fn pst_workspace_item(
+    message: &dyn PstMessage, named: &PstNamedIds, account: &AccountProfile,
+    folder: &str, categories: &[String],
+) -> Result<Option<crate::models::WorkspaceDocument>, String> {
+    use serde_json::json;
+    const APPT: u32 = 0x00062002;
+    const TASK: u32 = 0x00062003;
+    const ADDRESS: u32 = 0x00062004;
+    let props = message.properties();
+    let class = pst_property_text(props.get(0x001A)).unwrap_or_else(|| "IPM.Note".into());
+    let class = class.to_ascii_lowercase();
+    let text = |id| pst_property_text(props.get(id)).unwrap_or_default();
+    let named_text = |set, lid| pst_property_text(named.get(message, set, lid)).unwrap_or_default();
+    let date = |set, lid| pst_optional_date(named.get(message, set, lid));
+    let id = uuid::Uuid::new_v4().to_string();
+    let title = text(0x0037);
+    let body = text(0x1000);
+    let (kind, payload) = if class == "ipm.appointment" {
+        let start = date(APPT, 0x820D).or_else(|| pst_optional_date(props.get(0x0060)))
+            .ok_or_else(|| "Compromisso PST sem data inicial válida.".to_string())?;
+        let end = date(APPT, 0x820E).or_else(|| pst_optional_date(props.get(0x0061)))
+            .ok_or_else(|| "Compromisso PST sem data final válida.".to_string())?;
+        if chrono::DateTime::parse_from_rfc3339(&end).ok() < chrono::DateTime::parse_from_rfc3339(&start).ok() {
+            return Err("Compromisso PST com intervalo inválido.".into());
+        }
+        // Do not silently flatten recurring series.
+        if matches!(named.get(message, APPT, 0x8223), Some(PropertyValue::Boolean(true))) || named.get(message, APPT, 0x8216).is_some() {
+            return Err("Recorrência de calendário PST ainda não suportada; arquivo original preservado.".into());
+        }
+        let recipients = pst_recipients(message)?;
+        ("calendar", json!({
+            "id": id, "title": title, "description": body, "location": named_text(APPT, 0x8208),
+            "startAt": start, "endAt": end,
+            "allDay": matches!(named.get(message, APPT, 0x8215), Some(PropertyValue::Boolean(true))),
+            "color": "#64748b", "participants": recipients.to.iter().chain(recipients.cc.iter()).map(|r| &r.email).collect::<Vec<_>>(),
+            "accountId": account.id, "categories": categories, "status": "confirmed", "recurrence": "none",
+            "pstFolder": folder
+        }))
+    } else if class == "ipm.contact" {
+        let first = text(0x3A06);
+        let last = text(0x3A11);
+        let name = [text(0x3001), named_text(ADDRESS, 0x8005), title, format!("{first} {last}").trim().to_owned()]
+            .into_iter().find(|s| !s.trim().is_empty()).unwrap_or_else(|| "Contato PST".into());
+        let emails = [0x8083, 0x8093, 0x80A3].into_iter().map(|lid| named_text(ADDRESS, lid))
+            .filter(|s| !s.trim().is_empty()).collect::<Vec<_>>();
+        let phones = [0x3A08, 0x3A09, 0x3A1C, 0x3A1B, 0x3A2F].into_iter().map(text)
+            .filter(|s| !s.trim().is_empty()).collect::<Vec<_>>();
+        ("contact", json!({"id": id, "displayName": name, "firstName": first, "lastName": last,
+            "email": emails.first().cloned().unwrap_or_default(), "emails": emails,
+            "phone": phones.first().cloned().unwrap_or_default(), "phones": phones,
+            "company": text(0x3A16), "jobTitle": text(0x3A17), "notes": body,
+            "favorite": false, "accountId": account.id, "categories": categories, "pstFolder": folder}))
+    } else if class == "ipm.task" {
+        if matches!(named.get(message, TASK, 0x8126), Some(PropertyValue::Boolean(true))) || named.get(message, TASK, 0x8116).is_some() {
+            return Err("Recorrência de tarefa PST ainda não suportada; arquivo original preservado.".into());
+        }
+        let priority = match pst_integer(props.get(0x0017)) { Some(0) => "low", Some(2) => "high", _ => "normal" };
+        let completed = date(TASK, 0x810F);
+        let mut payload = json!({"id": id, "title": title, "notes": body, "priority": priority,
+            "listName": folder, "categories": categories, "pstFolder": folder});
+        for (key, value) in [("startsAt", date(TASK, 0x8104)), ("dueAt", date(TASK, 0x8105)), ("completedAt", completed)] {
+            if let Some(value) = value { payload[key] = json!(value); }
+        }
+        ("task", payload)
+    } else if class == "ipm.note" || class.starts_with("ipm.note.") {
+        return Ok(None);
+    } else {
+        return Err(format!("Classe de item PST não suportada: {class}. Arquivo original preservado."));
+    };
+    Ok(Some(crate::models::WorkspaceDocument { id, kind: kind.into(), payload,
+        updated_at: chrono::Utc::now().to_rfc3339(), deleted_at: None }))
+}
+
 fn import_pst_folder(
     paths: &AppPaths,
     account: &AccountProfile,
     folder: Rc<dyn PstFolder>,
     parent_label: Option<&str>,
+    named: &PstNamedIds,
+    existing_categories: &mut std::collections::BTreeSet<String>,
 ) -> Result<usize, String> {
     let label = folder
         .properties()
@@ -950,6 +1099,14 @@ fn import_pst_folder(
                 .store()
                 .open_message(&entry_id, None)
                 .map_err(|error| format!("Falha ao abrir mensagem PST: {error}"))?;
+            let categories = named.categories(message.as_ref());
+            if let Some(document) = pst_workspace_item(message.as_ref(), named, account, &full_label, &categories)? {
+                pst_register_categories(paths, &categories, existing_categories)?;
+                crate::workspace::upsert(paths, document)?;
+                imported += 1;
+                continue;
+            }
+            pst_register_categories(paths, &categories, existing_categories)?;
             let properties = message.properties();
 
             let subject = pst_property_text(properties.get(0x0037))
@@ -993,7 +1150,7 @@ fn import_pst_folder(
                 has_attachments: message.attachment_table().is_some(),
                 body_html,
                 body_text,
-                categories: vec!["Importado".to_string(), "PST".to_string()],
+                categories,
                 applied_rule_ids: Vec::new(),
                 size_bytes: None,
                 attachment_names: Vec::new(),
@@ -1021,7 +1178,7 @@ fn import_pst_folder(
                 .store()
                 .open_folder(&entry_id)
                 .map_err(|error| format!("Falha ao abrir pasta PST: {error}"))?;
-            imported += import_pst_folder(paths, account, child, Some(&full_label))?;
+            imported += import_pst_folder(paths, account, child, Some(&full_label), named, existing_categories)?;
         }
     }
     Ok(imported)
@@ -1031,6 +1188,10 @@ pub fn import_pst(paths: &AppPaths, account: &AccountProfile, source: &str) -> R
     let source = ensure_readable_file(source, 16 * 1024 * 1024 * 1024)?;
     let store = outlook_pst::open_store(&source)
         .map_err(|error| format!("Não foi possível abrir o PST: {error}"))?;
+    let named = PstNamedIds::read(store.as_ref())?;
+    let mut existing_categories = crate::workspace::list(paths, "category")?.into_iter()
+        .filter_map(|doc| doc.payload.get("name").and_then(|value| value.as_str()).map(str::to_owned))
+        .collect::<std::collections::BTreeSet<_>>();
     let subtree_id = store
         .properties()
         .ipm_sub_tree_entry_id()
@@ -1052,7 +1213,7 @@ pub fn import_pst(paths: &AppPaths, account: &AccountProfile, source: &str) -> R
         let folder = store
             .open_folder(&entry_id)
             .map_err(|error| format!("Falha ao abrir pasta PST: {error}"))?;
-        imported += import_pst_folder(paths, account, folder, None)?;
+        imported += import_pst_folder(paths, account, folder, None, &named, &mut existing_categories)?;
     }
     Ok(imported)
 }
