@@ -75,7 +75,7 @@ test("Google OAuth is separate from email authorization and uses a native loopba
  assert.match(oauth,/x-goog-user-project/);
  assert.match(oauth,/email_verified/);
  assert.match(rust,/gemini_google_connect/);
- assert.match(panel,/Entrar com Google/);
+ assert.doesNotMatch(panel,/Entrar com Google/);
  assert.doesNotMatch(oauth,/oauth::access_token|mail.google.com\/.*scope/);
 });
 
@@ -88,7 +88,7 @@ test("Gemini settings are closed by default and accessed beside new conversation
  assert.match(panel,/Chave da API<input type="password"/);
  assert.match(panel,/\{configured&&!loadingConfig&&!settingsOpen&&<footer>/);
  assert.doesNotMatch(panel,/<details className="gemini-setup"/);
- assert.match(panel,/if\(busy\)return;\s*setApiKey\(""\);setGoogleClientSecret\(""\)/);
+ assert.match(panel,/if\(busy\)return;\s*setApiKey\(""\)/);
  assert.match(panel,/settingsTitle\.current\?\.focus\(\)/);
  assert.match(panel,/e\.key==="Escape"&&settingsOpen&&!busy/);
 });
@@ -129,7 +129,7 @@ test("compact Gemini composer provides separate image and document pickers",()=>
 
 
 test("Gemini authentication gates conversation and token ring uses bounded provider usage",()=>{
- assert.match(panel,/setSettingsOpen\(!value.configured\)/);
+ assert.match(panel,/setSettingsOpen\(!ready\)/);
  assert.match(panel,/configured&&!loadingConfig&&!settingsOpen&&<footer>/);
  assert.match(panel,/src="\/providers\/gemini.svg"/);
  assert.match(panel,/gemini-token-ring/);
@@ -163,4 +163,13 @@ test("creative exports require an explicit file picker and validate native raste
  assert.ok(rust.includes("create_new(true)"));
  assert.ok(rust.includes("destination.is_absolute()"));
  assert.ok(creative.includes("Salvar documento (.md)"));
+});
+
+
+test("Gemini setup only requires an API key and keeps model settings optional",()=>{
+ assert.ok(panel.includes('value.configured&&value.authMode==="api_key"'));
+ assert.ok(panel.includes("Chave da API Gemini"));
+ assert.ok(panel.includes("Modelo avançado"));
+ assert.doesNotMatch(panel,/gemini_google_connect|gemini_google_cancel|Entrar com Google/);
+ assert.ok(panel.includes('model:configured?selectedModel:"gemini-3.5-flash-lite"'));
 });

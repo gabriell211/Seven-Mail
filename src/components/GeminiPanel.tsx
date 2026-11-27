@@ -67,12 +67,6 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   const [answer,setAnswer]=useState<Answer|null>(null);
   const [configured,setConfigured]=useState(false);
   const [authMode,setAuthMode]=useState<GeminiStatus["authMode"]>("none");
-  const [googleEmail,setGoogleEmail]=useState("");
-  const [googleProject,setGoogleProject]=useState("");
-  const [googleClientId,setGoogleClientId]=useState("");
-  const [googleClientSecret,setGoogleClientSecret]=useState("");
-  const [googleConnecting,setGoogleConnecting]=useState(false);
-  const googleAttempt=useRef<string|null>(null);
   const [apiKey,setApiKey]=useState("");
   const [settingsOpen,setSettingsOpen]=useState(false);
   const settingsButton=useRef<HTMLButtonElement>(null);
@@ -99,8 +93,8 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   useEffect(()=>{
     alive.current=true;
     let active=true;
-    void invoke<GeminiStatus>("gemini_status").then(value=>{if(active){setConfigured(value.configured);setSettingsOpen(!value.configured);setModel(value.selectedModel);setSelectedModel(value.selectedModel);setAuthMode(value.authMode);setGoogleEmail(value.googleEmail??"");setGoogleProject(value.googleProject??"");}}).catch(reason=>{if(active)setError(String(reason));}).finally(()=>{if(active)setLoadingConfig(false);});
-    return()=>{active=false;alive.current=false;requestActive.current=false;const pending=googleAttempt.current;googleAttempt.current=null;if(pending)void invoke("gemini_google_cancel",{attemptId:pending}).catch(()=>{});const token=grantRef.current?.token;grantRef.current=null;if(token)void invoke("gemini_revoke",{token}).catch(()=>{});};
+    void invoke<GeminiStatus>("gemini_status").then(value=>{if(active){const ready=value.configured&&value.authMode==="api_key";setConfigured(ready);setSettingsOpen(!ready);setModel(value.selectedModel);setSelectedModel(value.selectedModel);setAuthMode(value.authMode);}}).catch(reason=>{if(active)setError(String(reason));}).finally(()=>{if(active)setLoadingConfig(false);});
+    return()=>{active=false;alive.current=false;requestActive.current=false;const token=grantRef.current?.token;grantRef.current=null;if(token)void invoke("gemini_revoke",{token}).catch(()=>{});};
   },[]);
   useEffect(()=>{if(!settingsOpen)bottom.current?.scrollIntoView({block:"nearest"});},[history,busy,partial,settingsOpen]);
   useEffect(()=>{if(settingsOpen){settingsScroll.current?.scrollTo({top:0});settingsTitle.current?.focus();}},[settingsOpen]);
@@ -112,7 +106,7 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   },[accountId,readable]);
   function closeSettings(){
     if(busy)return;
-    setApiKey("");setGoogleClientSecret("");setModel(selectedModel);
+    setApiKey("");setModel(selectedModel);
     setModelStatus("");setError("");if(!configured){onClose();return;}setSettingsOpen(false);
     settingsButton.current?.focus();
   }
@@ -148,26 +142,10 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
     grantRef.current=null;setCreativeResult(null);setFiles([]);setIncludeMail(true);setPartial("");setHistory([]);setAnswer(null);setMessageId("");setSearch("");setQuestion("");setReplyMode(false);
     if(token)await invoke("gemini_revoke",{token}).catch(()=>{});
   }
-  async function connectGoogle(){
-    if(busy||loadingConfig||!model.trim())return;
-    const attemptId=crypto.randomUUID();googleAttempt.current=attemptId;
-    setBusy(true);setGoogleConnecting(true);setError("");
-    try{
-      await invoke("gemini_google_connect",{attemptId,accountId:account?.provider==="gmail"?account.id:null,clientId:googleClientId.trim(),clientSecret:googleClientSecret,project:googleProject.trim(),model:model.trim()});
-      if(!alive.current||googleAttempt.current!==attemptId)return;
-      const value=await invoke<GeminiStatus>("gemini_status");
-      if(!alive.current||googleAttempt.current!==attemptId)return;
-      await revoke();setConfigured(value.configured);setAuthMode(value.authMode);setGoogleEmail(value.googleEmail??"");setGoogleProject(value.googleProject??"");setSelectedModel(value.selectedModel);setModel(value.selectedModel);setModels([]);setModelStatus("Conta Google conectada.");setSettingsOpen(!value.configured);
-    }catch(reason){if(alive.current)setError(String(reason));}
-    finally{googleAttempt.current=null;if(alive.current){setGoogleClientSecret("");setGoogleConnecting(false);setBusy(false);}}
-  }
-  function cancelGoogle(){
-    const attemptId=googleAttempt.current;if(attemptId)void invoke("gemini_google_cancel",{attemptId}).catch(reason=>setError(String(reason)));
-  }
   async function configure(){
-    if(busy||loadingConfig||!apiKey.trim()||!model.trim())return;
+    if(busy||loadingConfig||!apiKey.trim())return;
     setBusy(true);setError("");
-    try{await invoke("gemini_configure",{apiKey:apiKey.trim(),model:model.trim()});if(alive.current){await revoke();setConfigured(true);setAuthMode("api_key");setGoogleEmail("");setSelectedModel(model.trim());setModel(model.trim());setModels([]);setModelStatus("Configuração salva.");setSettingsOpen(false);}}
+    try{await invoke("gemini_configure",{apiKey:apiKey.trim(),model:configured?selectedModel:"gemini-3.5-flash-lite"});if(alive.current){await revoke();setConfigured(true);setAuthMode("api_key");setSelectedModel(configured?selectedModel:"gemini-3.5-flash-lite");setModel(configured?selectedModel:"gemini-3.5-flash-lite");setModels([]);setModelStatus("Configuração salva.");setSettingsOpen(false);}}
     catch(reason){if(alive.current)setError(String(reason));}
     finally{if(alive.current){setApiKey("");setBusy(false);}}
   }
@@ -193,7 +171,7 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   }
   async function disconnect(){
     if(busy)return;setBusy(true);setError("");
-    try{await revoke();await invoke("gemini_disconnect");if(alive.current){setConfigured(false);setSettingsOpen(true);setAuthMode("none");setGoogleEmail("");setModels([]);setModelStatus("");}}
+    try{await revoke();await invoke("gemini_disconnect");if(alive.current){setConfigured(false);setSettingsOpen(true);setAuthMode("none");setModels([]);setModelStatus("");}}
     catch(reason){if(alive.current)setError(String(reason));}
     finally{if(alive.current)setBusy(false);}
   }
@@ -262,14 +240,14 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
     <div id="gemini-panel-content" ref={settingsScroll} className="gemini-scroll" onKeyDown={e=>{if(e.key==="Escape"&&settingsOpen&&!busy){e.stopPropagation();closeSettings();}}}>
       {loadingConfig?<p role="status">Verificando conexão Gemini…</p>:settingsOpen||!configured?<section className="gemini-setup" aria-labelledby="gemini-settings-title">
         <div className="gemini-settings-heading"><h3 id="gemini-settings-title" ref={settingsTitle} tabIndex={-1}>Configurações</h3><button type="button" className="secondary" disabled={busy} onClick={closeSettings}>{configured?"Voltar":"Fechar"}</button></div>
-        <div className="gemini-settings-card"><h4>Conta Google</h4>{authMode==="google"&&<p>Conectado como {googleEmail} · projeto {googleProject}</p>}<p>{account?.provider==="gmail"?`Usar a conta Google ${account.email}`:"Autorizar uma conta Google"} para Gemini. O Google pedirá consentimento separado. O projeto Cloud deve estar autorizado para consumo e faturamento.</p><button className="primary" type="button" disabled={busy||loadingConfig||!model.trim()} onClick={()=>void connectGoogle()}>Entrar com Google</button>{googleConnecting&&<button className="secondary" type="button" onClick={cancelGoogle}>Cancelar login</button>}<details><summary>Configuração OAuth avançada</summary><label className="gemini-label">ID do projeto Google Cloud<input value={googleProject} disabled={busy} onChange={e=>setGoogleProject(e.target.value)} placeholder="Projeto autorizado" maxLength={30}/></label><label className="gemini-label">Client ID desktop<input value={googleClientId} disabled={busy} onChange={e=>setGoogleClientId(e.target.value)} placeholder={account?.oauthClientId||"Client ID do Seven Mail"} maxLength={256}/></label><label className="gemini-label">Client secret desktop (se necessário)<input type="password" value={googleClientSecret} disabled={busy} onChange={e=>setGoogleClientSecret(e.target.value)} maxLength={512} autoComplete="off"/></label></details></div><div className="gemini-settings-card"><h4>Chave da API e modelo</h4><p>Crie uma chave da API no Google AI Studio. A chave será guardada no cofre do sistema operacional. Ao configurar, você habilita leitura local das contas selecionadas e o envio de contexto de e-mail ao Google somente quando fizer uma pergunta. Alterações exigem aprovação. Não é necessário instalar programas adicionais.</p><button className="secondary" type="button" onClick={()=>void openUrl(docs).catch(()=>setError("Não foi possível abrir o Google AI Studio."))}>Obter chave da API</button><label className="gemini-label">Modelo<input list="gemini-model-catalog" value={model} disabled={busy||loadingConfig} onChange={e=>{setModel(e.target.value);setModelStatus("");}} maxLength={100}/></label><datalist id="gemini-model-catalog">{models.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</datalist><div><button type="button" className="secondary" disabled={busy||loadingConfig||(!configured&&!apiKey.trim())} onClick={()=>void loadModels()}>Atualizar lista de modelos</button>{configured&&<button type="button" className="primary" disabled={busy||loadingConfig||!model.trim()||model.trim()===selectedModel} onClick={()=>void saveModel()}>Salvar modelo</button>}</div>{modelStatus&&<small role="status">{modelStatus}</small>}<label className="gemini-label">Chave da API<input type="password" autoComplete="off" spellCheck={false} value={apiKey} disabled={busy} onChange={e=>setApiKey(e.target.value)} placeholder={authMode==="api_key"?"Chave armazenada":"Informe a chave"} maxLength={4096}/></label><div><button className="primary" type="button" disabled={busy||loadingConfig||!apiKey.trim()||!model.trim()} onClick={()=>void configure()}>Validar e salvar chave</button>{configured&&<button className="secondary" type="button" disabled={busy} onClick={()=>void disconnect()}>Desconectar</button>}</div><small>{configured?"Credencial armazenada no cofre.":"Nenhuma credencial configurada."} A chave gratuita não deve ser usada para dados sensíveis ou confidenciais; use um projeto faturado e autorizado pela organização.</small></div>
-        <div className="gemini-settings-card"><h4>Contexto de e-mail</h4><label className="gemini-label">Conta de e-mail<select value={accountId} disabled={busy} onChange={e=>{void revoke();setAccountId(e.target.value);}}><option value="">Selecione uma conta</option>{accounts.map(item=><option key={item.id} value={item.id}>{item.email}</option>)}</select></label>{readable&&<><label className="gemini-check"><input type="checkbox" checked={includeMail} disabled={busy} onChange={e=>changeContext(e.target.checked)}/> Incluir contexto de e-mails</label>
+        <div className="gemini-settings-card"><h4>Chave da API Gemini</h4><p>Cole sua chave do Google AI Studio para começar. Ela será guardada no cofre do sistema.</p>{authMode==="google"&&<small>O acesso antigo pelo Google foi substituído pela chave da API. Informe uma chave para continuar.</small>}<button className="secondary" type="button" onClick={()=>void openUrl(docs).catch(()=>setError("Não foi possível abrir o Google AI Studio."))}>Obter chave da API</button><label className="gemini-label">Chave da API<input type="password" autoComplete="off" spellCheck={false} value={apiKey} disabled={busy} onChange={e=>setApiKey(e.target.value)} placeholder={authMode==="api_key"?"Chave armazenada":"Informe a chave"} maxLength={4096}/></label><div><button className="primary" type="button" disabled={busy||loadingConfig||!apiKey.trim()} onClick={()=>void configure()}>Validar e salvar chave</button>{configured&&<button className="secondary" type="button" disabled={busy} onClick={()=>void disconnect()}>Desconectar</button>}</div>{configured&&<details><summary>Modelo avançado</summary><label className="gemini-label">Modelo<input list="gemini-model-catalog" value={model} disabled={busy||loadingConfig} onChange={e=>{setModel(e.target.value);setModelStatus("");}} maxLength={100}/></label><datalist id="gemini-model-catalog">{models.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</datalist><div><button type="button" className="secondary" disabled={busy||loadingConfig||(!configured&&!apiKey.trim())} onClick={()=>void loadModels()}>Atualizar lista de modelos</button>{configured&&<button type="button" className="primary" disabled={busy||loadingConfig||!model.trim()||model.trim()===selectedModel} onClick={()=>void saveModel()}>Salvar modelo</button>}</div>{modelStatus&&<small role="status">{modelStatus}</small>}</details>}<small>{configured?"Credencial armazenada no cofre.":"Nenhuma credencial configurada."} A chave gratuita não deve ser usada para dados sensíveis ou confidenciais; use um projeto faturado e autorizado pela organização.</small></div>
+        {configured&&<div className="gemini-settings-card"><h4>Contexto de e-mail</h4><label className="gemini-label">Conta de e-mail<select value={accountId} disabled={busy} onChange={e=>{void revoke();setAccountId(e.target.value);}}><option value="">Selecione uma conta</option>{accounts.map(item=><option key={item.id} value={item.id}>{item.email}</option>)}</select></label>{readable&&<><label className="gemini-check"><input type="checkbox" checked={includeMail} disabled={busy} onChange={e=>changeContext(e.target.checked)}/> Incluir contexto de e-mails</label>
         {includeMail&&<><label className="gemini-label">Buscar e-mail no cache<input value={search} disabled={busy} onChange={e=>{setSearch(e.target.value);setMessageId("");setAnswer(null);}} placeholder="Assunto, remetente ou texto"/></label>
-        <label className="gemini-label">Contexto<select disabled={busy} value={messageId} onChange={e=>{setMessageId(e.target.value);setAnswer(null);}}><option value="">Até 20 e-mails recentes da conta</option>{matchingMessages.slice(0,100).map(item=><option key={item.id} value={item.id}>{item.subject||"(sem assunto)"}</option>)}</select></label></>}<label className="gemini-check"><input type="checkbox" checked={replyMode} disabled={!readable||busy||!includeMail} onChange={e=>setReplyMode(e.target.checked)}/> Preparar resposta para aprovação</label></>}</div>
+        <label className="gemini-label">Contexto<select disabled={busy} value={messageId} onChange={e=>{setMessageId(e.target.value);setAnswer(null);}}><option value="">Até 20 e-mails recentes da conta</option>{matchingMessages.slice(0,100).map(item=><option key={item.id} value={item.id}>{item.subject||"(sem assunto)"}</option>)}</select></label></>}<label className="gemini-check"><input type="checkbox" checked={replyMode} disabled={!readable||busy||!includeMail} onChange={e=>setReplyMode(e.target.checked)}/> Preparar resposta para aprovação</label></>}</div>}
         {error&&<div role="alert" className="gemini-error">{error}</div>}
       </section>:<>
 
-      {!readable?<div className="gemini-welcome"><GeminiMark/><h3>Seu assistente de e-mail</h3><p>{configured?"Selecione uma conta de e-mail nas configurações.":"Entre com Google ou configure uma chave da API nas configurações."}</p>{<button type="button" className="secondary gemini-welcome-setup" disabled={busy} onClick={openSettings}><Icon name="settings" size={16}/> Configurar Gemini</button>}</div>:<>
+      {!readable?<div className="gemini-welcome"><GeminiMark/><h3>Seu assistente de e-mail</h3><p>{configured?"Selecione uma conta de e-mail nas configurações.":"Informe sua chave da API nas configurações."}</p>{<button type="button" className="secondary gemini-welcome-setup" disabled={busy} onClick={openSettings}><Icon name="settings" size={16}/> Configurar Gemini</button>}</div>:<>
         <div className="gemini-permission gemini-compact-context"><Icon name="shield" size={14}/><span>{includeMail?`Contexto: ${account?.email}`:"Contexto de e-mail desativado"} · somente leitura</span></div>
         {!history.length&&!streaming&&<div className="gemini-empty-conversation"><GeminiMark/><h3>Como posso ajudar?</h3><p>Pergunte sobre seus e-mails ou arquivos.</p></div>}
 
