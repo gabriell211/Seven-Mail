@@ -16,6 +16,7 @@ type SelectedFile={id:string;file:File;mimeType:string};
 const MAX_FILES=4,MAX_FILE_BYTES=5*1024*1024,MAX_MEDIA_BYTES=8*1024*1024,MAX_TEXT_BYTES=64*1024;
 const fileTypes:Record<string,string>={png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",webp:"image/webp",pdf:"application/pdf",txt:"text/plain",csv:"text/csv",md:"text/markdown",mp3:"audio/mp3",wav:"audio/wav",mp4:"video/mp4"};
 const fileAccept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.csv,.md,.mp3,.wav,.mp4";
+const imageAccept=".png,.jpg,.jpeg,.webp";
 function fileMime(file:File):string|undefined{
   const ext=file.name.split(".").pop()?.toLowerCase()??"";
   return Object.prototype.hasOwnProperty.call(fileTypes,ext)?fileTypes[ext]:undefined;
@@ -82,6 +83,7 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   const [includeMail,setIncludeMail]=useState(true);
   const [files,setFiles]=useState<SelectedFile[]>([]);
   const fileInput=useRef<HTMLInputElement>(null);
+  const imageInput=useRef<HTMLInputElement>(null);
   const account=accounts.find(item=>item.id===accountId);
   const readable=!!account&&configured;
   const searchTerm=search.trim().toLocaleLowerCase();
@@ -262,6 +264,22 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
       <div ref={bottom}/>
       </>}
     </div>
-    {!settingsOpen&&<footer><div className="gemini-file-picker"><input type="file" ref={fileInput} accept={fileAccept} multiple hidden onChange={e=>{addFiles(Array.from(e.currentTarget.files??[]));e.currentTarget.value="";}}/><button type="button" className="secondary" disabled={!readable||busy||files.length>=MAX_FILES} onClick={()=>fileInput.current?.click()}>+ Anexar arquivo</button><small>Até 4 arquivos · 8 MiB</small></div>{files.length>0&&<div className="gemini-attachments"><small>Arquivos serão enviados ao Google ao clicar em enviar.</small>{files.map(item=><AttachmentPreview key={item.id} item={item} disabled={busy} onRemove={()=>setFiles(value=>value.filter(file=>file.id!==item.id))}/>)}</div>}<textarea ref={input} disabled={!readable||busy} value={question} maxLength={4000} onChange={e=>setQuestion(e.target.value)} placeholder="Pergunte sobre seus e-mails ou arquivos…" onPaste={e=>{const pasted=Array.from(e.clipboardData.files);if(pasted.length){e.preventDefault();addFiles(pasted);}}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void ask();}}}/>{streaming?<button type="button" className="secondary" onClick={stop}>Parar geração</button>:<button type="button" className="primary" disabled={!readable||busy||(!question.trim()&&!files.length)} onClick={()=>void ask()}><Icon name="send" size={16}/> Enviar pergunta</button>}</footer>}
+    {!settingsOpen&&<footer>
+      <div className="gemini-composer">
+        <input type="file" ref={fileInput} accept={fileAccept} multiple hidden onChange={e=>{addFiles(Array.from(e.currentTarget.files??[]));e.currentTarget.value="";}}/>
+        <input type="file" ref={imageInput} accept={imageAccept} multiple hidden onChange={e=>{
+          const images=Array.from(e.currentTarget.files??[]);e.currentTarget.value="";
+          if(images.some(file=>!fileMime(file)?.startsWith("image/"))){setError("Selecione imagens PNG, JPEG ou WebP.");return;}
+          addFiles(images);
+        }}/>
+        {files.length>0&&<div className="gemini-attachments"><small>Arquivos serão enviados ao Google ao clicar em enviar.</small>{files.map(item=><AttachmentPreview key={item.id} item={item} disabled={busy} onRemove={()=>setFiles(value=>value.filter(file=>file.id!==item.id))}/>)}</div>}
+        <textarea ref={input} aria-label="Pergunte ao Gemini" disabled={!readable||busy} value={question} maxLength={4000} rows={2} onChange={e=>setQuestion(e.target.value)} placeholder="Pergunte ao Gemini..." onPaste={e=>{const pasted=Array.from(e.clipboardData.files);if(pasted.length){e.preventDefault();addFiles(pasted);}}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void ask();}}}/>
+        <div className="gemini-composer-toolbar">
+          <button type="button" className="icon-button gemini-composer-attach" title="Anexar arquivo · até 4 arquivos, 8 MiB no total" aria-label="Anexar arquivo" disabled={!readable||busy||files.length>=MAX_FILES} onClick={()=>fileInput.current?.click()}><Icon name="paperclip" size={17}/></button>
+          <button type="button" className="icon-button gemini-composer-attach" title="Anexar imagem · PNG, JPEG ou WebP" aria-label="Anexar imagem" disabled={!readable||busy||files.length>=MAX_FILES} onClick={()=>imageInput.current?.click()}><Icon name="image" size={17}/></button>
+          {streaming?<button type="button" className="gemini-composer-send" title="Parar geração" aria-label="Parar geração" onClick={stop}><Icon name="stop" size={15}/></button>:<button type="button" className="gemini-composer-send" title="Enviar pergunta" aria-label="Enviar pergunta" disabled={!readable||busy||(!question.trim()&&!files.length)} onClick={()=>void ask()}><Icon name="arrow-up" size={17}/></button>}
+        </div>
+      </div>
+    </footer>}
   </aside>;
 }

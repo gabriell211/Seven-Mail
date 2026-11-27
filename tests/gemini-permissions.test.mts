@@ -106,3 +106,23 @@ test("conversation hides configuration and context filters while retaining expli
  assert.match(conversation,/gemini-empty-conversation/);
  assert.match(conversation,/Anexar arquivo/);
 });
+
+
+test("compact Gemini composer provides separate image and document pickers",()=>{
+ const composer=panel.slice(panel.indexOf('{!settingsOpen&&<footer>'));
+ assert.match(composer,/className="gemini-composer"/);
+ assert.match(composer,/ref=\{fileInput\} accept=\{fileAccept\}/);
+ assert.match(composer,/ref=\{imageInput\} accept=\{imageAccept\}/);
+ assert.match(panel,/const imageAccept="\.png,\.jpg,\.jpeg,\.webp"/);
+ assert.match(composer,/images\.some\(file=>!fileMime\(file\)\?\.startsWith\("image\/"\)\)/);
+ assert.match(composer,/aria-label="Anexar arquivo"[^]*?aria-label="Anexar imagem"[^]*?aria-label="Enviar pergunta"/);
+ assert.match(composer,/name="paperclip"/);
+ assert.match(composer,/name="image"/);
+ assert.match(composer,/name="arrow-up"/);
+ assert.match(composer,/onClick=\{stop\}/);
+ assert.match(composer,/!e\.nativeEvent\.isComposing/);
+ assert.match(composer,/addFiles\(images\)/);
+ assert.match(composer,/files\.length>=MAX_FILES/);
+ const css=readFileSync(new URL("../src/styles.css",import.meta.url),"utf8");
+ assert.match(css,/\.gemini-composer-toolbar \.gemini-composer-send\{[^}]*border-radius:50%/);
+});

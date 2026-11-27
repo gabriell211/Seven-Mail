@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-export type IconName = "mail"|"calendar"|"people"|"check"|"note"|"rule"|"settings"|"search"|"plus"|"inbox"|"send"|"draft"|"archive"|"trash"|"spam"|"star"|"flag"|"paperclip"|"refresh"|"chevron"|"more"|"reply"|"forward"|"filter"|"cloud"|"shield"|"moon"|"sun"|"x"|"userplus"|"clock"|"lock"|"pin"|"upload"|"download"|"copy"|"volume"|"expand"|"mic"|"speaking";
+export type IconName = "mail"|"calendar"|"people"|"check"|"note"|"rule"|"settings"|"search"|"plus"|"inbox"|"send"|"draft"|"archive"|"trash"|"spam"|"star"|"flag"|"paperclip"|"refresh"|"chevron"|"more"|"reply"|"forward"|"filter"|"cloud"|"shield"|"moon"|"sun"|"x"|"userplus"|"clock"|"lock"|"pin"|"upload"|"download"|"copy"|"volume"|"expand"|"mic"|"speaking"|"image"|"arrow-up"|"stop";
 
 const paths: Record<IconName, string[]> = {
   mail:["M4 6h16v12H4z","m4 7 8 6 8-6"], calendar:["M5 5h14v14H5z","M8 3v4M16 3v4M5 9h14"],
@@ -28,6 +28,9 @@ const paths: Record<IconName, string[]> = {
   volume:["M11 5 6 9H3v6h3l5 4z","M15 9a4 4 0 0 1 0 6","M17.5 6.5a8 8 0 0 1 0 11"],
   expand:["M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"],
   speaking:["M11 21v-4H7v-4H4l2-4a7 7 0 0 1 13 0v1","M13 13h3","M18 12c2 1 2 4 0 5","M21 10c3 2 3 7 0 9"],
+  image:["M4 4h16v16H4z","M8 9a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0Z","m4 17 5-5 4 4 3-3 4 4"],
+  "arrow-up":["M12 19V5","m6 11 6-6 6 6"],
+  stop:["M7 7h10v10H7z"],
   mic:["M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z","M5 11a7 7 0 0 0 14 0","M12 18v3","M9 21h6"]
 };
 
