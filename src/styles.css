@@ -1093,3 +1093,27 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .account-modal>.modal-footer button{min-height:34px;font-size:12px}
 @container account-setup (max-width:490px){.account-modal .server-grid{grid-template-columns:minmax(0,1fr) 86px}.account-modal .server-grid .account-server-security{grid-column:1/-1}}
 @container account-setup (max-width:360px){.account-modal .provider-brand-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.account-modal .form-grid{grid-template-columns:1fr}}
+
+/* Rich signature editor with independent defaults and bounded modal. */
+.signature-panel{width:100%}
+.signature-panel-head>span,.signature-main b{font-size:13px}
+.signature-main small,.signature-main p,.signature-empty{font-size:12px}
+.signature-empty{border:1px dashed var(--line2);border-radius:10px;padding:20px;text-align:center}
+.signature-modal{width:min(800px,100%);max-height:calc(100vh / var(--ui-scale,1) - 54px)}
+.signature-rich-field{min-width:0;display:grid;gap:6px}
+.signature-field-label{font-size:13px;color:var(--muted);font-weight:600}
+.signature-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:7px;border:1px solid var(--line2);border-radius:9px 9px 0 0;background:var(--soft)}
+.signature-toolbar button{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:5px 8px;font-size:12px;color:var(--text);border-radius:5px;background:var(--solid);border:1px solid var(--line)}
+.signature-toolbar button:hover{background:var(--accent-soft)}
+.signature-toolbar select{width:auto;min-height:30px;padding:3px 6px;font-size:12px}
+.signature-toolbar input[type=color]{width:32px;min-height:30px;padding:3px}
+.signature-toolbar input[hidden]{display:none}
+.signature-rich-editor,.signature-preview{min-height:180px;max-height:300px;overflow:auto;background:#fff;color:#222;border:1px solid var(--line2);border-radius:0 0 9px 9px;padding:14px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.signature-rich-editor:empty:before{content:attr(data-placeholder);color:#777;pointer-events:none}
+.signature-rich-editor:focus{outline:2px solid var(--accent);outline-offset:-2px}
+.signature-rich-editor img,.signature-preview img{max-width:100%;height:auto}
+.signature-rich-editor img{cursor:ew-resize}
+.signature-editor-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.signature-editor-footer small{font-size:11px;color:var(--muted)}
+.signature-notice{font-size:12px;color:#c93f52;margin:0}
+.signature-preview{border-radius:9px;min-height:90px}

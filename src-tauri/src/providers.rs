@@ -13,6 +13,41 @@ use lettre::{
     Address, Message, SmtpTransport, Transport,
 };
 use std::{fs, net::IpAddr, time::Duration};
+use base64::Engine as _;
+
+// Convert bounded raster data URLs to MIME inline attachments.
+fn embed_signature_images(html: &str) -> Result<(String, Vec<SinglePart>), String> {
+    static IMAGE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r#"(?i)(<img\b[^>]*?\s+src\s*=\s*["'])data:image/(png|jpeg|gif);base64,([A-Za-z0-9+/]+={0,2})(["'])"#).expect("static image regex")
+    });
+    let mut output=String::with_capacity(html.len());
+    let mut parts=Vec::new();
+    let mut cursor=0;
+    let mut total=0usize;
+    for capture in IMAGE.captures_iter(html) {
+        let matched=capture.get(0).expect("whole match");
+        let encoded=&capture[3];
+        if encoded.len()>699_056 || parts.len()>=8 {return Err("Imagem da assinatura excede o limite.".into());}
+        let bytes=base64::engine::general_purpose::STANDARD.decode(encoded).map_err(|_| "Imagem da assinatura inválida.".to_string())?;
+        let kind=capture[2].to_ascii_lowercase();
+        let valid=match kind.as_str() {
+            "png"=>bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+            "jpeg"=>bytes.starts_with(b"\xff\xd8\xff"),
+            "gif"=>bytes.starts_with(b"GIF87a")||bytes.starts_with(b"GIF89a"),
+            _=>false,
+        };
+        total=total.saturating_add(bytes.len());
+        if !valid||bytes.len()>512*1024||total>2*1024*1024{return Err("Imagem da assinatura inválida ou muito grande.".into());}
+        let cid=format!("seven-signature-{}@seven-mail.local",uuid::Uuid::new_v4());
+        let mime:ContentType=format!("image/{kind}").parse().map_err(|error|format!("MIME inválido: {error}"))?;
+        parts.push(Attachment::new_inline(cid.clone()).body(bytes,mime));
+        output.push_str(&html[cursor..matched.start()]);
+        output.push_str(&format!("{}cid:{}{}",&capture[1],cid,&capture[4]));
+        cursor=matched.end();
+    }
+    output.push_str(&html[cursor..]);
+    Ok((output,parts))
+}
 
 pub fn discover(email: &str) -> ProviderSettings {
     let domain = email
@@ -539,6 +574,7 @@ pub fn send_queued_raw_with_checkpoint(
         return Err("Informe pelo menos um destinatário válido.".to_string());
     }
 
+    let (body_html,signature_images)=embed_signature_images(body_html)?;
     let mut body_part = if body_html.trim().is_empty() {
         MultiPart::alternative().singlepart(SinglePart::plain(body_text.to_owned()))
     } else {
@@ -560,7 +596,13 @@ pub fn send_queued_raw_with_checkpoint(
     }
 
     validate_attachment_count(attachments.len())?;
-    let mut mixed = MultiPart::mixed().multipart(body_part);
+    let mut mixed = if signature_images.is_empty() {
+        MultiPart::mixed().multipart(body_part)
+    } else {
+        let mut related=MultiPart::related().multipart(body_part);
+        for part in signature_images {related=related.singlepart(part);}
+        MultiPart::mixed().multipart(related)
+    };
     let mut attachment_bytes = 0u64;
     for attachment in attachments {
         let remaining = attachment_budget(attachment_bytes)?;
@@ -765,5 +807,19 @@ mod smtp_attachment_budget_tests {
         assert_eq!(attachment_budget(MAX_SMTP_TOTAL_ATTACHMENT_BYTES - 1).unwrap(), 1);
         assert_eq!(attachment_budget(MAX_SMTP_TOTAL_ATTACHMENT_BYTES).unwrap(), 0);
         assert!(attachment_budget(MAX_SMTP_TOTAL_ATTACHMENT_BYTES + 1).is_err());
+    }
+}
+
+#[cfg(test)]
+mod signature_image_tests {
+    use super::*;
+    #[test]
+    fn inline_signature_image_becomes_cid() {
+        let encoded=base64::engine::general_purpose::STANDARD.encode(b"\x89PNG\r\n\x1a\n");
+        let (html,parts)=embed_signature_images(&format!("<img src=\"data:image/png;base64,{encoded}\">")).unwrap();
+        assert_eq!(parts.len(),1);
+        assert!(html.contains("cid:seven-signature-"));
+        assert!(!html.contains("data:image"));
+        assert!(embed_signature_images("<img src=\"data:image/png;base64,YQ==\">").is_err());
     }
 }
