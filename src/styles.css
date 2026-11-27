@@ -1199,3 +1199,51 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .seven-storage-card details label{margin-top:8px}
 @container (max-width:420px){.seven-storage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @container (max-width:270px){.seven-storage-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* Gemini settings live in their own panel view, leaving the conversation uncluttered. */
+.gemini-settings-toggle[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent)}
+.gemini-setup{display:grid;gap:14px}
+.gemini-setup>.gemini-settings-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.gemini-settings-heading h3{margin:0;font-size:15px;color:var(--text);outline-offset:4px}
+.gemini-setup>.gemini-settings-card{display:grid;gap:10px;padding:12px;border:1px solid var(--line);border-radius:10px;min-width:0;background:var(--solid)}
+.gemini-settings-card h4{font-size:13px;color:var(--text);margin:0}
+.gemini-settings-card p{margin:0}
+.gemini-settings-card .gemini-label{margin:0}
+.gemini-settings-card>div{display:flex;gap:6px;flex-wrap:wrap}
+.gemini-settings-card>button{justify-self:start;max-width:100%}
+.gemini-settings-card details{padding:8px;border:1px solid var(--line);border-radius:8px}
+.gemini-settings-card details .gemini-label{margin-top:8px}
+.gemini-welcome-setup{display:flex;align-items:center;gap:6px;justify-self:start}
+
+.gemini-compact-context{font-size:10px;padding:6px 8px;min-width:0;overflow-wrap:anywhere;flex:none}
+.gemini-compact-context span{min-width:0}
+.gemini-empty-conversation{flex:1;min-height:110px;display:grid;place-content:center;justify-items:center;text-align:center;gap:8px;padding:16px;color:var(--muted)}
+.gemini-empty-conversation>svg{width:30px;height:30px;color:var(--accent)}
+.gemini-empty-conversation h3{font-size:14px;margin:0;color:var(--text)}
+.gemini-empty-conversation p{font-size:12px;margin:0}
+
+/* A single compact prompt surface, matching the Gemini sidebar design. */
+.gemini-panel>footer{padding:10px 12px 12px;border-top:0;display:block;min-width:0}
+.gemini-composer{display:flex;flex-direction:column;gap:3px;min-width:0;border:1px solid var(--line2);border-radius:17px;background:var(--solid);padding:8px 10px;transition:border-color .15s ease}
+.gemini-composer:focus-within{border-color:var(--accent)}
+.gemini-panel .gemini-composer textarea{display:block;min-height:38px;max-height:132px;padding:4px 2px;resize:none;background:transparent;border:0;outline:none;box-shadow:none;font-size:13px;line-height:1.55;overflow:auto}
+.gemini-composer-toolbar{display:flex;align-items:center;gap:4px;min-width:0}
+.gemini-composer-toolbar .gemini-composer-attach{display:grid;place-items:center;width:30px;height:30px;min-width:30px;min-height:30px;padding:0;color:var(--muted);border:0;border-radius:8px;background:transparent}
+.gemini-composer-toolbar .gemini-composer-attach:hover:not(:disabled){color:var(--accent);background:var(--accent-soft)}
+.gemini-composer-toolbar .gemini-composer-send{display:grid;place-items:center;flex:none;width:32px;height:32px;min-width:32px;min-height:32px;padding:0;margin-left:auto;border:0;border-radius:50%;background:var(--accent);color:#fff}
+.gemini-composer-toolbar .gemini-composer-send:disabled{opacity:.45}
+.gemini-composer-toolbar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.gemini-composer .gemini-attachments{margin:2px 0 4px}
+.gemini-history:empty{display:none}
+@media(prefers-reduced-motion:reduce){.gemini-composer{transition:none}}
+
+.gemini-brand-mark{display:block;object-fit:contain;flex:none;width:21px;height:21px}
+.gemini-trigger .gemini-brand-mark{width:18px;height:18px}
+.gemini-empty-conversation>.gemini-brand-mark,.gemini-welcome>.gemini-brand-mark{width:32px;height:32px}
+.gemini-token-ring{position:relative;width:40px;height:40px;display:grid;place-items:center;margin-left:auto;flex:none}
+.gemini-token-arc{position:absolute;inset:0;width:40px;height:40px;pointer-events:none;transform:rotate(-90deg);overflow:visible}
+.gemini-token-arc circle{fill:none;stroke-width:2;stroke-linecap:round}
+.gemini-token-track{stroke:var(--line2)}
+.gemini-token-value{stroke:var(--accent);transition:stroke-dasharray .18s linear}
+.gemini-token-ring .gemini-composer-send{position:relative;margin:0}
+@media(prefers-reduced-motion:reduce){.gemini-token-value{transition:none}}
