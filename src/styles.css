@@ -1247,3 +1247,11 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .gemini-token-value{stroke:var(--accent);transition:stroke-dasharray .18s linear}
 .gemini-token-ring .gemini-composer-send{position:relative;margin:0}
 @media(prefers-reduced-motion:reduce){.gemini-token-value{transition:none}}
+
+/* Explicit unread state: independent of selection, hover, sender photo or theme. */
+.message.unread{background:color-mix(in srgb,var(--accent) 8%,var(--solid));border-color:color-mix(in srgb,var(--accent) 12%,transparent)}
+.message.unread.selected{background:var(--accent-soft);border-color:var(--accent)}
+.message.unread .message-meta b,.message.unread .message-copy>strong{font-weight:850;color:var(--text)}
+.message:not(.unread) .message-meta b,.message:not(.unread) .message-copy>strong{font-weight:500;color:var(--muted)}
+.message-unread-dot{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--accent);align-self:center}
+.unread-filter-count{font-size:10px;font-weight:750;color:var(--accent);margin-left:3px}

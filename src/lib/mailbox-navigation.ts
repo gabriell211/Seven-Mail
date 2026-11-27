@@ -8,7 +8,7 @@ export function mailboxMessages<T extends FolderMessage>(messages: readonly T[],
 export function countUnreadByFolder(messages: readonly FolderMessage[], accountId?:string): Map<string,number> {
   const counts=new Map<string,number>();
   for(const message of messages){
-    if(message.isRead||(accountId&&message.accountId!==accountId)) continue;
+    if(!isUnreadMessage(message)||(accountId&&message.accountId!==accountId)) continue;
     counts.set(message.folder,(counts.get(message.folder)??0)+1);
   }
   return counts;
@@ -19,3 +19,6 @@ export function readExpandedMailboxes(): string[] {
     return Array.isArray(value)?[...new Set(value.filter((item):item is string=>typeof item==="string"))]:[];
   }catch{return [];}
 }
+
+/** Use the same explicit unread predicate for folder counts, filters and presentation. */
+export function isUnreadMessage(message:Pick<FolderMessage,"isRead">):boolean{return message.isRead===false;}

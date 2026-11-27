@@ -27,7 +27,7 @@ import { ProviderSelector } from "./components/ProviderSelector";
 import { AccountSwitcher } from "./components/AccountSwitcher";
 import { CommandMenu } from "./components/CommandMenu";
 import { AccountFolderSection } from "./components/AccountFolderSection";
-import { countUnreadByFolder, mailboxMessages, readExpandedMailboxes } from "./lib/mailbox-navigation";
+import { countUnreadByFolder, isUnreadMessage, mailboxMessages, readExpandedMailboxes } from "./lib/mailbox-navigation";
 import { ConnectionError } from "./components/ConnectionError";
 import { SettingsAbout } from "./components/SettingsAbout";
 import { LaunchScreen } from "./components/LaunchScreen";
@@ -517,6 +517,14 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
   const [collapsedGroups,setCollapsedGroups] = useState<string[]>([]);
   const swipeStartRef=useRef<{id:string;x:number;y:number}|null>(null);
   const selected = messages.find(m=>m.id===selectedId);
+  const markReadRef=useRef(onMessageAction);
+  useEffect(()=>{markReadRef.current=onMessageAction;},[onMessageAction]);
+  useEffect(()=>{
+    if(!selected||!isUnreadMessage(selected))return;
+    const id=selected.id;
+    const timer=window.setTimeout(()=>{void markReadRef.current(id,"read").catch(()=>undefined);},Math.max(0,settings.markReadDelayMs));
+    return()=>window.clearTimeout(timer);
+  },[selected?.id,selected?.accountId,selected?.isRead,settings.markReadDelayMs]);
 
   useEffect(()=>{
     let cancelled=false;
@@ -530,8 +538,11 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
 
   const now = Date.now();
   const cachedFolderCount=messages.filter(message=>message.folder===folder.name).length;
+  const visibleUnreadCount=messages.filter(message=>message.folder===folder.name&&isUnreadMessage(message)).length;
   const baseFolderMessages = messages.filter(message=>{
-    if (message.folder!==folder.name || !matchesQuickFilter(message,quickFilter)) return false;
+    if (message.folder!==folder.name || (quickFilter==="unread"?!isUnreadMessage(message):!matchesQuickFilter(message,quickFilter))) return false;
+    // The unread tab represents the entire current folder, including snoozed and other focus categories.
+    if(quickFilter==="unread")return true;
     if (message.snoozedUntil) {
       const until = new Date(message.snoozedUntil).getTime();
       if (Number.isFinite(until) && until > now) return false;
@@ -558,7 +569,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
     const key=conversationKey(message);
     conversationCounts.set(key,(conversationCounts.get(key)??0)+1);
   }
-  const displayMessages=conversationView
+  const displayMessages=conversationView&&quickFilter!=="unread"
     ? sortedFolderMessages.filter((message,index,array)=>array.findIndex((item)=>conversationKey(item)===conversationKey(message))===index)
     : sortedFolderMessages;
   const folderMessages=displayMessages.slice(0,visibleCount);
@@ -660,10 +671,10 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
     | {kind:"message";message:MailMessage}
   >>(()=>messageGroups.flatMap((group)=>[
     {kind:"group" as const,label:group.label,count:group.messages.length},
-    ...(collapsedGroups.includes(group.label)
+    ...(quickFilter!=="unread"&&collapsedGroups.includes(group.label)
       ? []
       : group.messages.map((message)=>({kind:"message" as const,message}))),
-  ]),[messageGroups,collapsedGroups]);
+  ]),[messageGroups,collapsedGroups,quickFilter]);
 
   function conditionalAccent(message:MailMessage):string|undefined {
     for(const rule of settings.conditionalMailRules??[]){
@@ -684,10 +695,11 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
     const accent=conditionalAccent(message);
     const sender=message.from.name||message.from.email;
     const selectedRow=selectedId===message.id;
+    const unread=isUnreadMessage(message);
     return <div
       role="option"
       aria-selected={selectedRow}
-      aria-label={`${message.isRead?"Lida":"Não lida"}, de ${sender}, assunto ${message.subject||"sem assunto"}`}
+      aria-label={`${unread?"Não lida":"Lida"}, de ${sender}, assunto ${message.subject||"sem assunto"}`}
       tabIndex={selectedRow?0:-1}
       draggable={Boolean(onMoveToFolder)}
       onDragStart={(event)=>{event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("application/x-seven-mail-message",message.id);}}
@@ -696,11 +708,11 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
       onPointerUp={(event)=>{const start=swipeStartRef.current;swipeStartRef.current=null;if(!start||start.id!==message.id)return;const dx=event.clientX-start.x;const dy=event.clientY-start.y;if(Math.abs(dx)<72||Math.abs(dx)<Math.abs(dy)*1.35)return;event.preventDefault();event.stopPropagation();void act(message.id,dx>0?"archive":"delete");}}
       onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();setSelectedId(message.id);}}}
       style={accent?{borderLeftColor:accent}:undefined}
-      className={"message swipeable "+(accent?"conditional ":"")+(selectedRow?"selected ":"")+(!message.isRead?"unread ":"")+(message.isPhishing?"phishing ":"")+(message.isImportant?"important ":"")+(isBlocked(message)?"blocked ":"")}
-      onClick={()=>{setSelectedId(message.id);if(!message.isRead){window.setTimeout(()=>void act(message.id,"read"),settings.markReadDelayMs);}}}
+      className={"message swipeable "+(accent?"conditional ":"")+(selectedRow?"selected ":"")+(unread?"unread ":"")+(message.isPhishing?"phishing ":"")+(message.isImportant?"important ":"")+(isBlocked(message)?"blocked ":"")}
+      onClick={()=>setSelectedId(message.id)}
     >
       {settings.showSenderPhotos!==false&&<span className="avatar" aria-hidden="true">{sender[0].toUpperCase()}</span>}
-      <span className="message-copy"><span className="message-meta"><b>{sender}</b><time>{new Date(message.receivedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</time></span><strong>{message.subject||"(sem assunto)"}{conversationView&&(conversationCounts.get(conversationKey(message))??0)>1&&<em className="conversation-count"> {conversationCounts.get(conversationKey(message))}</em>}</strong><small>{message.preview}</small>{message.categories.length>0&&<span className="message-category-dots" aria-label={`Categorias: ${message.categories.join(", ")}`}>{message.categories.slice(0,4).map(name=>{const category=categories.find(item=>item.name===name);return <i key={name} title={name} style={{background:category?.color||"#888"}}/>;})}</span>}</span>
+      <span className="message-copy"><span className="message-meta">{unread&&<i className="message-unread-dot" aria-hidden="true"/>}<b>{sender}</b><time>{new Date(message.receivedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</time></span><strong>{message.subject||"(sem assunto)"}{conversationView&&(conversationCounts.get(conversationKey(message))??0)>1&&<em className="conversation-count"> {conversationCounts.get(conversationKey(message))}</em>}</strong><small>{message.preview}</small>{message.categories.length>0&&<span className="message-category-dots" aria-label={`Categorias: ${message.categories.join(", ")}`}>{message.categories.slice(0,4).map(name=>{const category=categories.find(item=>item.name===name);return <i key={name} title={name} style={{background:category?.color||"#888"}}/>;})}</span>}</span>
       <span className="message-indicators" aria-hidden="true">{message.isImportant&&<Icon name="star" size={13}/>} {message.isMuted&&<Icon name="moon" size={13}/>} {message.isPinned&&<Icon name="pin" size={13}/>} {message.hasAttachments&&<Icon name="paperclip" size={14}/>}</span>
       <span className="message-quick-actions" aria-label="Ações rápidas">{(settings.quickActions??["archive","flag","read"]).map((action)=><button type="button" title={action} aria-label={action} key={action} onClick={(event)=>runQuickAction(event as unknown as MouseEvent,message,action)}><Icon name={quickActionIcon(action)} size={12}/></button>)}</span>
     </div>;
@@ -894,7 +906,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
       {folder.role==="inbox"&&settings.focusInboxEnabled&&<div className="segmented focus-tabs" role="group" aria-label="Tipo de caixa de entrada">{([["all","Todas"],["focused","Prioritária"],["other","Outros"]] as const).map(([tab,label])=><button key={tab} className={focusTab===tab?"active":""} aria-pressed={focusTab===tab} onClick={()=>setFocusTab(tab)}>{label}</button>)}</div>}
       <div className="segmented mail-filters">
         <button className={quickFilter==="all"?"active":""} onClick={()=>setQuickFilter("all")}>Todas</button>
-        <button className={quickFilter==="unread"?"active":""} onClick={()=>setQuickFilter("unread")}>Não lidas</button>
+        <button className={quickFilter==="unread"?"active":""} aria-pressed={quickFilter==="unread"} onClick={()=>setQuickFilter("unread")}>Não lidas <span className="unread-filter-count">{visibleUnreadCount}</span></button>
         <button className={quickFilter==="flagged"?"active":""} onClick={()=>setQuickFilter("flagged")}>Sinalizadas</button>
         <button className={quickFilter==="pinned"?"active":""} onClick={()=>setQuickFilter("pinned")}>Fixadas</button>
         <button className={quickFilter==="attachments"?"active":""} onClick={()=>setQuickFilter("attachments")}>Anexos</button>
@@ -3522,13 +3534,15 @@ function UnlockedApp() {
   async function applyMessageAction(messageId:string, action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox") {
     if (action==="delete" && settings.confirmBeforeDelete && !window.confirm("Excluir esta mensagem?")) return;
     const message = messages.find((item)=>item.id===messageId);
-    const accountId = activeAccount?.id ?? message?.accountId;
+    const accountId = message?.accountId;
+    if(activeAccount&&activeAccount.id!==accountId)return;
     if (!accountId) return;
     const updated = await bridge.messageAction(accountId, messageId, action);
     if(action==="flag"){
       void createTaskFromMessage(updated,false).catch(()=>undefined);
     }
-    setMessages(await bridge.listCachedMessages(unified ? undefined : accountId));
+    // Apply the native-confirmed status immediately; avoid replacing the current mailbox with a stale async snapshot.
+    setMessages(current=>current.map(item=>item.id===updated.id&&item.accountId===updated.accountId?updated:item));
     void pushCloudMessage(updated).catch(() => undefined);
     void bridge.flushMailActions(accountId).catch(() => undefined);
   }
