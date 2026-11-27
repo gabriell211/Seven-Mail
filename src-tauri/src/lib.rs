@@ -1,5 +1,6 @@
 mod app_lock;
 mod cloud_binding;
+mod copilot;
 mod credentials;
 mod dav_sync;
 mod dav_xml;
@@ -272,6 +273,7 @@ fn is_app_locked() -> Result<bool, String> {
 
 #[tauri::command]
 fn lock_app() -> Result<(), String> {
+    copilot::revoke_all();
     app_lock::lock()
 }
 
@@ -1495,6 +1497,11 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            copilot::copilot_setup_path,
+            copilot::copilot_authorize,
+            copilot::copilot_revoke,
+            copilot::copilot_ask,
+            copilot::copilot_approve_draft,
             runtime_info,
             check_for_update,
             download_update,
