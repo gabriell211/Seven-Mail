@@ -570,7 +570,7 @@ mod tests{
     // Real API test: opt-in only, never use mailbox data or application credentials.
     fn live_config()->GeminiConfig{
         let key=std::env::var("SEVEN_MAIL_GEMINI_TEST_API_KEY").expect("Configure uma chave de teste autorizada.");
-        let model=std::env::var("SEVEN_MAIL_GEMINI_TEST_MODEL").ok().filter(|value|!value.trim().is_empty()).unwrap_or_else(||DEFAULT_MODEL.to_owned());
+        let model=std::env::var("SEVEN_MAIL_GEMINI_TEST_MODEL").ok().filter(|value|!value.trim().is_empty()).unwrap_or_else(||"gemini-3.5-flash-lite".to_owned());
         assert!(valid_key(&key),"Chave de teste inválida.");
         assert!(valid_model(&model),"Modelo de teste inválido.");
         GeminiConfig{api_key:key,model}
@@ -578,9 +578,10 @@ mod tests{
     fn live_answer(config:GeminiConfig,prompt:&str,files:Vec<MediaInput>,expected:&str){
         let mut received=String::new();
         let mut chunks=0usize;
+        let model=config.model.clone();
         let answer=generate_stream(config,prompt.to_owned(),files,|delta|{
             chunks+=1;received.push_str(delta);Ok(())
-        },||Ok(())).expect("A API Gemini deve completar a geração SSE.");
+        },||Ok(())).unwrap_or_else(|error|panic!("Gemini live model {model}: {error}"));
         assert!(chunks>0,"Nenhum fragmento recebido.");
         assert_eq!(received,answer,"Fluxo e resposta final devem coincidir.");
         assert!(answer.to_ascii_uppercase().contains(expected),"Resposta não contém o marcador sintético esperado.");
@@ -597,7 +598,7 @@ mod tests{
     #[ignore = "requires explicitly authorized multimodal Gemini API test key"]
     fn live_image_and_stream(){
         // Valid 160x160 RGB PNG: a red square centered on a white background.
-        let png=STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAKAAAACgCAIAAAAErfB6AAABnElEQVR4nO3cwQ3DMAwEwShw/y0zr5Rg2ljMNHACFvzqzMyHru/TD+BeAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAsdde1Pn7G2939bPGS44TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM47tqbmtnb4s8FxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkc9wMWTAg/4BjnGwAAAABJRU5ErkJggg==").expect("PNG fixture");
+        let png=STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAKAAAACgCAIAAAAErfB6AAABmUlEQVR4nO3c0QmAQAwFQU/sv+VYhQTWmQbewZLfOzNz0XVvP4BvCRwncJzAcQLHCRwncJzAcQLHCRwncJzAcQLHCRwncJzAcQLHCRwncJzAcQLHCRwncJzAcQLHCRwncJzAcQLHCRwncJzAcQLHCRwncNyztnzO2vSKpf/IXHCcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxz1ryzNr03/iguMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM47gUDZAg/sVzcZQAAAABJRU5ErkJggg==").expect("PNG fixture");
         live_answer(live_config(),"Qual a cor do quadrado central da imagem? Responda em inglês, somente com o nome da cor.",vec![media("fixture.png","image/png",&png)],"RED");
     }
     fn synthetic_pdf()->Vec<u8>{

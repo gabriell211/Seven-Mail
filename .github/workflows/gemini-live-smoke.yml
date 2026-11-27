@@ -41,7 +41,7 @@ jobs:
           workspaces: "./src-tauri -> target"
       - name: Compile smoke tests without credentials
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --no-run
-      - name: Verify actual text, image and PDF streaming (bounded transient HTTP retries)
+      - name: Verify text then multimodal streaming on alternate stable Flash-Lite
         env:
           SEVEN_MAIL_GEMINI_TEST_API_KEY: ${{ secrets.SEVEN_MAIL_GEMINI_TEST_API_KEY }}
           SEVEN_MAIL_GEMINI_TEST_MODEL: ${{ vars.SEVEN_MAIL_GEMINI_TEST_MODEL }}
@@ -51,4 +51,10 @@ jobs:
             echo "::error::Missing repository secret SEVEN_MAIL_GEMINI_TEST_API_KEY"
             exit 1
           fi
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib gemini::tests::live_ -- --ignored --test-threads=1
+          if [ -z "$SEVEN_MAIL_GEMINI_TEST_MODEL" ]; then
+            export SEVEN_MAIL_GEMINI_TEST_MODEL=gemini-3.5-flash-lite
+          fi
+          echo "Testing explicitly selected Gemini model: $SEVEN_MAIL_GEMINI_TEST_MODEL"
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib gemini::tests::live_text_and_stream -- --ignored --exact
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib gemini::tests::live_image_and_stream -- --ignored --exact
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib gemini::tests::live_pdf_and_stream -- --ignored --exact

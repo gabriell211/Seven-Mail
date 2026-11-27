@@ -41,3 +41,11 @@ A ausência da chave causa falha explícita, não aprovação fictícia. Teste r
 ## Homologação pendente
 
 Validar geração real, compatibilidade do modelo escolhido e cotas com chave de teste autorizada; executar CI e testar o cofre no Windows, Linux e macOS. Não considerar homologado apenas pela validação de metadados.
+
+### Diagnóstico do HTTP 503
+
+O modelo 3.8 Flash retornou HTTP 503 mesmo após as tentativas limitadas. O workflow usa por padrão o Gemini 3.5 Flash-Lite, documentado como estável e multimodal (https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite), com teste textual antes das mídias para evitar solicitações desnecessárias quando o provedor está indisponível. A variável de repositório SEVEN_MAIL_GEMINI_TEST_MODEL continua podendo substituir esse modelo. Não há troca automática do modelo salvo pelo usuário nem aprovação de testes que não foram executados.
+
+### OAuth (proposta, ainda não implementada)
+
+A API Gemini admite OAuth vinculado a projeto Google Cloud com API habilitada, autorização e atribuição de cota/faturamento. O login desktop deve usar navegador do sistema, callback loopback, PKCE e tokens protegidos no cofre nativo. O login de identidade por si só não concede acesso à API nem transfere a assinatura de consumidor Gemini. Referências: https://ai.google.dev/gemini-api/docs/oauth e https://developers.google.com/identity/protocols/oauth2/native-app. A configuração de OAuth de produção depende do projeto e credenciais próprios do Seven Mail; não reutilizar cookies ou credenciais de outro aplicativo.
