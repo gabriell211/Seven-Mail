@@ -11,6 +11,7 @@ import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, Pers
 import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { SignaturesPanel } from "./components/SignaturesPanel";
+import { defaultSignature,signatureHtml,signatureTextHtml } from "./lib/signatures";
 import { SmimePanel } from "./components/SmimePanel";
 import { CorporatePoliciesPanel } from "./components/CorporatePoliciesPanel";
 import { MessageDetailsModal, SenderPoliciesPanel } from "./components/AdvancedMailPanels";
@@ -1034,7 +1035,7 @@ function RulesView() {
   </div></Workspace>;
 }
 
-function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signatures,onSaveSignature,onDeleteSignature,profiles,activeProfileId,onActivateProfile,onSaveProfile,onDeleteProfile,onUpdateInfo}:{settings:AppSettings;onChange:(s:AppSettings)=>void;runtime?:RuntimeInfo;accounts:AccountProfile[];onAccountsChange:(accounts:AccountProfile[])=>void;signatures:SignatureItem[];onSaveSignature:(signature:SignatureItem)=>Promise<void>;onDeleteSignature:(signature:SignatureItem)=>Promise<void>;profiles:ProfileItem[];activeProfileId?:string;onActivateProfile:(profile:ProfileItem|null)=>void;onSaveProfile:(profile:ProfileItem)=>Promise<void>;onDeleteProfile:(profile:ProfileItem)=>Promise<void>;onUpdateInfo:(info:UpdateInfo)=>void}) {
+function SettingsView({settings,onChange,runtime,accounts,activeAccountId,onAccountsChange,signatures,onSaveSignature,onDeleteSignature,profiles,activeProfileId,onActivateProfile,onSaveProfile,onDeleteProfile,onUpdateInfo}:{settings:AppSettings;onChange:(s:AppSettings)=>void;runtime?:RuntimeInfo;accounts:AccountProfile[];activeAccountId?:string;onAccountsChange:(accounts:AccountProfile[])=>void;signatures:SignatureItem[];onSaveSignature:(signature:SignatureItem)=>Promise<void>;onDeleteSignature:(signature:SignatureItem)=>Promise<void>;profiles:ProfileItem[];activeProfileId?:string;onActivateProfile:(profile:ProfileItem|null)=>void;onSaveProfile:(profile:ProfileItem)=>Promise<void>;onDeleteProfile:(profile:ProfileItem)=>Promise<void>;onUpdateInfo:(info:UpdateInfo)=>void}) {
   const set = <K extends keyof AppSettings>(key:K,value:AppSettings[K])=>onChange({...settings,[key]:value});
 
   function toggleWorkDay(day:number){
@@ -1288,7 +1289,7 @@ function SettingsView({settings,onChange,runtime,accounts,onAccountsChange,signa
         <SenderPoliciesPanel settings={settings} onChange={onChange}/>
     <ProfilesPanel accounts={accounts} profiles={profiles} activeProfileId={activeProfileId} onActivate={onActivateProfile} onSave={onSaveProfile} onDelete={onDeleteProfile}/>
     <AccountsPanel accounts={accounts} onChange={onAccountsChange}/>
-    <SignaturesPanel accounts={accounts} signatures={signatures} onSave={onSaveSignature} onDelete={onDeleteSignature}/>
+    <SignaturesPanel accounts={accounts} activeAccountId={activeAccountId} signatures={signatures} onSave={onSaveSignature} onDelete={onDeleteSignature}/>
     <SmimePanel accounts={accounts}/>
     <CorporatePoliciesPanel accounts={accounts}/>
     <ComposerAssetsPanel/>
@@ -1860,10 +1861,11 @@ function UnlockedApp() {
     const now = new Date().toISOString();
     const cloudDocuments: Array<WorkspaceDocument<SignatureItem>> = [];
 
-    if (signature.isDefault) {
+    if (signature.isDefault||signature.isReplyDefault) {
       for (const item of signatures) {
-        if (item.accountId !== signature.accountId || item.id === signature.id || !item.isDefault) continue;
-        const demoted = {...item,isDefault:false};
+        if(item.accountId!==signature.accountId||item.id===signature.id)continue;
+        const demoted={...item,isDefault:signature.isDefault?false:item.isDefault,isReplyDefault:signature.isReplyDefault?false:(item.isReplyDefault??item.isDefault)};
+        if(demoted.isDefault===item.isDefault&&demoted.isReplyDefault===(item.isReplyDefault??item.isDefault))continue;
         const document: WorkspaceDocument<SignatureItem> = {
           id: demoted.id,
           kind: "signature",
@@ -1886,8 +1888,8 @@ function UnlockedApp() {
 
     setSignatures((current)=>{
       const normalized = current.map((item)=>{
-        if (signature.isDefault && item.accountId===signature.accountId && item.id!==signature.id) {
-          return {...item,isDefault:false};
+        if ((signature.isDefault||signature.isReplyDefault) && item.accountId===signature.accountId && item.id!==signature.id) {
+          return {...item,isDefault:signature.isDefault?false:item.isDefault,isReplyDefault:signature.isReplyDefault?false:(item.isReplyDefault??item.isDefault)};
         }
         return item;
       });
@@ -1953,8 +1955,7 @@ function UnlockedApp() {
     const quoted = originalText
       ? originalText.split("\n").map((line)=>`> ${line}`).join("\n")
       : ">";
-    const signature = signatures.find((item)=>item.accountId===message.accountId&&item.isDefault)
-      ?? signatures.find((item)=>item.accountId===message.accountId);
+    const signature = defaultSignature(signatures,message.accountId,true);
     const signatureText = signature?.bodyText.trim() ?? "";
 
     const draft: ComposeDraft = {
@@ -1972,8 +1973,8 @@ function UnlockedApp() {
         ? (/^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject || "(sem assunto)"}`)
         : (/^(enc|fw|fwd):/i.test(message.subject) ? message.subject : `Enc: ${message.subject || "(sem assunto)"}`),
       bodyText: `${signatureText ? `\n\n${signatureText}` : ""}\n\nEm ${new Date(message.receivedAt).toLocaleString()}, ${message.from.name || message.from.email} escreveu:\n${quoted}`,
-      bodyHtml: "",
-      mode: "plain",
+      bodyHtml: `<br><br>${signatureHtml(signature)}<br><br>${signatureTextHtml(`Em ${new Date(message.receivedAt).toLocaleString()}, ${message.from.name||message.from.email} escreveu:\n${quoted}`)}`,
+      mode: "rich",
       attachments: [],
     };
 
@@ -1985,8 +1986,7 @@ function UnlockedApp() {
     const id=crypto.randomUUID();
     try{
       const attachment=await bridge.stageMessageAsEml(id,message.accountId,message.id,safeExportName(message.subject,"mensagem"));
-      const signature=signatures.find((item)=>item.accountId===message.accountId&&item.isDefault)
-        ?? signatures.find((item)=>item.accountId===message.accountId);
+      const signature=defaultSignature(signatures,message.accountId,true);
       const draft:ComposeDraft={
         id,
         accountId:message.accountId,
@@ -1994,9 +1994,9 @@ function UnlockedApp() {
         cc:"",
         bcc:"",
         subject:/^(enc|fw|fwd):/i.test(message.subject)?message.subject:`Enc: ${message.subject||"(sem assunto)"}`,
-        bodyText:signature?.bodyText.trim()?signature.bodyText.trim():"",
-        bodyHtml:"",
-        mode:"plain",
+        bodyText:signature?.bodyText.trim()??"",
+        bodyHtml:signatureHtml(signature),
+        mode:"rich",
         attachments:[attachment],
       };
       setDraftToOpen(draft);
@@ -2013,8 +2013,7 @@ function UnlockedApp() {
       ?? profileAccounts.find((item)=>item.isDefault)
       ?? profileAccounts[0];
     const signature=account
-      ? signatures.find((item)=>item.accountId===account.id&&item.isDefault)
-        ?? signatures.find((item)=>item.accountId===account.id)
+      ? defaultSignature(signatures,account.id)
       : undefined;
     const draft:ComposeDraft={
       id,
@@ -2025,8 +2024,8 @@ function UnlockedApp() {
       bcc:"",
       subject:"",
       bodyText:signature?.bodyText.trim()??"",
-      bodyHtml:"",
-      mode:"plain",
+      bodyHtml:signatureHtml(signature),
+      mode:"rich",
       attachments,
     };
     setDraftToOpen(draft);
@@ -3700,7 +3699,7 @@ function UnlockedApp() {
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
         {section==="notes"&&<PersistentNotesView query={search}/>}
         {section==="rules"&&<PersistentRulesView onRunRules={runRulesNow}/>} 
-        {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime} accounts={accounts} onAccountsChange={(next)=>{setAccounts(next);if(!next.some((account)=>account.id===activeId)){setActiveId(next.find((account)=>account.isDefault)?.id??next[0]?.id);}}} signatures={signatures} onSaveSignature={saveSignature} onDeleteSignature={deleteSignature} profiles={profiles} activeProfileId={activeProfileId} onActivateProfile={activateProfile} onSaveProfile={saveProfile} onDeleteProfile={deleteProfile} onUpdateInfo={setUpdateInfo}/>}
+        {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime} accounts={accounts} activeAccountId={activeAccount?.id} onAccountsChange={(next)=>{setAccounts(next);if(!next.some((account)=>account.id===activeId)){setActiveId(next.find((account)=>account.isDefault)?.id??next[0]?.id);}}} signatures={signatures} onSaveSignature={saveSignature} onDeleteSignature={deleteSignature} profiles={profiles} activeProfileId={activeProfileId} onActivateProfile={activateProfile} onSaveProfile={saveProfile} onDeleteProfile={deleteProfile} onUpdateInfo={setUpdateInfo}/>}
       </div>
     </main>
     {composeOpen&&<Composer accounts={profileAccounts} signatures={signatures} initialAccountId={composeAccount?.id} initialDraft={draftToOpen} settings={settings} onClose={closeComposer} onQueued={(info)=>{handleQueuedSend(info);void refreshDrafts();}}/>}

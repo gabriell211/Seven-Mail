@@ -361,6 +361,7 @@ export interface SignatureItem {
   bodyText: string;
   bodyHtml: string;
   isDefault: boolean;
+  isReplyDefault?: boolean;
 }
 
 export interface NoteItem {

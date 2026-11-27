@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Icon } from "../icons";
 import { bridge } from "../lib/bridge";
+import { defaultSignature,signatureHtml } from "../lib/signatures";
 import type { AccountProfile, AppSettings, ContactItem, ContentBlockItem, MailTemplateItem, QueuedAttachment, SignatureItem, WorkspaceDocument } from "../types";
 
 interface SpeechRecognitionLike {
@@ -166,8 +167,7 @@ export function Composer({
     if (initialDraft) return { ...initialDraft };
 
     const accountId = initialAccountId ?? accounts.find((account) => account.isDefault)?.id ?? accounts[0]?.id ?? "";
-    const signature = signatures.find((item) => item.accountId === accountId && item.isDefault)
-      ?? signatures.find((item) => item.accountId === accountId);
+    const signature = defaultSignature(signatures,accountId);
     const signatureText = signature?.bodyText.trim() ?? "";
 
     return {
@@ -179,7 +179,7 @@ export function Composer({
       bcc: "",
       subject: "",
       bodyText: signatureText ? `\n\n${signatureText}` : "",
-      bodyHtml: signatureText ? `<br><br>${plainTextToHtml(signatureText)}` : "",
+      bodyHtml: signature ? `<br><br>${signatureHtml(signature)}` : "",
       mode: "rich",
       priority: "normal",
       requestReadReceipt: false,
@@ -426,7 +426,7 @@ export function Composer({
 
   function insertSignature(signatureId: string) {
     const signature = accountSignatures.find((item) => item.id === signatureId);
-    if (!signature?.bodyText.trim()) return;
+    if (!signature || (!signature.bodyText.trim()&&!signature.bodyHtml.trim())) return;
 
     const signatureText = signature.bodyText.trim();
     setDraft((current) => {
@@ -436,7 +436,7 @@ export function Composer({
         ...current,
         bodyText: `${current.bodyText.trimEnd()}${textSeparator}${signatureText}`,
         bodyHtml: current.mode === "rich"
-          ? `${current.bodyHtml}${htmlSeparator}${plainTextToHtml(signatureText)}`
+          ? `${current.bodyHtml}${htmlSeparator}${signatureHtml(signature)}`
           : "",
       };
     });
@@ -794,7 +794,20 @@ export function Composer({
                 value={account?.id ?? ""}
                 onChange={(event) => {
                   const next=accounts.find((item)=>item.id===event.target.value);
-                  setDraft((current) => ({ ...current, accountId: event.target.value, fromAddress: next?.email ?? "" }));
+                  if(!next)return;
+                  setDraft(current=>{
+                    const old=defaultSignature(signatures,current.accountId);
+                    const nextSignature=defaultSignature(signatures,next.id);
+                    const oldHtml=signatureHtml(old);
+                    const oldText=old?.bodyText.trim()??"";
+                    const textOnlySignature=current.bodyText.trim()===oldText;
+                    const htmlOnlySignature=!current.bodyHtml.trim()||current.bodyHtml===`<br><br>${oldHtml}`;
+                    if(textOnlySignature&&htmlOnlySignature)return {...current,accountId:next.id,fromAddress:next.email,bodyText:nextSignature?.bodyText??"",bodyHtml:current.mode==="rich"?signatureHtml(nextSignature):""};
+                    // Do not silently send the previous account's signature with a different sender.
+                    const text=oldText&&current.bodyText.trimEnd().endsWith(oldText)?current.bodyText.trimEnd().slice(0,-oldText.length).trimEnd():current.bodyText;
+                    const html=oldHtml&&current.bodyHtml.endsWith(oldHtml)?current.bodyHtml.slice(0,-oldHtml.length):current.bodyHtml;
+                    return {...current,accountId:next.id,fromAddress:next.email,bodyText:text,bodyHtml:html};
+                  });
                 }}
                 disabled={accounts.length === 0}
               >
