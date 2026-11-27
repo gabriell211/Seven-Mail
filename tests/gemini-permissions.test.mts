@@ -22,3 +22,13 @@ test("read-only session is automatic and one-time draft approval remains mandato
  assert.match(panel,/gemini_approve_draft/);
  assert.doesNotMatch(panel,/GitHub|Copilot|Node\.js/i);
 });
+
+test("native Gemini streaming is scoped and never creates partial drafts",()=>{
+ assert.match(rust,/streamGenerateContent\?alt=sse/);
+ assert.match(rust,/tauri::ipc::Channel<String>/);
+ assert.match(rust,/!stopped/);
+ assert.match(panel,/new Channel<string>/);
+ assert.match(panel,/onDelta\.onmessage/);
+ assert.match(panel,/Parar geração/);
+ assert.ok(rust.indexOf("let answer=invoke_gemini")<rust.indexOf("access.proposal=Some"));
+});
