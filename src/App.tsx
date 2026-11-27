@@ -7,7 +7,7 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Icon, type IconName } from "./icons";
 import { bridge } from "./lib/bridge";
-import { CopilotPanel,CopilotMark } from "./components/CopilotPanel";
+import { GeminiPanel,GeminiMark } from "./components/GeminiPanel";
 import { PersistentCalendarView, PersistentNotesView, PersistentPeopleView, PersistentRulesView, PersistentTasksView } from "./components/WorkspaceViews";
 import { CloudPanel } from "./components/CloudPanel";
 import { AccountsPanel } from "./components/AccountsPanel";
@@ -1375,7 +1375,7 @@ function UnlockedApp() {
   const launchAccountId = launchParams.get("account") ?? undefined;
   const [section,setSection] = useState<AppSection>("mail");
   const [meetingDraft,setMeetingDraft]=useState<CalendarEvent|null>(null);
-  const [copilotOpen,setCopilotOpen]=useState(false);
+  const [geminiOpen,setGeminiOpen]=useState(false);
   const [accounts,setAccounts] = useState<AccountProfile[]>([]);
   const [activeId,setActiveId] = useState<string|undefined>(launchAccountId);
   const [messages,setMessages] = useState<MailMessage[]>([]);
@@ -3686,12 +3686,12 @@ function UnlockedApp() {
       <nav>{navItems.map(item=><button key={item.id} className={section===item.id?"nav-item active":"nav-item"} title={item.label} onClick={()=>setSection(item.id)}><Icon name={item.icon}/><span>{item.label}</span></button>)}</nav>
       <AccountSwitcher accounts={profileAccounts} activeId={unified?"__all__":activeAccount?.id} onSelect={id=>{mailboxNavigation.current=null;setActiveId(id);setSection("mail");setSearch("");setFocusMessageId(undefined);}} onAdd={()=>setAccountOpen(true)} onManage={()=>setSection("settings")}/>
     </aside>
-    <main className={copilotOpen?"main copilot-open":"main"} id="seven-mail-main" tabIndex={-1}>
+    <main className={geminiOpen?"main gemini-open":"main"} id="seven-mail-main" tabIndex={-1}>
       <header className="topbar" data-tauri-drag-region>
         <div className="product"><strong>Seven Mail</strong><span>{NAV.find(n=>n.id===section)?.label}</span></div>
         <label className="search"><Icon name="search" size={17}/><input list="seven-mail-search-suggestions" value={search} onFocus={()=>setGlobalSearchOpen(true)} onChange={e=>{setSearch(e.target.value);setGlobalSearchOpen(true);}} onKeyDown={e=>{if(e.key==="Enter"){commitSearchHistory();setGlobalSearchOpen(true);}else if(e.key==="Escape"){setGlobalSearchOpen(false);}}} placeholder="Pesquisar em todo o Seven Mail..."/><kbd>Ctrl K</kbd></label><datalist id="seven-mail-search-suggestions">{searchSuggestions.map((value)=><option value={value} key={value}/>)}</datalist>{section==="mail"&&search.trim()&&<button className="icon-button save-search-button" title="Salvar pesquisa" aria-label="Salvar pesquisa" onClick={()=>void saveCurrentSearch()}><Icon name="star" size={17}/></button>}
         <div className="top-actions">{lockConfigured&&<button className="icon-button" title="Bloquear agora" onClick={()=>void lockNativeApp().catch((error)=>window.alert(String(error)))}><Icon name="lock" size={17}/></button>}<span className={"sync "+syncState} role="status" aria-live="polite" aria-atomic="true" title={syncError??(lastSyncAt?`Última sincronização confirmada: ${new Date(lastSyncAt).toLocaleString()}`:"Nenhuma sincronização confirmada nesta sessão")}><i aria-hidden="true"/> {profileAccounts.length===0?"Sem conta":syncState==="syncing"?"Sincronizando":syncState==="error"?"Falha na sincronização":syncState==="offline"?"Offline":syncState==="synced"?(lastSyncAt?`Sincronizado ${new Date(lastSyncAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}`:"Sincronizado"):"Não verificado"}</span><button className="icon-button" onClick={()=>setSection("settings")}><Icon name="settings" size={18}/></button></div>
-        <button type="button" className="copilot-trigger" aria-label="GitHub Copilot" title="GitHub Copilot" aria-expanded={copilotOpen} onClick={()=>setCopilotOpen(value=>!value)}><CopilotMark/><span>Copilot</span></button>
+        <button type="button" className="gemini-trigger" aria-label="Google Gemini" title="Google Gemini" aria-expanded={geminiOpen} onClick={()=>setGeminiOpen(value=>!value)}><GeminiMark/><span>Gemini</span></button>
         {globalSearchOpen&&search.trim()&&<div className="global-search-popover">
           <header><span><Icon name="search" size={15}/><b>Pesquisa global</b></span><button onClick={()=>setGlobalSearchOpen(false)}><Icon name="x" size={13}/></button></header>
           <div className="global-search-group"><small>E-MAILS</small>{filtered.slice(0,6).map((message)=><button key={message.id} onClick={()=>{setActiveId(message.accountId);setFocusMessageId(message.id);setSection("mail");setGlobalSearchOpen(false);commitSearchHistory();}}><Icon name="mail" size={14}/><span><b>{message.subject||"(sem assunto)"}</b><small>{message.from.name||message.from.email}</small></span></button>)}{filtered.length===0&&<em>Nenhum e-mail encontrado.</em>}</div>
@@ -3708,7 +3708,7 @@ function UnlockedApp() {
         {section==="rules"&&<PersistentRulesView onRunRules={runRulesNow}/>} 
         {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime} accounts={accounts} onAccountsChange={(next)=>{setAccounts(next);if(!next.some((account)=>account.id===activeId)){setActiveId(next.find((account)=>account.isDefault)?.id??next[0]?.id);}}} signatures={signatures} onSaveSignature={saveSignature} onDeleteSignature={deleteSignature} profiles={profiles} activeProfileId={activeProfileId} onActivateProfile={activateProfile} onSaveProfile={saveProfile} onDeleteProfile={deleteProfile} onUpdateInfo={setUpdateInfo}/>}
       </div>
-      {copilotOpen&&<CopilotPanel key={activeProfileId??"default"} accounts={profileAccounts} initialAccountId={activeAccount?.id} composeOpen={composeOpen} onClose={()=>setCopilotOpen(false)} onDraft={draft=>{setCopilotOpen(false);openDraft(draft);}}/>}
+      {geminiOpen&&<GeminiPanel key={activeProfileId??"default"} accounts={profileAccounts} initialAccountId={activeAccount?.id} composeOpen={composeOpen} onClose={()=>setGeminiOpen(false)} onDraft={draft=>{setGeminiOpen(false);openDraft(draft);}}/>}
     </main>
     {composeOpen&&<Composer accounts={profileAccounts} signatures={signatures} initialAccountId={composeAccount?.id} initialDraft={draftToOpen} settings={settings} onClose={closeComposer} onQueued={(info)=>{handleQueuedSend(info);void refreshDrafts();}}/>}
     {undoSend&&<div className="undo-send" role="status"><span><Icon name="send" size={16}/><b>Mensagem na fila</b><small>Envio em instantes</small></span><button onClick={()=>void undoQueuedSend()}>Desfazer</button></div>}

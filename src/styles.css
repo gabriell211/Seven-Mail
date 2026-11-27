@@ -1094,45 +1094,47 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 @container account-setup (max-width:490px){.account-modal .server-grid{grid-template-columns:minmax(0,1fr) 86px}.account-modal .server-grid .account-server-security{grid-column:1/-1}}
 @container account-setup (max-width:360px){.account-modal .provider-brand-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.account-modal .form-grid{grid-template-columns:1fr}}
 
-/* Optional Copilot conversation pane. */
-.copilot-trigger{display:flex;align-items:center;gap:6px;min-height:34px;padding:6px 11px;flex:none;border:1px solid var(--line2);border-radius:8px;background:var(--solid);color:var(--text);font-size:12px;font-weight:650}
-.copilot-trigger:hover,.copilot-trigger[aria-expanded="true"]{color:var(--accent);background:var(--accent-soft);border-color:var(--accent)}
-.main.copilot-open{grid-template-columns:minmax(0,1fr) minmax(320px,370px)}
-.main.copilot-open>.topbar{grid-column:1/-1}
-.main.copilot-open>.content{grid-column:1;grid-row:2;min-width:0;min-height:0;overflow:hidden}
-.copilot-panel{grid-column:2;grid-row:2;min-height:0;min-width:0;display:flex;flex-direction:column;background:var(--solid);border-left:1px solid var(--line);color:var(--text);z-index:6}
-.copilot-panel>header{display:flex;align-items:center;gap:7px;border-bottom:1px solid var(--line);padding:12px;flex:none}
-.copilot-heading{display:flex;align-items:center;gap:8px;flex:1;font-size:14px}
-.copilot-scroll{flex:1;min-height:0;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:13px}
-.copilot-label{display:grid;gap:5px;font-size:12px;color:var(--muted)}
-.copilot-label select,.copilot-panel textarea{width:100%;min-width:0;min-height:34px;background:var(--soft);color:var(--text);border:1px solid var(--line2);border-radius:8px;padding:8px;font-size:13px}
-.copilot-welcome{display:grid;gap:10px;padding:15px;border:1px solid var(--line2);border-radius:12px}
-.copilot-welcome>svg{width:32px;height:32px;color:var(--accent)}
-.copilot-welcome h3,.copilot-welcome p,.copilot-suggestions p{margin:0}
-.copilot-welcome p,.copilot-setup p{font-size:12px;line-height:1.55;color:var(--muted)}
-.copilot-check{display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.5}
-.copilot-check input{width:16px;height:16px;flex:none;accent-color:var(--accent)}
-.copilot-permission{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);padding:8px;background:var(--soft);border-radius:8px}
-.copilot-permission svg{flex:none;color:var(--green)}
-.copilot-permission button{margin-left:auto;font-size:11px}
-.copilot-suggestions{display:grid;gap:7px;font-size:13px}
-.copilot-suggestions button{text-align:left;font-size:12px;white-space:normal}
-.copilot-history{display:flex;flex-direction:column;gap:10px}
-.copilot-turn{padding:11px;border:1px solid var(--line);border-radius:10px;overflow-wrap:anywhere;font-size:13px;line-height:1.55}
-.copilot-turn.user{background:var(--accent-soft);align-self:flex-end;max-width:95%}
-.copilot-turn p{margin:5px 0 0;white-space:pre-wrap}
-.copilot-context-count,.copilot-setup small{font-size:11px;color:var(--muted)}
-.copilot-approval{display:grid;gap:7px;padding:12px;border:1px solid var(--accent);border-radius:10px;overflow-wrap:anywhere;font-size:12px}
-.copilot-approval b{display:flex;gap:6px;align-items:center}
-.copilot-approval>div{display:flex;justify-content:flex-end;gap:7px}
-.copilot-approval p{margin:0}
-.copilot-error{color:#c93f52;background:rgba(221,65,85,.08);padding:10px;border-radius:8px;font-size:12px;overflow-wrap:anywhere}
-.copilot-setup{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
-.copilot-setup summary{cursor:pointer}
-.copilot-setup code{white-space:pre-wrap;font-size:11px}
-.copilot-setup small{display:block;margin-top:8px}
-.copilot-panel>footer{padding:12px;border-top:1px solid var(--line);display:grid;gap:9px;flex:none}
-.copilot-panel textarea{resize:vertical;min-height:80px;max-height:160px}
-.copilot-panel button:disabled{opacity:.5;cursor:not-allowed}
-@media(max-width:1450px){.main.copilot-open{grid-template-columns:minmax(0,1fr)}.copilot-panel{position:fixed;right:0;top:66px;bottom:0;width:min(370px,100%);box-shadow:0 8px 30px rgba(20,20,45,.18);z-index:45}}
-@media print{.copilot-panel,.copilot-trigger{display:none!important}}
+/* Optional Gemini conversation pane. */
+.gemini-trigger{display:flex;align-items:center;gap:6px;min-height:34px;padding:6px 11px;flex:none;border:1px solid var(--line2);border-radius:8px;background:var(--solid);color:var(--text);font-size:12px;font-weight:650}
+.gemini-trigger:hover,.gemini-trigger[aria-expanded="true"]{color:var(--accent);background:var(--accent-soft);border-color:var(--accent)}
+.main.gemini-open{grid-template-columns:minmax(0,1fr) minmax(320px,370px)}
+.main.gemini-open>.topbar{grid-column:1/-1}
+.main.gemini-open>.content{grid-column:1;grid-row:2;min-width:0;min-height:0;overflow:hidden}
+.gemini-panel{grid-column:2;grid-row:2;min-height:0;min-width:0;display:flex;flex-direction:column;background:var(--solid);border-left:1px solid var(--line);color:var(--text);z-index:6}
+.gemini-panel>header{display:flex;align-items:center;gap:7px;border-bottom:1px solid var(--line);padding:12px;flex:none}
+.gemini-heading{display:flex;align-items:center;gap:8px;flex:1;font-size:14px}
+.gemini-scroll{flex:1;min-height:0;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:13px}
+.gemini-label{display:grid;gap:5px;font-size:12px;color:var(--muted)}
+.gemini-label select,.gemini-panel textarea{width:100%;min-width:0;min-height:34px;background:var(--soft);color:var(--text);border:1px solid var(--line2);border-radius:8px;padding:8px;font-size:13px}
+.gemini-welcome{display:grid;gap:10px;padding:15px;border:1px solid var(--line2);border-radius:12px}
+.gemini-welcome>svg{width:32px;height:32px;color:var(--accent)}
+.gemini-welcome h3,.gemini-welcome p,.gemini-suggestions p{margin:0}
+.gemini-welcome p,.gemini-setup p{font-size:12px;line-height:1.55;color:var(--muted)}
+.gemini-check{display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.5}
+.gemini-check input{width:16px;height:16px;flex:none;accent-color:var(--accent)}
+.gemini-permission{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);padding:8px;background:var(--soft);border-radius:8px}
+.gemini-permission svg{flex:none;color:var(--green)}
+.gemini-permission button{margin-left:auto;font-size:11px}
+.gemini-suggestions{display:grid;gap:7px;font-size:13px}
+.gemini-suggestions button{text-align:left;font-size:12px;white-space:normal}
+.gemini-history{display:flex;flex-direction:column;gap:10px}
+.gemini-turn{padding:11px;border:1px solid var(--line);border-radius:10px;overflow-wrap:anywhere;font-size:13px;line-height:1.55}
+.gemini-turn.user{background:var(--accent-soft);align-self:flex-end;max-width:95%}
+.gemini-turn p{margin:5px 0 0;white-space:pre-wrap}
+.gemini-context-count,.gemini-setup small{font-size:11px;color:var(--muted)}
+.gemini-approval{display:grid;gap:7px;padding:12px;border:1px solid var(--accent);border-radius:10px;overflow-wrap:anywhere;font-size:12px}
+.gemini-approval b{display:flex;gap:6px;align-items:center}
+.gemini-approval>div{display:flex;justify-content:flex-end;gap:7px}
+.gemini-approval p{margin:0}
+.gemini-error{color:#c93f52;background:rgba(221,65,85,.08);padding:10px;border-radius:8px;font-size:12px;overflow-wrap:anywhere}
+.gemini-setup{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.gemini-setup summary{cursor:pointer}
+.gemini-setup code{white-space:pre-wrap;font-size:11px}
+.gemini-setup small{display:block;margin-top:8px}
+.gemini-panel>footer{padding:12px;border-top:1px solid var(--line);display:grid;gap:9px;flex:none}
+.gemini-panel textarea{resize:vertical;min-height:80px;max-height:160px}
+.gemini-panel button:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:1450px){.main.gemini-open{grid-template-columns:minmax(0,1fr)}.gemini-panel{position:fixed;right:0;top:66px;bottom:0;width:min(370px,100%);box-shadow:0 8px 30px rgba(20,20,45,.18);z-index:45}}
+@media print{.gemini-panel,.gemini-trigger{display:none!important}}
+
+.gemini-setup .gemini-label{margin:8px 0}.gemini-setup input:not([type=checkbox]){width:100%;min-width:0;background:var(--soft);color:var(--text);border:1px solid var(--line2);border-radius:8px;padding:8px}.gemini-setup>div{display:flex;gap:6px;flex-wrap:wrap}
