@@ -6,7 +6,7 @@ use std::{fs, io::{Cursor, Read}, path::Path, rc::Rc};
 
 use outlook_pst::{
     ltp::prop_context::PropertyValue,
-    messaging::folder::Folder as PstFolder,
+    messaging::{folder::Folder as PstFolder, message::Message as PstMessage},
     ndb::node_id::NodeId,
     UnicodePstFile,
     UnicodePstMessage,
@@ -134,6 +134,8 @@ pub fn import_msg(paths: &AppPaths, account: &AccountProfile, path: &str) -> Res
         preview,
         from: outlook_person(&outlook.sender),
         to: outlook.to.iter().map(outlook_person).collect(),
+        cc: outlook.cc.iter().map(outlook_person).collect(),
+        bcc: outlook.bcc.iter().map(outlook_person).collect(),
         received_at,
         is_read: false,
         is_flagged: false,
@@ -222,6 +224,8 @@ pub fn import_eml(paths: &AppPaths, account: &AccountProfile, path: &str) -> Res
         preview,
         from: mail_address(parsed.from().and_then(|value| value.first())),
         to: recipients(parsed.to()),
+        cc: recipients(parsed.cc()),
+        bcc: recipients(parsed.bcc()),
         received_at,
         is_read: false,
         is_flagged: false,
@@ -823,6 +827,86 @@ fn pst_property_text(value: Option<&PropertyValue>) -> Option<String> {
     }
 }
 
+#[derive(Default)]
+struct PstRecipients {
+    to: Vec<MailAddress>,
+    cc: Vec<MailAddress>,
+    bcc: Vec<MailAddress>,
+}
+
+fn pst_integer(value: Option<&PropertyValue>) -> Option<i32> {
+    match value {
+        Some(PropertyValue::Integer32(value)) => Some(*value),
+        _ => None,
+    }
+}
+
+fn pst_recipients(message: &dyn PstMessage) -> Result<PstRecipients, String> {
+    let mut recipients = PstRecipients::default();
+    let Some(table) = message.recipient_table() else { return Ok(recipients); };
+    for row in table.rows_matrix() {
+        let columns = row.columns(table.context())
+            .map_err(|error| format!("Falha ao ler destinatários PST: {error}"))?;
+        let mut name = None;
+        let mut address = None;
+        let mut smtp = None;
+        let mut kind = None;
+        for (column, value) in table.context().columns().iter().zip(columns.iter()) {
+            if !matches!(column.prop_id(), 0x3001 | 0x3003 | 0x39FE | 0x0C15) { continue; }
+            let Some(value) = value else { continue; };
+            let value = table.read_column(value, column.prop_type())
+                .map_err(|error| format!("Falha ao ler propriedade de destinatário PST: {error}"))?;
+            match column.prop_id() {
+                0x3001 => name = pst_property_text(Some(&value)),
+                0x3003 => address = pst_property_text(Some(&value)),
+                0x39FE => smtp = pst_property_text(Some(&value)),
+                0x0C15 => kind = pst_integer(Some(&value)),
+                _ => {}
+            }
+        }
+        let Some(email) = smtp.filter(|value| !value.trim().is_empty())
+            .or_else(|| address.filter(|value| !value.trim().is_empty())) else { continue; };
+        let recipient = MailAddress { name, email };
+        match kind {
+            Some(1) => recipients.to.push(recipient),
+            Some(2) => recipients.cc.push(recipient),
+            Some(3) => recipients.bcc.push(recipient),
+            _ => {}
+        }
+    }
+    Ok(recipients)
+}
+
+fn pst_export_folder(message: &MailMessage, separate_accounts: bool) -> Vec<&str> {
+    let mut components = Vec::new();
+    if separate_accounts {
+        components.push(message.account_id.as_str());
+    }
+    components.extend(message.folder.split('/').filter(|part| !part.trim().is_empty()));
+    if components.is_empty() || (separate_accounts && components.len() == 1) {
+        components.push("Inbox");
+    }
+    components
+}
+
+fn pst_export_recipients<'a>(
+    to: &'a [MailAddress], cc: &'a [MailAddress], bcc: &'a [MailAddress],
+) -> Vec<UnicodePstRecipient<'a>> {
+    let mut output = Vec::with_capacity(to.len() + cc.len() + bcc.len());
+    for (addresses, recipient_type) in [
+        (to, UnicodePstRecipientType::To),
+        (cc, UnicodePstRecipientType::Cc),
+        (bcc, UnicodePstRecipientType::Bcc),
+    ] {
+        output.extend(addresses.iter().map(|recipient| UnicodePstRecipient {
+            name: recipient.name.as_deref().unwrap_or(recipient.email.as_str()),
+            email: recipient.email.as_str(),
+            recipient_type,
+        }));
+    }
+    output
+}
+
 fn pst_received_iso(value: Option<&PropertyValue>) -> String {
     let filetime = match value {
         Some(PropertyValue::Time(value)) => *value,
@@ -886,6 +970,10 @@ fn import_pst_folder(
                 .unwrap_or_else(|| "desconhecido@localhost".to_string());
             let received_at = pst_received_iso(properties.get(0x0E06));
 
+            let recipients = pst_recipients(message.as_ref())?;
+            let flags = pst_integer(properties.get(0x0E07)).unwrap_or(0);
+            let flag_status = pst_integer(properties.get(0x1090));
+            let importance = pst_integer(properties.get(0x0017));
             let local = MailMessage {
                 id: format!("{}-pst-{}", account.id, uuid::Uuid::new_v4()),
                 account_id: account.id.clone(),
@@ -895,10 +983,12 @@ fn import_pst_folder(
                 subject,
                 preview,
                 from: MailAddress { name: sender_name, email: sender_email },
-                to: Vec::new(),
+                to: recipients.to,
+                cc: recipients.cc,
+                bcc: recipients.bcc,
                 received_at,
-                is_read: false,
-                is_flagged: false,
+                is_read: flags & 1 != 0,
+                is_flagged: flag_status == Some(2),
                 is_pinned: false,
                 has_attachments: message.attachment_table().is_some(),
                 body_html,
@@ -907,11 +997,11 @@ fn import_pst_folder(
                 applied_rule_ids: Vec::new(),
                 size_bytes: None,
                 attachment_names: Vec::new(),
-                importance: None,
+                importance: importance.and_then(|value| match value { 0 => Some("low"), 1 => Some("normal"), 2 => Some("high"), _ => None }).map(str::to_owned),
                 snoozed_until: None,
                 is_muted: false,
                 is_phishing: false,
-                is_important: false,
+                is_important: importance == Some(2),
                 source_format: Some("pst".to_string()),
             };
             storage::cache_message(paths, &local)?;
@@ -975,48 +1065,79 @@ fn pst_filetime(value: &str) -> i64 {
 }
 
 pub fn export_pst(paths: &AppPaths, account_id: Option<&str>, destination: &str) -> Result<usize, String> {
-    let messages = storage::list_cached_messages(paths, account_id)?;
+    let mut messages = storage::list_cached_messages(paths, account_id)?;
     if messages.is_empty() {
         return Err("Não há mensagens em cache para exportar.".to_string());
     }
 
     let destination = Path::new(destination);
-    if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent).map_err(|error| format!("Não foi possível preparar a pasta: {error}"))?;
+    let parent = destination.parent().filter(|path| !path.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(|error| format!("Não foi possível preparar a pasta: {error}"))?;
+    if fs::symlink_metadata(destination).is_ok() {
+        return Err("O PST de destino já existe. Escolha outro nome para preservar o arquivo original.".to_string());
     }
-    if destination.exists() {
-        fs::remove_file(destination).map_err(|error| format!("Não foi possível substituir o PST existente: {error}"))?;
-    }
 
-    for (index, message) in messages.iter().enumerate() {
-        let recipients = message.to.iter().map(|recipient| UnicodePstRecipient {
-            name: recipient.name.as_deref().unwrap_or(recipient.email.as_str()),
-            email: recipient.email.as_str(),
-            recipient_type: UnicodePstRecipientType::To,
-        }).collect::<Vec<_>>();
-
-        let sender_name = message.from.name.as_deref().unwrap_or(message.from.email.as_str());
-        let body = message.body_text.as_deref().unwrap_or(message.preview.as_str());
-        let pst_message = UnicodePstMessage {
-            subject: message.subject.as_str(),
-            sender_name,
-            sender_email: message.from.email.as_str(),
-            recipients: &recipients,
-            body,
-            html_body: message.body_html.as_deref(),
-            message_id: message.id.as_str(),
-            delivery_time: pst_filetime(&message.received_at),
-        };
-
-        if index == 0 {
-            UnicodePstFile::create(destination, &pst_message)
-                .map_err(|error| format!("Falha ao criar PST: {error}"))?;
-        } else {
-            UnicodePstFile::append(destination, &pst_message)
-                .map_err(|error| format!("Falha ao adicionar mensagem ao PST: {error}"))?;
+    // Recover CC/BCC for messages cached before the recipient fields were introduced.
+    for message in &mut messages {
+        if !message.cc.is_empty() && !message.bcc.is_empty() { continue; }
+        if let Ok(raw) = storage::read_raw_message(paths, &message.account_id, &message.id) {
+            if message.source_format.as_deref() == Some("msg") {
+                if let Ok(parsed) = Outlook::from_slice(&raw) {
+                    if message.cc.is_empty() { message.cc = parsed.cc.iter().map(outlook_person).collect(); }
+                    if message.bcc.is_empty() { message.bcc = parsed.bcc.iter().map(outlook_person).collect(); }
+                }
+            } else if let Some(parsed) = MessageParser::default().parse(&raw) {
+                if message.cc.is_empty() { message.cc = recipients(parsed.cc()); }
+                if message.bcc.is_empty() { message.bcc = recipients(parsed.bcc()); }
+            }
         }
     }
 
+    let separate_accounts = messages.iter().map(|message| message.account_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>().len() > 1;
+    let mut folders = std::collections::BTreeMap::<Vec<&str>, Vec<&MailMessage>>::new();
+    for message in &messages {
+        folders.entry(pst_export_folder(message, separate_accounts)).or_default().push(message);
+    }
+
+    // Build beside the destination, then publish without replacing existing files.
+    let temporary = parent.join(format!(".seven-mail-pst-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&temporary).map_err(|error| format!("Não foi possível preparar a exportação: {error}"))?;
+    let archive = temporary.join("archive.pst");
+    let result = (|| -> Result<(), String> {
+        let mut initialized = false;
+        for (folder, items) in folders {
+            let recipient_rows = items.iter().map(|message|
+                pst_export_recipients(&message.to, &message.cc, &message.bcc)
+            ).collect::<Vec<_>>();
+            let batch = items.iter().zip(&recipient_rows).map(|(message, recipients)| UnicodePstMessage {
+                subject: message.subject.as_str(),
+                sender_name: message.from.name.as_deref().unwrap_or(message.from.email.as_str()),
+                sender_email: message.from.email.as_str(),
+                recipients,
+                body: message.body_text.as_deref().unwrap_or(message.preview.as_str()),
+                html_body: message.body_html.as_deref(),
+                message_id: message.id.as_str(),
+                delivery_time: pst_filetime(&message.received_at),
+            }).collect::<Vec<_>>();
+
+            let pending = if initialized { batch.as_slice() } else {
+                UnicodePstFile::create_in_folder(&archive, &folder, &batch[0])
+                    .map_err(|error| format!("Falha ao criar PST: {error}"))?;
+                initialized = true;
+                &batch[1..]
+            };
+            if !pending.is_empty() {
+                UnicodePstFile::append_many_in_folder(&archive, &folder, pending)
+                    .map_err(|error| format!("Falha ao adicionar mensagens ao PST: {error}"))?;
+            }
+        }
+        fs::hard_link(&archive, destination)
+            .map_err(|error| format!("Não foi possível publicar o PST sem sobrescrever o destino (use uma unidade que suporte hard links): {error}"))?;
+        Ok(())
+    })();
+    let _ = fs::remove_dir_all(&temporary);
+    result?;
     Ok(messages.len())
 }
 
