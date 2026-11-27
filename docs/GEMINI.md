@@ -36,7 +36,7 @@ Em uma cópia revisada da branch, configure `SEVEN_MAIL_GEMINI_TEST_API_KEY` por
 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib gemini::tests::live_ -- --ignored --test-threads=1
 ```
 
-A ausência da chave causa falha explícita, não aprovação fictícia. Teste real de áudio, vídeo, interface Tauri, cofre e instalação limpa permanece separado. A suíte não é disparada pelo CI padrão para impedir chamadas pagas não autorizadas.
+A ausência da chave causa falha explícita, não aprovação fictícia. Teste real de áudio, vídeo, interface Tauri, cofre e instalação limpa permanece separado. A suíte não é disparada pelo CI padrão para impedir chamadas pagas não autorizadas. O workflow separado Gemini live API smoke executa somente no branch de homologação autorizado, por alteração explícita do próprio workflow ou despacho manual, usando o secret de repositório SEVEN_MAIL_GEMINI_TEST_API_KEY e a variável opcional SEVEN_MAIL_GEMINI_TEST_MODEL. Não imprime a chave nem acessa e-mails.
 
 ## Homologação pendente
 

@@ -544,7 +544,7 @@ mod tests{
     // Real API test: opt-in only, never use mailbox data or application credentials.
     fn live_config()->GeminiConfig{
         let key=std::env::var("SEVEN_MAIL_GEMINI_TEST_API_KEY").expect("Configure uma chave de teste autorizada.");
-        let model=std::env::var("SEVEN_MAIL_GEMINI_TEST_MODEL").unwrap_or_else(|_|DEFAULT_MODEL.to_owned());
+        let model=std::env::var("SEVEN_MAIL_GEMINI_TEST_MODEL").ok().filter(|value|!value.trim().is_empty()).unwrap_or_else(||DEFAULT_MODEL.to_owned());
         assert!(valid_key(&key),"Chave de teste inválida.");
         assert!(valid_model(&model),"Modelo de teste inválido.");
         GeminiConfig{api_key:key,model}
@@ -571,7 +571,7 @@ mod tests{
     #[ignore = "requires explicitly authorized multimodal Gemini API test key"]
     fn live_image_and_stream(){
         // Valid 160x160 RGB PNG: a red square centered on a white background.
-        let png=STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAKAAAACgCAIAAAAErfB6AAABHElEQVR42u3asQkAIAxFQSPuv/J3BhUE5V6fJkesrCRN/9atALAAC7AAC7AACzBgARZgARZgARZgwAIswAKsm42j6SobvNTu1zkX7IkWYAEWYAEWYAEGLMACLMACLMACDFiABViABViABViAAQuwAAuwAAuwAAMWYAEWYAEWYAEGLMACLMACLMACLMCABViABViABViAAQuwAAuwAAuwAAO2AsACLMACLMACLMCABViABViABViAAQuwAAuwAAuwAAswYAEWYAEWYAEWYMACLMACLMACLMCABViABViABViABRiwAAuwAAuwAAswYAEWYAEWYAEWYMACrHcbR9OJDbpgARZgARZgwAIswAIswAIswIAFWIAFWIAFWEtNhs4IP8F9lCQAAAAASUVORK5CYII=").expect("PNG fixture");
+        let png=STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAKAAAACgCAIAAAAErfB6AAABHUlEQVR42u3bsQkAIAxFQSPuv/K3t7IJiNwbIEWO2FlJhv5tWgFgARZgARZgARZgwAIswAIswAIswIAFWIAFWIAFWIAFGLAAC7AAC7AA62w1zq6y39va/ni6YE+0AAuwAAuwAAswYAEWYAEWYAEWYMACLMACLMACLMACDFiABViABViABRiwAAuwAAuwAAswYAEWYAEWYAEWYAEGLMACLMACLMACDFiABViABViABRiwFQAWYAEWYAEWYAEGLMACLMACLMACDFiABViABViABViAAQuwAAuwAAuwAAMWYAEWYAEWYAEGLMACrAdbjbMT+3XBAizAAgxYgAVYgAVYgAVYgAELsAALsAALsAADFmABFmABFmABBizAAqz32ik0CD9cSL9rAAAAAElFTkSuQmCC").expect("PNG fixture");
         live_answer(live_config(),"Qual a cor do quadrado central da imagem? Responda em inglês, somente com o nome da cor.",vec![media("fixture.png","image/png",&png)],"RED");
     }
     fn synthetic_pdf()->Vec<u8>{
