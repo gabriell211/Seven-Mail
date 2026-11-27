@@ -8,6 +8,8 @@ const TOKEN_URL:&str="https://oauth2.googleapis.com/token";
 const SCOPE:&str="https://www.googleapis.com/auth/generative-language.retriever";
 const EMAIL_SCOPE:&str="https://www.googleapis.com/auth/userinfo.email";
 const MAX_RESPONSE:u64=256*1024;
+const CALLBACK_TIMEOUT:Duration=Duration::from_secs(600);
+const MAX_CALLBACK_HEADERS:usize=32*1024;
 
 #[derive(Serialize,Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -108,34 +110,55 @@ fn parse_callback(target:&str,state:&str)->Result<Option<String>,String>{
 }
 fn response(stream:&mut TcpStream,success:bool){
     let status=if success{"200 OK"}else{"400 Bad Request"};
-    let body=if success{"Autorizacao recebida. Volte ao Seven Mail."}else{"Solicitacao invalida. Volte ao Seven Mail."};
-    let _=write!(stream,"HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",body.len());
+    let body=if success{"<!doctype html><html lang=\"pt-BR\"><meta charset=\"utf-8\"><title>Seven Mail</title><h1>Retorno recebido</h1><p>Volte ao Seven Mail para concluir a conexão com o Google.</p></html>"}else{"<!doctype html><html lang=\"pt-BR\"><meta charset=\"utf-8\"><title>Seven Mail</title><h1>Retorno inválido</h1><p>Volte ao Seven Mail. Se necessário, inicie uma nova autorização.</p></html>"};
+    let _=write!(stream,"HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",body.len());
+    let _=stream.flush();
+}
+// Accepted sockets may inherit nonblocking behavior depending on the platform.
+// Consume bounded HTTP headers, not only the first line, before replying.
+fn callback_target(stream:&mut TcpStream)->Option<String>{
+    stream.set_nonblocking(false).ok()?;
+    stream.set_read_timeout(Some(Duration::from_millis(500))).ok()?;
+    stream.set_write_timeout(Some(Duration::from_secs(2))).ok()?;
+    let started=Instant::now();
+    let mut request=Vec::new();
+    let mut buffer=[0u8;1024];
+    while request.len()<MAX_CALLBACK_HEADERS&&started.elapsed()<Duration::from_secs(4){
+        match stream.read(&mut buffer){
+            Ok(0)=>return None,
+            Ok(n)=>{
+                request.extend_from_slice(&buffer[..n]);
+                if request.len()>MAX_CALLBACK_HEADERS{return None;}
+                if request.windows(4).any(|w|w==b"\r\n\r\n"){
+                    let line=std::str::from_utf8(&request).ok()?.split("\r\n").next()?;
+                    let (target,version)=line.strip_prefix("GET ")?.split_once(" HTTP/")?;
+                    if !matches!(version,"1.0"|"1.1"){return None;}
+                    return Some(target.to_owned());
+                }
+            },
+            Err(error) if matches!(error.kind(),std::io::ErrorKind::WouldBlock|std::io::ErrorKind::TimedOut|std::io::ErrorKind::Interrupted)=>continue,
+            Err(_)=>return None,
+        }
+    }
+    None
 }
 pub(crate) fn await_callback(listener:TcpListener,state:&str,check_active:impl Fn()->Result<(),String>)->Result<String,String>{
     listener.set_nonblocking(true).map_err(|_|"Listener OAuth indisponível.")?;
-    let deadline=Instant::now()+Duration::from_secs(180);
+    let deadline=Instant::now()+CALLBACK_TIMEOUT;
     while Instant::now()<deadline{
         check_active()?;
         match listener.accept(){
             Ok((mut stream,_))=>{
-                let _=stream.set_read_timeout(Some(Duration::from_secs(1)));
-                let _=stream.set_write_timeout(Some(Duration::from_secs(1)));
-                let mut request=Vec::new();
-                let mut byte=[0u8;1];
-                let start=Instant::now();
-                while request.len()<8192&&start.elapsed()<Duration::from_secs(2){
-                    match stream.read(&mut byte){Ok(1)=>{request.push(byte[0]);if request.ends_with(b"\r\n"){break;}},_=>break}
-                }
-                let line=std::str::from_utf8(&request).unwrap_or_default();
-                let target=line.strip_prefix("GET ").and_then(|v|v.split_once(" HTTP/").map(|(target,_)|target));
-                let parsed=match target{Some(target)=>parse_callback(target,state),None=>Ok(None)};
+                let target=callback_target(&mut stream);
+                check_active()?;
+                let parsed=match target{Some(target)=>parse_callback(&target,state),None=>Ok(None)};
                 match parsed{Ok(Some(code))=>{response(&mut stream,true);return Ok(code);},Ok(None)=>response(&mut stream,false),Err(error)=>{response(&mut stream,false);return Err(error);}}
             }
-            Err(error) if error.kind()==std::io::ErrorKind::WouldBlock=>std::thread::sleep(Duration::from_millis(100)),
-            Err(_)=>return Err("Falha no retorno OAuth local.".into()),
+            Err(error) if matches!(error.kind(),std::io::ErrorKind::WouldBlock|std::io::ErrorKind::Interrupted)=>std::thread::sleep(Duration::from_millis(50)),
+            Err(_)=>return Err("Falha no retorno OAuth local. Inicie uma nova autorização.".into()),
         }
     }
-    Err("Tempo limite para autorização. Tente novamente.".into())
+    Err("A autorização Google expirou após 10 minutos. Clique em Entrar com Google para iniciar uma nova tentativa.".into())
 }
 pub(crate) fn authorize(
     client_id:String,client_secret:String,project:String,expected_email:Option<String>,
@@ -181,6 +204,32 @@ mod tests{
         for target in ["/?state=wrong&code=123","/?state=abc&state=abc&code=123","/other?state=abc&code=123"]{assert_eq!(parse_callback(target,"abc").unwrap(),None);}
         assert!(parse_callback("/?state=abc&error=access_denied","abc").is_err());
         assert!(parse_callback("/?state=abc&code=1&code=2","abc").is_err());
+    }
+    #[test]
+    fn loopback_handles_probe_and_delayed_callback(){
+        let listener=TcpListener::bind(("127.0.0.1",0)).unwrap();
+        let addr=listener.local_addr().unwrap();
+        let worker=std::thread::spawn(move||await_callback(listener,"expected",||Ok(())));
+        let mut probe=TcpStream::connect(addr).unwrap();
+        probe.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        probe.write_all(b"GET /favicon.ico HTTP/1.1\r\nHost: localhost\r\n\r\n").unwrap();
+        let mut reply=String::new();probe.read_to_string(&mut reply).unwrap();
+        assert!(reply.starts_with("HTTP/1.1 400"));
+        let mut callback=TcpStream::connect(addr).unwrap();
+        callback.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        callback.write_all(b"GET /?state=expected&code=synthetic HTTP/1.1\r\n").unwrap();
+        std::thread::sleep(Duration::from_millis(600));
+        callback.write_all(b"Host: localhost\r\n\r\n").unwrap();
+        let mut reply=String::new();callback.read_to_string(&mut reply).unwrap();
+        assert!(reply.starts_with("HTTP/1.1 200"));
+        assert!(reply.contains("Retorno recebido"));
+        assert!(!reply.contains("synthetic"));
+        assert_eq!(worker.join().unwrap().unwrap(),"synthetic");
+    }
+    #[test]
+    fn loopback_cancellation_is_preserved(){
+        let listener=TcpListener::bind(("127.0.0.1",0)).unwrap();
+        assert_eq!(await_callback(listener,"state",||Err("cancelled".into())).unwrap_err(),"cancelled");
     }
     #[test]
     fn google_project_and_client_are_validated(){

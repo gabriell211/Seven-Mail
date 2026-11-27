@@ -141,3 +141,16 @@ test("Gemini authentication gates conversation and token ring uses bounded provi
  assert.match(rust,/output_tokens,output_token_limit:MAX_OUTPUT_TOKENS/);
  assert.ok(existsSync(new URL("../public/providers/gemini.svg",import.meta.url)));
 });
+
+
+test("Google desktop callback survives browser consent and cannot be closed accidentally",()=>{
+ const oauth=readFileSync(new URL("../src-tauri/src/gemini_google.rs",import.meta.url),"utf8");
+ const app=readFileSync(new URL("../src/App.tsx",import.meta.url),"utf8");
+ assert.ok(oauth.includes("CALLBACK_TIMEOUT:Duration=Duration::from_secs(600)"));
+ assert.ok(oauth.includes("stream.set_nonblocking(false)"));
+ assert.ok(oauth.includes("loopback_handles_probe_and_delayed_callback"));
+ assert.ok(panel.includes('disabled={googleConnecting} onClick={onClose}'));
+ assert.ok(panel.includes("Aguardando autorização do Google"));
+ assert.ok(app.includes("disabled={geminiGoogleConnecting}"));
+ assert.ok(app.includes("onGoogleConnectingChange={setGeminiGoogleConnecting}"));
+});
