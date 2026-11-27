@@ -16,6 +16,7 @@ test("public Seven Mail pages have local navigation, branding and canonical URLs
   for(const match of html.matchAll(/(?:href|src)="([^"]+)"/g)){
     const target=match[1];
     if(/^(?:https?:|mailto:|#)/.test(target)||target==="./")continue;
+    if(target.startsWith("./#")){assert.ok(read("index.html").includes(`id="${target.slice(3)}"`),target);continue;}
     assert.ok(existsSync(new URL(target,dir)),target);
   }
  }
@@ -24,4 +25,17 @@ test("public Seven Mail pages have local navigation, branding and canonical URLs
  for(const phrase of ["Uso Limitado","Limited Use","drive.appdata","generative-language.retriever","texto e HTML integrais","myaccount.google.com/connections","exclusão","Nuvem Seven"])assert.ok(policy.includes(phrase),phrase);
  const logo=readFileSync(new URL("seven-mail-logo.png",dir));
  assert.equal(logo.subarray(0,8).toString("hex"),"89504e470d0a1a0a");
+});
+
+test("redesigned website displays a clearly labelled illustrative product preview",()=>{
+ const html=read("index.html");
+ assert.match(html,/class="app-window"/);
+ assert.match(html,/Prévia ilustrativa da interface · mensagens fictícias/);
+ assert.match(html,/id="recursos"/);
+ assert.match(html,/seven-mail-logo\.svg/);
+ for(const page of ["privacy.html","terms.html"]){
+  const content=read(page);
+  for(const match of content.matchAll(/href="#(secao-\d+)"/g))assert.ok(content.includes(`id="${match[1]}"`));
+ }
+ assert.match(read("site.css"),/prefers-reduced-motion/);
 });
