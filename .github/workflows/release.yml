@@ -136,10 +136,28 @@ jobs:
           cargo test --locked --manifest-path src-tauri/Cargo.toml
           cargo check --locked --manifest-path src-tauri/Cargo.toml
 
+      - name: Validate optional Google OAuth desktop release configuration
+        shell: bash
+        env:
+          SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID: ${{ vars.SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID }}
+          SEVEN_MAIL_GEMINI_GOOGLE_PROJECT: ${{ vars.SEVEN_MAIL_GEMINI_GOOGLE_PROJECT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID" && -z "$SEVEN_MAIL_GEMINI_GOOGLE_PROJECT" ]]; then
+            echo "::notice::Using registered Seven Mail public desktop client and project defaults."
+            exit 0
+          fi
+          [[ "$SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID" =~ ^[a-zA-Z0-9._-]+\.apps\.googleusercontent\.com$ ]] && [[ ${#SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID} -le 256 ]] || { echo "::error::Invalid OAuth desktop client ID."; exit 1; }
+          [[ "$SEVEN_MAIL_GEMINI_GOOGLE_PROJECT" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "::error::Invalid Google Cloud project ID."; exit 1; }
+
       - name: Build installers into a draft release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID: ${{ vars.SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID }}
+          SEVEN_MAIL_GEMINI_GOOGLE_PROJECT: ${{ vars.SEVEN_MAIL_GEMINI_GOOGLE_PROJECT }}
+          # Optional installed-app value only; never a confidential web-client secret.
+          SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_SECRET: ${{ secrets.SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_SECRET }}
         with:
           tagName: v__VERSION__
           releaseName: "Seven Mail v__VERSION__"

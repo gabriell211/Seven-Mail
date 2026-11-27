@@ -1,5 +1,7 @@
 mod app_lock;
 mod cloud_binding;
+mod gemini;
+mod gemini_google;
 mod credentials;
 mod dav_sync;
 mod dav_xml;
@@ -272,6 +274,7 @@ fn is_app_locked() -> Result<bool, String> {
 
 #[tauri::command]
 fn lock_app() -> Result<(), String> {
+    gemini::revoke_all();
     app_lock::lock()
 }
 
@@ -1495,6 +1498,17 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            gemini::gemini_status,
+            gemini::gemini_google_connect,
+            gemini::gemini_google_cancel,
+            gemini::gemini_configure,
+            gemini::gemini_set_model,
+            gemini::gemini_list_models,
+            gemini::gemini_disconnect,
+            gemini::gemini_open_read_session,
+            gemini::gemini_revoke,
+            gemini::gemini_ask,
+            gemini::gemini_approve_draft,
             runtime_info,
             check_for_update,
             download_update,

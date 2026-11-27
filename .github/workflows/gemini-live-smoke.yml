@@ -1,0 +1,60 @@
+name: Gemini live API smoke
+
+# One explicit branch push enables this homologation. Subsequent normal PR
+# changes do not run paid API calls. Never use pull_request_target.
+on:
+  push:
+    branches: [feat/copilot-mail-assistant]
+    paths: ['.github/workflows/gemini-live-smoke.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gemini-live-smoke
+  cancel-in-progress: false
+
+jobs:
+  gemini-live:
+    if: github.repository == 'gabriell211/Seven-Mail' && github.ref == 'refs/heads/feat/copilot-mail-assistant'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    env:
+      RUSTFLAGS: '-D warnings'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Tauri dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential curl wget file libssl-dev
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm ci --strict-peer-deps --strict-allow-scripts
+      - run: npm run icons
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - name: Compile smoke tests without credentials
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --no-run
+      - name: Verify text then validated PNG and PDF streaming on stable Flash-Lite
+        env:
+          SEVEN_MAIL_GEMINI_TEST_API_KEY: ${{ secrets.SEVEN_MAIL_GEMINI_TEST_API_KEY }}
+          SEVEN_MAIL_GEMINI_TEST_MODEL: ${{ vars.SEVEN_MAIL_GEMINI_TEST_MODEL }}
+        shell: bash
+        run: |
+          if [ -z "$SEVEN_MAIL_GEMINI_TEST_API_KEY" ]; then
+            echo "::error::Missing repository secret SEVEN_MAIL_GEMINI_TEST_API_KEY"
+            exit 1
+          fi
+          if [ -z "$SEVEN_MAIL_GEMINI_TEST_MODEL" ]; then
+            export SEVEN_MAIL_GEMINI_TEST_MODEL=gemini-3.5-flash-lite
+          fi
+          echo "Testing explicitly selected Gemini model: $SEVEN_MAIL_GEMINI_TEST_MODEL"
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib gemini::tests::live_text_and_stream -- --ignored --exact
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib gemini::tests::live_image_and_stream -- --ignored --exact
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib gemini::tests::live_pdf_and_stream -- --ignored --exact
