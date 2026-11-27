@@ -929,26 +929,68 @@ struct PstNamedIds {
 
 impl PstNamedIds {
     fn read(store: &dyn outlook_pst::messaging::store::Store) -> Result<Self, String> {
-        use outlook_pst::messaging::named_prop::NamedPropertyId;
         let map = store.named_property_map().map_err(|e| format!("Mapa MAPI PST: {e}"))?;
         let props = map.properties();
+        let binary = |id| match props.get(id) {
+            Some(PropertyValue::Binary(value)) => Ok(value.buffer()),
+            None => Ok(&[][..]),
+            _ => Err(format!("Fluxo MAPI PST inválido: {id:#06x}.")),
+        };
+        Self::from_streams(binary(0x0002)?, binary(0x0003)?, binary(0x0004)?)
+    }
+
+    // MS-PST 2.4.7.1: wGuid 1/2 are reserved; custom GUIDs are indexed by wGuid-3.
+    // outlook-pst-rw 1.2.9 lookup_guid indexes with wGuid directly and can panic.
+    fn from_streams(guids: &[u8], entries: &[u8], strings: &[u8]) -> Result<Self, String> {
+        const TAIL: [u8; 12] = [0, 0, 0, 0, 0xc0, 0, 0, 0, 0, 0, 0, 0x46];
+        if guids.len() % 16 != 0 || entries.len() % 8 != 0 {
+            return Err("Mapa de propriedades PST truncado.".into());
+        }
         let mut ids = Self::default();
-        for entry in props.stream_entry().map_err(|e| format!("Propriedades MAPI PST: {e}"))? {
-            let guid = props.lookup_guid(entry.guid()).map_err(|e| format!("GUID MAPI PST: {e}"))?;
-            if guid.data2() != 0 || guid.data3() != 0 || guid.data4() != &[0xC0, 0, 0, 0, 0, 0, 0, 0x46] {
-                continue;
+        let mut property_ids = std::collections::BTreeSet::new();
+        for entry in entries.chunks_exact(8) {
+            let name = u32::from_le_bytes([entry[0], entry[1], entry[2], entry[3]]);
+            let flags = u16::from_le_bytes([entry[4], entry[5]]);
+            let index = u16::from_le_bytes([entry[6], entry[7]]);
+            if index >= 0x7fff || !property_ids.insert(index) {
+                return Err("Índice de propriedade MAPI inválido ou duplicado.".into());
             }
-            match entry.id() {
-                NamedPropertyId::Number(lid) if matches!(guid.data1(), 0x00062002 | 0x00062003 | 0x00062004 | 0x00062008) => {
-                    ids.numeric.insert((guid.data1(), lid), entry.prop_id());
+            let id = 0x8000 + index;
+            let guid_index = flags >> 1;
+            let set = match guid_index {
+                0 => None,
+                1 => Some(0x00020328),
+                2 => Some(0x00020329),
+                n => {
+                    let offset = usize::from(n - 3) * 16;
+                    let guid = guids.get(offset..offset + 16)
+                        .ok_or("GUID de propriedade MAPI fora do mapa PST.")?;
+                    if guid[4..] == TAIL {
+                        Some(u32::from_le_bytes([guid[0], guid[1], guid[2], guid[3]]))
+                    } else { None }
                 }
-                NamedPropertyId::StringOffset(offset) if guid.data1() == 0x00020329 => {
-                    let name = props.lookup_string(offset).map_err(|e| format!("Nome MAPI PST: {e}"))?;
-                    if name.to_string().trim_end_matches('\0') == "Keywords" {
-                        ids.keywords = Some(entry.prop_id());
+            };
+            if flags & 1 == 0 {
+                if let Some(set @ (0x00062002 | 0x00062003 | 0x00062004 | 0x00062008)) = set {
+                    ids.numeric.entry((set, name)).or_insert(id);
+                }
+            } else {
+                let offset = usize::try_from(name).map_err(|_| "Offset MAPI inválido.")?;
+                let data = strings.get(offset..).ok_or("Nome MAPI fora do mapa PST.")?;
+                let size = data.get(..4).ok_or("Comprimento de nome MAPI truncado.")?;
+                let length = usize::try_from(u32::from_le_bytes([size[0], size[1], size[2], size[3]]))
+                    .map_err(|_| "Comprimento de nome MAPI inválido.")?;
+                if offset % 4 != 0 || length % 2 != 0 {
+                    return Err("Alinhamento de nome MAPI inválido.".into());
+                }
+                let end = 4usize.checked_add(length).ok_or("Comprimento de nome MAPI excedido.")?;
+                let bytes = data.get(4..end).ok_or("Nome MAPI truncado.")?;
+                if set == Some(0x00020329) {
+                    let units = bytes.chunks_exact(2).map(|v| u16::from_le_bytes([v[0], v[1]]));
+                    if units.eq("Keywords".encode_utf16()) && ids.keywords.is_none() {
+                        ids.keywords = Some(id);
                     }
                 }
-                _ => {}
             }
         }
         Ok(ids)
@@ -1832,6 +1874,26 @@ mod pst_interop_tests {
             }
         }
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn pst_nameid_stream_resolves_reserved_and_last_custom_guid() {
+        fn record(name: u32, flags: u16, index: u16) -> Vec<u8> {
+            [name.to_le_bytes().as_slice(), flags.to_le_bytes().as_slice(), index.to_le_bytes().as_slice()].concat()
+        }
+        let mut guids = vec![0; 6 * 16];
+        guids.extend(pstsmith::guid_bytes(0x00062008, 0, 0, [0xc0,0,0,0,0,0,0,0x46]));
+        let mut strings = 16u32.to_le_bytes().to_vec();
+        for unit in "Keywords".encode_utf16() { strings.extend(unit.to_le_bytes()); }
+        let entries = [record(0, (2 << 1) | 1, 0), record(0x8502, 9 << 1, 1)].concat();
+        let ids = PstNamedIds::from_streams(&guids, &entries, &strings).unwrap();
+        assert_eq!(ids.keywords, Some(0x8000));
+        assert_eq!(ids.numeric.get(&(0x00062008, 0x8502)), Some(&0x8001));
+        assert!(PstNamedIds::from_streams(&guids[..96], &entries, &strings).is_err());
+        assert!(PstNamedIds::from_streams(&guids, &entries[..15], &strings).is_err());
+        assert!(PstNamedIds::from_streams(&guids, &entries, &strings[..19]).is_err());
+        let duplicate = [record(0, 5, 0), record(0x8502, 18, 0)].concat();
+        assert!(PstNamedIds::from_streams(&guids, &duplicate, &strings).is_err());
     }
 
     #[test]
