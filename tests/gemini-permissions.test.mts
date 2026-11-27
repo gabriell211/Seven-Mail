@@ -92,3 +92,17 @@ test("Gemini settings are closed by default and accessed beside new conversation
  assert.match(panel,/settingsTitle\.current\?\.focus\(\)/);
  assert.match(panel,/e\.key==="Escape"&&settingsOpen&&!busy/);
 });
+
+
+test("conversation hides configuration and context filters while retaining explicit read-only and approval controls",()=>{
+ const settings=panel.slice(panel.indexOf('{settingsOpen?<section'),panel.indexOf('</section>:<>'));
+ const conversation=panel.slice(panel.indexOf('</section>:<>'));
+ for(const label of ["Conta de e-mail","Buscar e-mail no cache","Chave da API","Preparar resposta para aprovação"]) {
+  assert.ok(settings.includes(label),label);
+  assert.ok(!conversation.includes(label),label);
+ }
+ assert.match(conversation,/somente leitura/);
+ assert.match(conversation,/Autorização necessária/);
+ assert.match(conversation,/gemini-empty-conversation/);
+ assert.match(conversation,/Anexar arquivo/);
+});
