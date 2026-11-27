@@ -109,7 +109,7 @@ fn check_status(status: reqwest::StatusCode) -> Result<(), String> {
         401 | 403 => "Chave inválida ou sem permissão para acessar Gemini.",
         404 => "Modelo indisponível para esta chave. Selecione outro modelo.",
         429 => "Limite de uso do Gemini atingido. Verifique a cota e o faturamento.",
-        500..=599 => "Serviço Gemini temporariamente indisponível.",
+        500..=599 => return Err(format!("Serviço Gemini temporariamente indisponível (HTTP {}).",status.as_u16())),
         _ => "Falha na comunicação com Gemini.",
     }.into())
 }
@@ -375,6 +375,7 @@ fn invoke_gemini(prompt:String,files:Vec<MediaInput>,on_delta:impl FnMut(&str)->
     let config=read_config()?.ok_or("Configure a chave Gemini no painel.")?;
     generate_stream(config,prompt,files,on_delta,check_active)
 }
+fn retryable_status(status:reqwest::StatusCode)->bool{matches!(status.as_u16(),500|502|503|504)}
 fn generate_stream(config:GeminiConfig,prompt:String,files:Vec<MediaInput>,on_delta:impl FnMut(&str)->Result<(),String>,mut check_active:impl FnMut()->Result<(),String>)->Result<String,String>{
     let GeminiConfig{api_key:key,model}=config;
     if !valid_key(&key)||!valid_model(&model){return Err("Configuração Gemini inválida.".into());}
@@ -389,10 +390,35 @@ fn generate_stream(config:GeminiConfig,prompt:String,files:Vec<MediaInput>,on_de
     let body=serde_json::to_vec(&payload).map_err(|_|"Contexto inválido.")?;
     if body.len()>MAX_REQUEST_BYTES{return Err("Solicitação muito grande. Reduza os arquivos.".into());}
     check_active()?;
-    let response=http_client()?.post(format!("{API_BASE}/{model}:streamGenerateContent?alt=sse"))
-        .header("x-goog-api-key",key).header("Content-Type","application/json").header("Accept","text/event-stream")
-        .body(body).send().map_err(|_|"Não foi possível consultar o Gemini.")?;
-    check_status(response.status())?;
+    // Retry only explicit transient HTTP responses before any stream is delivered.
+    // Do not retry interrupted streams, auth/quota errors or ambiguous transport
+    // failures. Each retry may incur provider charges.
+    let client=http_client()?;
+    let deadline=Instant::now()+Duration::from_secs(90);
+    let mut attempt=0u32;
+    let response=loop{
+        check_active()?;
+        let remaining=deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero(){return Err("Tempo limite da consulta Gemini excedido.".into());}
+        let response=client.post(format!("{API_BASE}/{model}:streamGenerateContent?alt=sse"))
+            .header("x-goog-api-key",key.as_str()).header("Content-Type","application/json").header("Accept","text/event-stream")
+            .timeout(remaining).body(body.clone()).send().map_err(|_|"Não foi possível consultar o Gemini.")?;
+        let status=response.status();
+        if !retryable_status(status)||attempt>=2{check_status(status)?;break response;}
+        let fallback=Duration::from_secs(2u64.pow(attempt+1));
+        let requested=response.headers().get(reqwest::header::RETRY_AFTER).and_then(|v|v.to_str().ok()).and_then(|v|v.parse::<u64>().ok()).map(Duration::from_secs).unwrap_or(fallback);
+        let delay=requested.max(fallback);
+        if delay>=deadline.saturating_duration_since(Instant::now()){check_status(status)?;}
+        drop(response);
+        attempt+=1;
+        let wake=Instant::now()+delay;
+        loop{
+            check_active()?;
+            let remaining=wake.saturating_duration_since(Instant::now());
+            if remaining.is_zero(){break;}
+            std::thread::sleep(remaining.min(Duration::from_millis(100)));
+        }
+    };
     if !response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v|v.to_str().ok()).is_some_and(|v|v.split(';').next().is_some_and(|mime|mime.trim().eq_ignore_ascii_case("text/event-stream"))){
         return Err("Formato de streaming Gemini inválido.".into());
     }
@@ -571,7 +597,7 @@ mod tests{
     #[ignore = "requires explicitly authorized multimodal Gemini API test key"]
     fn live_image_and_stream(){
         // Valid 160x160 RGB PNG: a red square centered on a white background.
-        let png=STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAKAAAACgCAIAAAAErfB6AAABHUlEQVR42u3bsQkAIAxFQSPuv/K3t7IJiNwbIEWO2FlJhv5tWgFgARZgARZgARZgwAIswAIswAIswIAFWIAFWIAFWIAFGLAAC7AAC7AA62w1zq6y39va/ni6YE+0AAuwAAuwAAswYAEWYAEWYAEWYMACLMACLMACLMACDFiABViABViABRiwAAuwAAuwAAswYAEWYAEWYAEWYAEGLMACLMACLMACDFiABViABViABRiwFQAWYAEWYAEWYAEGLMACLMACLMACDFiABViABViABViAAQuwAAuwAAuwAAMWYAEWYAEWYAEGLMACrAdbjbMT+3XBAizAAgxYgAVYgAVYgAVYgAELsAALsAALsAADFmABFmABFmABBizAAqz32ik0CD9cSL9rAAAAAElFTkSuQmCC").expect("PNG fixture");
+        let png=STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAKAAAACgCAIAAAAErfB6AAABnElEQVR4nO3cwQ3DMAwEwShw/y0zr5Rg2ljMNHACFvzqzMyHru/TD+BeAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAscJHCdwnMBxAsdde1Pn7G2939bPGS44TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM4TuA4geMEjhM47tqbmtnb4s8FxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkcJ3CcwHECxwkc9wMWTAg/4BjnGwAAAABJRU5ErkJggg==").expect("PNG fixture");
         live_answer(live_config(),"Qual a cor do quadrado central da imagem? Responda em inglês, somente com o nome da cor.",vec![media("fixture.png","image/png",&png)],"RED");
     }
     fn synthetic_pdf()->Vec<u8>{
@@ -596,6 +622,12 @@ mod tests{
     #[ignore = "requires explicitly authorized multimodal Gemini API test key"]
     fn live_pdf_and_stream(){
         live_answer(live_config(),"Extraia somente o identificador escrito no documento.",vec![media("fixture.pdf","application/pdf",&synthetic_pdf())],"SEVEN_PDF_471");
+    }
+    #[test]
+    fn transient_http_statuses_are_explicit_and_bounded(){
+        for code in [500,502,503,504]{assert!(retryable_status(reqwest::StatusCode::from_u16(code).unwrap()));}
+        for code in [200,400,401,403,404,429,501]{assert!(!retryable_status(reqwest::StatusCode::from_u16(code).unwrap()));}
+        assert!(check_status(reqwest::StatusCode::SERVICE_UNAVAILABLE).unwrap_err().contains("503"));
     }
     #[test]
     fn context_is_bounded_without_breaking_unicode(){assert_eq!(clipped("ação",3),"açã");}

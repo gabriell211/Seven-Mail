@@ -24,7 +24,7 @@ Use Anexar arquivo ou cole uma imagem no campo de pergunta. São aceitos PNG, JP
 
 ## Streaming
 
-A API utiliza SSE (streamGenerateContent?alt=sse), com entrega progressiva por canal IPC individual do Tauri. A resposta final só gera proposta de rascunho após STOP e validação de sessão. Erro, truncamento, bloqueio, revogação ou cancelamento descartam o texto parcial. Parar geração encerra a entrega local imediatamente; a conexão HTTP é abandonada ao próximo evento recebido ou timeout de até 90 segundos. Não há garantia de cancelamento instantâneo do processamento ou cobrança no servidor remoto.
+A API utiliza SSE (streamGenerateContent?alt=sse), com entrega progressiva por canal IPC individual do Tauri. A resposta final só gera proposta de rascunho após STOP e validação de sessão. Erro, truncamento, bloqueio, revogação ou cancelamento descartam o texto parcial. Parar geração encerra a entrega local imediatamente; a conexão HTTP é abandonada ao próximo evento recebido ou timeout de até 90 segundos. Não há garantia de cancelamento instantâneo do processamento ou cobrança no servidor remoto. Respostas HTTP 500/502/503/504 antes do início do fluxo recebem até duas novas tentativas, com espera progressiva, Retry-After numérico e prazo total de 90 segundos. Falhas de autenticação, cota, transporte ambíguo ou streaming parcial não são repetidas automaticamente. A mensagem apresenta o status HTTP exato; falhas persistentes continuam sendo erros, e as tentativas podem consumir cota.
 
 ## Homologação real (opt-in)
 
