@@ -6,6 +6,10 @@ O backend Rust utiliza a API REST Gemini via HTTPS; não há runtime adicional n
 2. Informe a chave e o modelo no painel e clique em Validar e salvar.
 3. Selecione uma conta e envie uma pergunta. A sessão de leitura é aberta automaticamente, sem confirmação adicional.
 
+## Escolha do modelo
+
+O modelo ativo é persistido junto à chave no cofre nativo e restaurado ao abrir o painel ou reiniciar o aplicativo. Registros antigos que contêm apenas a chave são lidos com o modelo padrão; ao salvar, são migrados para o novo formato. Use Atualizar lista de modelos para consultar o catálogo da API e Salvar modelo para alterar a preferência sem informar novamente a chave. O modelo anterior permanece ativo se a validação ou gravação falhar. A troca fica disponível entre gerações; interrompa uma geração em andamento e aguarde a conexão terminar antes de trocar. A validação usa metadados de geração de conteúdo e exclui famílias não textuais conhecidas; disponibilidade de geração efetiva, cotas e faturamento exigem homologação real. O backend usa o modelo persistido, não um parâmetro fornecido a cada pergunta.
+
 ## Segurança e privacidade
 
 - Leitura liberada após a configuração inicial da chave, sem prazo de 30 minutos nem aprovação a cada leitura. Sessões internas isolam a conta selecionada; fechar o painel, trocar de conta, desconectar ou bloquear o aplicativo invalida a sessão. O texto é enviado ao Google somente ao solicitar uma consulta.
@@ -20,4 +24,4 @@ A API utiliza SSE (streamGenerateContent?alt=sse), com entrega progressiva por c
 
 ## Homologação pendente
 
-Validar geração real, compatibilidade do modelo escolhido e cotas com chave de teste autorizada; executar CI e testar o cofre no Windows, Linux e macOS. Persistência da escolha do modelo ainda não implementada. Não considerar homologado apenas pela validação de metadados.
+Validar geração real, compatibilidade do modelo escolhido e cotas com chave de teste autorizada; executar CI e testar o cofre no Windows, Linux e macOS. Não considerar homologado apenas pela validação de metadados.

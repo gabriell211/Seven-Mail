@@ -32,3 +32,16 @@ test("native Gemini streaming is scoped and never creates partial drafts",()=>{
  assert.match(panel,/Parar geração/);
  assert.ok(rust.indexOf("let answer=invoke_gemini")<rust.indexOf("access.proposal=Some"));
 });
+
+test("model is persisted in the native vault and can be changed without reentering the key",()=>{
+ assert.match(rust,/struct GeminiConfig/);
+ assert.match(rust,/fn decode_config/);
+ assert.match(rust,/fn save_config/);
+ assert.match(rust,/pub async fn gemini_set_model\(model:String\)/);
+ assert.match(rust,/validate_model_access\(&config.api_key,model\)/);
+ assert.match(rust,/let GeminiConfig\{api_key:key,model\}=read_config/);
+ assert.match(panel,/gemini_set_model/);
+ assert.match(panel,/gemini_list_models/);
+ assert.match(panel,/selectedModel/);
+ assert.doesNotMatch(panel,/draftReply:replyMode,model:/);
+});

@@ -1499,6 +1499,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             gemini::gemini_status,
             gemini::gemini_configure,
+            gemini::gemini_set_model,
+            gemini::gemini_list_models,
             gemini::gemini_disconnect,
             gemini::gemini_open_read_session,
             gemini::gemini_revoke,
