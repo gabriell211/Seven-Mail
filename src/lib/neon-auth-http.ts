@@ -8,7 +8,7 @@ type Endpoint = "get-session" | "sign-in/email" | "sign-up/email" | "sign-out";
 export function validatedHttpsEndpoint(value: string): URL {
   const url = new URL(value);
   if (url.protocol !== "https:" || !url.hostname || url.username || url.password || url.search || url.hash) {
-    throw new Error("Endpoint Neon deve ser HTTPS, sem credenciais, query ou fragmento.");
+    throw new Error("Configuração de conexão da Nuvem Seven inválida.");
   }
   return url;
 }
@@ -26,7 +26,7 @@ function parseSession(value: unknown): Session | null {
   if (!user || !session || typeof user.id !== "string" || !user.id ||
       typeof user.name !== "string" || typeof user.email !== "string" ||
       typeof session.id !== "string" || !session.id || session.userId !== user.id) {
-    throw new Error("Resposta de sessão Neon inválida.");
+    throw new Error("Resposta de sessão da Nuvem Seven inválida.");
   }
   return { user: { id: user.id, name: user.name, email: user.email },
     session: { id: session.id, userId: user.id } };
@@ -46,7 +46,7 @@ export function createNeonHttpAuth(baseUrl: string, request: typeof fetch = fetc
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(30_000),
     });
-    if (!response.ok) throw new Error("Neon Auth recusou a solicitação (HTTP " + response.status + ").");
+    if (!response.ok) throw new Error("Nuvem Seven recusou a solicitação (HTTP " + response.status + ").");
     return response;
   }
 
@@ -63,7 +63,7 @@ export function createNeonHttpAuth(baseUrl: string, request: typeof fetch = fetc
 
   async function result<T>(action: () => Promise<T | null>): Promise<AuthResult<T>> {
     try { return { data: await action(), error: null }; }
-    catch { return { data: null, error: { message: "Não foi possível concluir a solicitação ao Neon Auth." } }; }
+    catch { return { data: null, error: { message: "Não foi possível concluir a solicitação à Nuvem Seven." } }; }
   }
 
   async function mutate(endpoint: Exclude<Endpoint, "get-session">, body?: object): Promise<AuthResult<null>> {

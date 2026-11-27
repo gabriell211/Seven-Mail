@@ -489,7 +489,7 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
     <h2>Sua caixa, do seu jeito.</h2>
     <p>Adicione uma conta para sincronizar mensagens e pastas. A fila offline fica segura no diretório nativo do Seven Mail.</p>
     <button className="primary" onClick={onAdd}><Icon name="plus" size={16}/> Adicionar primeira conta</button>
-    <div className="trust"><span><Icon name="shield" size={14}/> Keyring</span><span><Icon name="cloud" size={14}/> Neon</span></div>
+    <div className="trust"><span><Icon name="shield" size={14}/> Keyring</span><span><Icon name="cloud" size={14}/> Nuvem Seven</span></div>
   </div>;
 }
 

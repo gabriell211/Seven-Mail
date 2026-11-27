@@ -2,6 +2,7 @@ mod app_lock;
 mod cloud_binding;
 mod gemini;
 mod gemini_google;
+mod cloud_storage;
 mod credentials;
 mod dav_sync;
 mod dav_xml;
@@ -1499,6 +1500,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             gemini::gemini_status,
+            cloud_storage::external_storage_status,
+            cloud_storage::external_storage_connect,
+            cloud_storage::external_storage_cancel,
+            cloud_storage::external_storage_verify,
+            cloud_storage::external_storage_disconnect,
             gemini::gemini_google_connect,
             gemini::gemini_google_cancel,
             gemini::gemini_configure,

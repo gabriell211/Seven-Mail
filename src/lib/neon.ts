@@ -22,7 +22,7 @@ export const neonClient = authUrl && dataApiUrl ? createStandaloneClient(authUrl
 
 function requireClient() {
   if (!neonClient) {
-    throw new Error("Neon não configurado. Defina VITE_NEON_AUTH_URL e VITE_NEON_DATA_API_URL.");
+    throw new Error("A Nuvem Seven está indisponível neste momento.");
   }
   return neonClient;
 }
@@ -50,7 +50,7 @@ async function requireCloudProtocol(owner: string): Promise<void> {
   const result = await requireClient().from("seven_mail_sync_capabilities").select("protocol_version").limit(1);
   const rows = (result.data ?? []) as unknown as Array<{protocol_version:number}>;
   if (result.error || rows[0]?.protocol_version !== 2) {
-    const error = new Error("O banco Neon precisa da migration de sincronização v2.");
+    const error = new Error("A Nuvem Seven precisa de uma atualização. A sincronização está suspensa.");
     reportCloudSyncError(error, "migration");
     throw error;
   }
@@ -80,14 +80,14 @@ export function clearCloudSyncError(): void {
 export function reportCloudSyncError(error: unknown, scope: string): void {
   // Report scope only; remote errors may contain message payloads or identifiers.
   void error;
-  lastCloudSyncError = { scope, message: scope === "migration" ? "O banco Neon precisa da migration de sincronização v2. A sincronização está suspensa." : "A sincronização não foi concluída. Os dados locais foram preservados." };
+  lastCloudSyncError = { scope, message: scope === "migration" ? "A Nuvem Seven precisa de uma atualização. A sincronização está suspensa." : "A sincronização não foi concluída. Os dados locais foram preservados." };
   window.dispatchEvent(new Event("seven-mail:cloud-sync-error"));
 }
 
 export async function setCloudSyncConsent(enabled: boolean): Promise<void> {
   const session = await getCloudSession();
   const owner = session?.session && session.user?.id;
-  if (!owner) throw new Error("Entre na conta Neon antes de configurar a sincronização.");
+  if (!owner) throw new Error("Entre na conta Nuvem Seven antes de configurar a sincronização.");
   await bridge.setCloudBinding(owner, enabled);
   protocolProof = null;
   versions.clear();
@@ -138,7 +138,7 @@ export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<
   // Keyset pagination avoids shifting offsets when a preceding row is deleted.
   // This is not a transaction-wide snapshot; a new lower ID is seen on the next sync.
   for (;;) {
-    if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+    if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Nuvem Seven alterada.");
     let query = neonClient
       .from("workspace_documents")
       .select("id, kind, payload, updated_at, deleted_at")
@@ -152,7 +152,7 @@ export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<
     if (page.length === 0) break;
     for (const row of page) {
       if (typeof row.id !== "string" || !row.id || row.kind !== kind || seen.has(row.id)) {
-        throw new Error("Página Neon contém identidade inválida ou repetida.");
+        throw new Error("Página Nuvem Seven contém identidade inválida ou repetida.");
       }
       seen.add(row.id);
       rows.push(row);
@@ -161,7 +161,7 @@ export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<
     // A server-side row limit may be lower than the requested page size.
   }
 
-  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Nuvem Seven alterada.");
   return rows.map((row) => ({
     id: row.id,
     kind: row.kind,
@@ -176,7 +176,7 @@ export async function pullCloudDocuments<T>(kind: WorkspaceKind): Promise<Array<
 export async function pushCloudDocument<T>(document: WorkspaceDocument<T>, expectedOwner?: string): Promise<void> {
   if (!neonClient) return;
   const owner = await getAuthorizedCloudOwner();
-  if (expectedOwner && owner !== expectedOwner) throw new Error("Sessão Neon alterada.");
+  if (expectedOwner && owner !== expectedOwner) throw new Error("Sessão Nuvem Seven alterada.");
   if (!owner) return;
   try {
     const result = await neonClient.from("workspace_documents").upsert({
@@ -188,7 +188,7 @@ export async function pushCloudDocument<T>(document: WorkspaceDocument<T>, expec
       deleted_at: document.deletedAt ?? null,
     }, { onConflict: "id" });
     if (result.error) throw new Error(errorMessage(result.error));
-    if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+    if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Nuvem Seven alterada.");
   } catch (error) {
     reportCloudSyncError(error, document.kind);
     throw error;
@@ -202,7 +202,7 @@ export async function pushCloudDocuments(documents: WorkspaceDocument[]): Promis
   // Each record has its own conflict outcome. Do not roll back unrelated edits.
   const failures: unknown[] = [];
   for (const document of documents) {
-    if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+    if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Nuvem Seven alterada.");
     try { await pushCloudDocument(document, owner); }
     catch (error) { failures.push(error); }
   }
@@ -224,10 +224,10 @@ function rememberVersions(owner: string, table: MailTable, rows: VersionedRow[])
 
 async function insertMailRows(table: MailTable, owner: string, rows: Array<Record<string, unknown> & {id:string}>): Promise<void> {
   if (!neonClient || rows.length === 0) return;
-  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Nuvem Seven alterada.");
   const result = await neonClient.from(table).upsert(rows, { onConflict: "id", ignoreDuplicates: true, defaultToNull: false }).select("id,updated_at");
   if (result.error) throw new Error(errorMessage(result.error));
-  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Nuvem Seven alterada.");
   rememberVersions(owner, table, (result.data ?? []) as unknown as VersionedRow[]);
 }
 
@@ -240,12 +240,12 @@ async function updateMailRow(table: MailTable, owner: string, row: Record<string
     if (!versions.has(key)) throw new Error("Registro existente sem versão local confirmada.");
     return;
   }
-  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Nuvem Seven alterada.");
   const result = await neonClient.from(table).update(row)
     .eq("owner_id", owner).eq("id", row.id).eq("updated_at", version)
     .is("deleted_at", null).select("id,updated_at");
   if (result.error) throw new Error(errorMessage(result.error));
-  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Nuvem Seven alterada.");
   const rows = (result.data ?? []) as unknown as VersionedRow[];
   if (rows.length !== 1 || rows[0].id !== row.id || typeof rows[0].updated_at !== "string" || !rows[0].updated_at) {
     versions.delete(key);
@@ -285,7 +285,7 @@ export async function pullCloudAccounts(local: AccountProfile[] = []): Promise<A
     .order("updated_at", { ascending: false });
 
   if (result.error) throw new Error(errorMessage(result.error));
-  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Nuvem Seven alterada.");
   const rows = (result.data ?? []) as unknown as CloudAccountRow[];
   const localById = new Map(local.map(account => [account.id, account]));
   for (const row of rows) {
@@ -406,7 +406,7 @@ export async function pullCloudMessages(accountId: string, limit = 500, local: M
     .limit(Math.max(1, Math.min(limit, 2000)));
 
   if (result.error) throw new Error(errorMessage(result.error));
-  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+  if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Nuvem Seven alterada.");
   const rows = (result.data ?? []) as unknown as CloudMessageRow[];
   const localById = new Map(local.map(message => [message.id, message]));
   for (const row of rows) {
@@ -460,7 +460,7 @@ export async function pushCloudMessages(messages: MailMessage[]): Promise<void> 
   const batchSize = 50;
   for (let offset = 0; offset < unique.length; offset += batchSize) {
     if (await getAuthorizedCloudOwner() !== owner) {
-      const error = new Error("Sessão Neon alterada durante o envio de mensagens.");
+      const error = new Error("Sessão Nuvem Seven alterada durante o envio de mensagens.");
       reportCloudSyncError(error, "messages");
       throw error;
     }
@@ -479,7 +479,7 @@ export async function deleteCloudAccount(accountId: string): Promise<void> {
     const key = versionKey(owner, "desktop_mail_accounts", accountId);
     const version = versions.get(key);
     if (!version) throw new Error("Conta sem versão local confirmada para exclusão remota.");
-    if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada.");
+    if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Nuvem Seven alterada.");
     // The database trigger tombstones dependent messages in the same transaction.
     const result = await neonClient.from("desktop_mail_accounts")
       .update({ deleted_at: new Date().toISOString() })

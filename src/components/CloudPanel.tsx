@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 import { Icon } from "../icons";
+import { ExternalStoragePanel } from "./ExternalStoragePanel";
 import { getCloudSession, neonConfigured, signInCloud, signOutCloud, signUpCloud, setCloudSyncConsent, getLastCloudSyncError, clearCloudSyncError } from "../lib/neon";
 import { bridge, type CloudBinding } from "../lib/bridge";
 
 type SessionState = Awaited<ReturnType<typeof getCloudSession>>;
 
 export function CloudPanel() {
+  return <><SevenCloudAccount/><ExternalStoragePanel/></>;
+}
+
+function SevenCloudAccount() {
   const [session, setSession] = useState<SessionState>(null);
   const [binding, setBinding] = useState<CloudBinding | null>(null);
   const [bindingLoaded, setBindingLoaded] = useState(false);
@@ -40,7 +45,7 @@ export function CloudPanel() {
         setBinding(null);
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError("Não foi possível concluir a operação na Nuvem Seven. Verifique sua conexão e tente novamente.");
     } finally {
       setBusy(false);
     }
@@ -66,7 +71,7 @@ export function CloudPanel() {
       await refresh();
       setPassword("");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError("Não foi possível concluir a operação na Nuvem Seven. Verifique sua conexão e tente novamente.");
     } finally {
       setBusy(false);
     }
@@ -82,7 +87,7 @@ export function CloudPanel() {
       setBindingLoaded(false);
       setConsent(false);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError("Não foi possível concluir a operação na Nuvem Seven. Verifique sua conexão e tente novamente.");
     } finally {
       setBusy(false);
     }
@@ -97,7 +102,7 @@ export function CloudPanel() {
       setConsent(false);
       await refresh();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError("Não foi possível concluir a operação na Nuvem Seven. Verifique sua conexão e tente novamente.");
     } finally {
       setBusy(false);
     }
@@ -107,12 +112,12 @@ export function CloudPanel() {
     return (
       <div className="settings-row cloud-settings">
         <div>
-          <h3>Sincronização Neon</h3>
-          <p>O cliente está pronto para Neon Auth + Data API, mas este build ainda não recebeu os endpoints públicos.</p>
+          <h3>Nuvem Seven</h3>
+          <p>Sincronize seus dados de forma opcional com sua conta Nuvem Seven.</p>
         </div>
         <div className="cloud-status warning">
           <Icon name="cloud" size={18} />
-          <span><b>Configuração necessária</b><small>VITE_NEON_AUTH_URL + VITE_NEON_DATA_API_URL (endpoints HTTPS públicos)</small></span>
+          <span><b>Serviço indisponível neste momento</b><small>Seus dados continuam disponíveis neste dispositivo.</small></span>
         </div>
       </div>
     );
@@ -125,8 +130,8 @@ export function CloudPanel() {
   return (
     <div className="settings-row cloud-settings">
       <div>
-        <h3>Sincronização Neon</h3>
-        <p>A sincronização é opcional. Quando ativada, envia contas, documentos, metadados e o texto e HTML integrais dos e-mails ao Neon. Senhas e tokens dos provedores não são enviados.</p>
+        <h3>Nuvem Seven</h3>
+        <p>A sincronização é opcional. Quando ativada, envia contas, documentos, metadados e o texto e HTML integrais dos e-mails à Nuvem Seven. Senhas e tokens dos provedores não são enviados.</p>
       </div>
       <div className="cloud-panel">
         {user ? (
@@ -137,12 +142,12 @@ export function CloudPanel() {
               <span className="cloud-ok"><i /> {syncEnabled ? "Sincronização ativa" : "Sincronização pausada"}</span>
             </div>
             {bindingLoaded && otherOwner ? (
-              <small className="cloud-error" role="alert">Este armazenamento local já pertence a outra conta Neon. A sincronização está bloqueada para evitar mistura de dados.</small>
+              <small className="cloud-error" role="alert">Este armazenamento local já pertence a outra conta Nuvem Seven. A sincronização está bloqueada para evitar mistura de dados.</small>
             ) : bindingLoaded && syncEnabled ? (
               <button className="secondary" disabled={busy} onClick={() => void changeConsent(false)}>Pausar sincronização</button>
             ) : bindingLoaded ? (
               <>
-                <label><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /> Autorizo o envio dos dados e do conteúdo integral dos meus e-mails para a conta Neon exibida acima.</label>
+                <label><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /> Autorizo o envio dos dados e do conteúdo integral dos meus e-mails para a conta Nuvem Seven exibida acima.</label>
                 <button className="primary" disabled={busy || !consent} onClick={() => void changeConsent(true)}>Ativar sincronização</button>
                 <small>Este armazenamento local ficará vinculado a esta identidade. Sair da nuvem não transfere os dados a outra conta.</small>
               </>
