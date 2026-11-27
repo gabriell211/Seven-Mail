@@ -500,7 +500,8 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
   const toggleMailbox=(id:string)=>setExpandedMailboxes(current=>current.includes(id)?current.filter(item=>item!==id):[...current,id]);
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
   const [readingToolsOpen,setReadingToolsOpen]=useState(false);
-  useEffect(()=>{setReadingToolsOpen(false);},[selectedId]);
+  const [immersiveOpen,setImmersiveOpen]=useState(false);
+  useEffect(()=>{setReadingToolsOpen(false);setImmersiveOpen(false);},[selectedId]);
   const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread"|"size"|"status">("newest");
   const [focusTab,setFocusTab] = useState<InboxTab>("all");
   const [conversationView,setConversationView] = useState(false);
@@ -925,6 +926,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
             <button type="button" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={17}/><span>Responder</span></button>
             <button type="button" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people" size={17}/><span>Responder a todos</span></button>
             <button type="button" disabled={!canForward} onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward" size={17}/><span>Encaminhar</span></button>
+            <ReadingAssist key={selected.id} message={selected} immersiveOpen={immersiveOpen} onImmersiveClose={()=>setImmersiveOpen(false)}/>
             <CommandMenu label="Mais opções da mensagem" className="reading-more">
           <button className="secondary seven-desk-meeting" onClick={()=>onCreateEventFromMessage(selected)}><img src="/integrations/seven-desk.svg" alt="" width={18} height={18}/> Reunião</button>
           <button className="secondary" disabled={!canCopy} title={providerPolicy?.canCopy===false?"Bloqueado pela política de sensibilidade":undefined} onClick={()=>onForwardAsAttachment(selected)}><Icon name="paperclip" size={15}/> Encaminhar como anexo</button>{selected.hasAttachments&&<button className="secondary" disabled={!canCopy} onClick={()=>onComposeWithAttachments(selected)}><Icon name="copy" size={15}/> Usar anexos</button>}
@@ -949,7 +951,8 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
           {isBlocked(selected)?<button className="secondary" onClick={()=>onReleaseSender(selected.from.email)}>Liberar remetente</button>:<button className="secondary" onClick={()=>onBlockSender(selected.from.email)}>Bloquear remetente</button>}
           {!isTrusted(selected)&&<button className="secondary" onClick={()=>onTrustSender(selected.from.email)}>Confiar remetente</button>}
               <button type="button" onClick={()=>messageCommand(selected.isPinned?"unpin":"pin")}><Icon name="pin" size={16}/> {selected.isPinned?"Desafixar":"Fixar"}</button>
-              <button type="button" onClick={()=>setReadingToolsOpen(value=>!value)}><Icon name="volume" size={16}/> Ferramentas de leitura</button>
+              <button type="button" onClick={()=>setImmersiveOpen(true)}><Icon name="expand" size={16}/> Leitura imersiva</button>
+              <button type="button" onClick={()=>setReadingToolsOpen(value=>!value)}><Icon name="more" size={16}/> Ferramentas de leitura</button>
               <button type="button" onClick={()=>messageCommand("delete")}><Icon name="trash" size={16}/> Excluir</button>
               <button type="button" onClick={()=>messageCommand("archive")}><Icon name="archive" size={16}/> Arquivar</button>
             </CommandMenu>
@@ -958,7 +961,6 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
         {categories.length>0&&<div className="message-categories">{categories.map(category=>{const active=selected.categories.includes(category.name);return <button key={category.id} className={active?"category-chip active":"category-chip"} onClick={()=>onToggleCategory(selected,category)}><i style={{background:category.color}}/>{category.name}</button>;})}</div>}
         {readingToolsOpen&&activeAccount&&folders.length>1&&<div className="move-folder-row"><span>Organizar</span>{onMoveToFolder&&<select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onMoveToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Mover para...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select>}{onCopyToFolder&&<select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onCopyToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Copiar para...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select>}</div>}
         <SafeMessageBody message={selected} settings={settings} onAllowRemote={onAllowRemoteContent}/>
-        {readingToolsOpen&&<ReadingAssist key={selected.id} message={selected}/>}
         {providerPolicy&&(providerPolicy.sensitivityLabelId||!providerPolicy.reactionsAllowed||!providerPolicy.canForward||!providerPolicy.canCopy)&&<div className="provider-policy-banner"><Icon name="shield" size={14}/><div><b>Política do provedor aplicada</b><span>{providerPolicy.sensitivityLabelId?`Rótulo ${providerPolicy.sensitivityLabelId}. `:""}{!providerPolicy.canForward?"Encaminhamento bloqueado. ":""}{!providerPolicy.canCopy?"Cópia bloqueada. ":""}{!providerPolicy.reactionsAllowed?"Reações desativadas pelo remetente/servidor.":""}</span></div></div>}
         {readingToolsOpen&&providerPolicy?.reactionsAllowed!==false&&folder.role!=="sent"&&<div className="message-reactions" aria-label="Reagir à mensagem">
           {["👍","❤️","😂","🎉","😮","🙏"].map((emoji)=><button key={emoji} disabled={reactionBusy} title={`Reagir com ${emoji}`} onClick={()=>{setReactionBusy(true);void bridge.sendMessageReaction(selected.accountId,selected.id,emoji).then(()=>window.alert(`Reação ${emoji} enviada.`)).catch((reason)=>window.alert(reason instanceof Error?reason.message:String(reason))).finally(()=>setReactionBusy(false));}}>{emoji}</button>)}
