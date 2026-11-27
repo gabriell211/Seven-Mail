@@ -1125,7 +1125,7 @@ function SettingsView({settings,onChange,runtime,accounts,activeAccountId,onAcco
     });
     if(!selected||Array.isArray(selected)) return;
     const count=await bridge.importPst(account.id,selected);
-    window.alert(count===1?"1 mensagem importada do PST.":`${count} mensagens importadas do PST.`);
+    window.alert(count===1?"1 item importado do PST.":`${count} itens importados do PST (mensagens, contatos, calendários ou tarefas).`);
     window.location.reload();
   }
 
