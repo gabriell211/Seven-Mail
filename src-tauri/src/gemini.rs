@@ -63,7 +63,7 @@ fn require_scope(token:&str,account:&str)->Result<(),String>{
 const KEY_SCOPE: &str = "gemini";
 const KEY_ID: &str = "desktop";
 const API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta/models";
-const DEFAULT_MODEL: &str = "gemini-3.8-flash";
+const DEFAULT_MODEL: &str = "gemini-3.5-flash-lite";
 // Public identifiers from the registered Desktop OAuth client, not secrets.
 const DEFAULT_GOOGLE_CLIENT_ID: &str = "635154959399-jhv30056f5sjkftrnh9ocdf6oq7il516.apps.googleusercontent.com";
 const DEFAULT_GOOGLE_PROJECT: &str = "gen-lang-client-0988107998";

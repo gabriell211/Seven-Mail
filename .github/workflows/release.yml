@@ -164,24 +164,17 @@ jobs:
           releaseBody: |
             Seven Mail v__VERSION__
 
-            Principais mudanças:
-            - Proteção dos anexos temporários com ACLs Windows e permissões Unix.
-            - Limpeza de caches legados e exportações temporárias expiradas.
-            - Arraste de anexos com arquivos temporários únicos e prévia nativa.
-            - Correções de segurança, armazenamento, sincronização e testes de protocolos.
-            - CI obrigatório de SMTP, IMAP e POP3 com servidor isolado.
+            Novidades da v1.0.5:
+            - Gemini integrado nativamente, com respostas em streaming, arquivos e seleção persistente de modelo.
+            - Login Google OAuth desktop com PKCE e chave de API como alternativa.
+            - Contexto de e-mail em modo leitura e aprovação explícita antes da criação de rascunhos.
+            - Assinaturas com editor de texto rico e imagens incorporadas.
+            - Interface simplificada, leitura em voz alta e leitura imersiva.
+            - Configuração de contas compacta, incluindo IMAP sem criptografia quando explicitamente escolhido.
+            - API Gemini 3.5 Flash-Lite homologada com texto, imagem e PDF.
 
-            Novidades da v1.0.4:
-            - Rolagem das configurações e correções de layout da caixa de entrada.
-            - SMTP sem criptografia para servidores explicitamente configurados, incluindo nomes de domínio.
-            - Mensagens de autenticação Gmail com instruções para gerar senha de aplicativo.
-            - Todas as mensagens visíveis por padrão, sem agrupamento obrigatório nem resumo de conversas.
-            - Primeira sincronização progressiva e operações de rede/cache fora da thread da janela.
-            - Proteção contra sobreposição de tarefas periódicas.
-            - Avatar inferior com troca de conta, inclusão e gerenciamento; pastas expansíveis por conta.
-            - Remoção do aviso de remetente externo, mantendo proteção de conteúdo remoto e links suspeitos.
-
-            A homologação em ambiente real do Gmail, desempenho no Windows, instalação silenciosa e interface permanece pendente.
+            Login OAuth depende de consentimento e permissões do projeto Google Cloud.
+            A homologação real do login no aplicativo, áudio e vídeo ainda está pendente.
 
             Windows:
             - MSI
@@ -198,8 +191,8 @@ jobs:
           prerelease: false
           args: --bundles ${{ matrix.bundles }}
 
-  publish-v104:
-    name: Publish verified v1.0.4
+  publish-v105:
+    name: Publish verified v1.0.5
     needs: release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -216,8 +209,8 @@ jobs:
         run: |
           set -euo pipefail
           tag="$(tr -d '\r\n' < .github/release-trigger)"
-          if [[ "$tag" != v1.0.4 ]]; then
-            echo "Automatic publication is scoped to the requested v1.0.4."
+          if [[ "$tag" != v1.0.5 ]]; then
+            echo "Automatic publication is scoped to the requested v1.0.5."
             exit 0
           fi
           version="$(jq -r .version src-tauri/tauri.conf.json)"

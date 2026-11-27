@@ -68,8 +68,8 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   const [googleConnecting,setGoogleConnecting]=useState(false);
   const googleAttempt=useRef<string|null>(null);
   const [apiKey,setApiKey]=useState("");
-  const [model,setModel]=useState("gemini-3.8-flash");
-  const [selectedModel,setSelectedModel]=useState("gemini-3.8-flash");
+  const [model,setModel]=useState("gemini-3.5-flash-lite");
+  const [selectedModel,setSelectedModel]=useState("gemini-3.5-flash-lite");
   const [models,setModels]=useState<ModelOption[]>([]);
   const [modelStatus,setModelStatus]=useState("");
   const [loadingConfig,setLoadingConfig]=useState(true);
