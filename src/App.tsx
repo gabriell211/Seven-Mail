@@ -36,7 +36,8 @@ import { AppLockScreen } from "./components/AppLockScreen";
 import { QuickNotificationStack } from "./components/QuickNotificationStack";
 import { UpdateBanner, type UpdateInfo } from "./components/UpdateBanner";
 import { Composer, type ComposeDraft, type QueuedSendInfo } from "./components/Composer";
-import { ensureNotificationPermission, notifyCalendarReminder, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
+import { notifyCalendarReminder, notifyNewMessages, notifyTaskReminder } from "./lib/notifications";
+import { freshNotificationMessages } from "./lib/notification-policy";
 import { pullCloudAccounts, pullCloudMessages, pushCloudAccount, pushCloudAccounts, pushCloudDocument, pushCloudMessage, pushCloudMessages } from "./lib/neon";
 import { syncWorkspaceCollection } from "./lib/workspace-sync";
 import { matchesMailQuery, matchesQuickFilter, matchesInboxTab, type InboxTab, type MailQuickFilter } from "./lib/mail-search";
@@ -1281,7 +1282,7 @@ function SettingsView({settings,onChange,runtime,accounts,activeAccountId,onAcco
     <div className="settings-row"><div><h3>Lista de mensagens</h3><p>Caixa prioritária, paginação e comportamento após ações.</p></div><div className="toggles"><label><input type="checkbox" checked={settings.focusInboxEnabled!==false} onChange={e=>set("focusInboxEnabled",e.target.checked)}/> Usar Prioritária e Outros</label><label><input type="checkbox" checked={settings.showSenderPhotos!==false} onChange={e=>set("showSenderPhotos",e.target.checked)}/> Mostrar fotos/iniciais dos remetentes</label><label><input type="checkbox" checked={settings.openNextAfterDelete!==false} onChange={e=>set("openNextAfterDelete",e.target.checked)}/> Abrir próxima mensagem após mover/excluir</label><label><span>Mensagens por página</span><select value={settings.mailPageSize??50} onChange={e=>set("mailPageSize",Number(e.target.value) as AppSettings["mailPageSize"])}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label><label><span>Limite por anexo</span><select value={settings.maxAttachmentMb??25} onChange={e=>set("maxAttachmentMb",Number(e.target.value) as AppSettings["maxAttachmentMb"])}><option value={10}>10 MB</option><option value={25}>25 MB</option><option value={50}>50 MB</option><option value={100}>100 MB</option></select></label></div></div>
     <div className="settings-row"><div><h3>Envio</h3><p>Defina o atraso usado para desfazer um envio e a confirmação antes de colocar a mensagem na fila.</p></div><div className="send-settings"><select value={settings.sendDelaySeconds} onChange={e=>set("sendDelaySeconds",Number(e.target.value) as AppSettings["sendDelaySeconds"])}><option value={0}>Imediato</option><option value={5}>Desfazer por 5 s</option><option value={10}>Desfazer por 10 s</option><option value={20}>Desfazer por 20 s</option><option value={30}>Desfazer por 30 s</option></select><label><input type="checkbox" checked={settings.confirmBeforeSend} onChange={e=>set("confirmBeforeSend",e.target.checked)}/> Confirmar antes de enviar</label></div></div>
     <div className="settings-row"><div><h3>Escrita e idioma</h3><p>Assistência local de composição e dicionário personalizado.</p></div><div className="send-settings"><label><span>Idioma de composição</span><select value={settings.composeLanguage??"pt-BR"} onChange={e=>set("composeLanguage",e.target.value)}><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en-US">English (US)</option><option value="es-ES">Español</option></select></label><label><input type="checkbox" checked={settings.autoCorrectEnabled!==false} onChange={e=>set("autoCorrectEnabled",e.target.checked)}/> Autocorreção conservadora</label><label><input type="checkbox" checked={settings.autoCapitalizeEnabled!==false} onChange={e=>set("autoCapitalizeEnabled",e.target.checked)}/> Capitalização automática</label><div className="dictionary-editor"><b>Dicionário personalizado</b><div>{(settings.customDictionary??[]).map((word)=><span key={word}>{word}<button onClick={()=>set("customDictionary",(settings.customDictionary??[]).filter((item)=>item!==word))}><Icon name="x" size={10}/></button></span>)}</div><button className="secondary" onClick={()=>{const word=window.prompt("Palavra para adicionar ao dicionário")?.trim();if(word)set("customDictionary",[...new Set([...(settings.customDictionary??[]),word])]);}}><Icon name="plus" size={12}/> Palavra</button></div></div></div>
-    <div className="settings-row"><div><h3>Sincronização e notificações</h3><p>Atualização automática, retenção local e uso de recursos.</p></div><div className="send-settings"><label><span>Intervalo</span><select value={settings.syncIntervalMinutes} onChange={e=>set("syncIntervalMinutes",Number(e.target.value) as AppSettings["syncIntervalMinutes"])}><option value={1}>A cada 1 minuto</option><option value={5}>A cada 5 minutos</option><option value={10}>A cada 10 minutos</option><option value={15}>A cada 15 minutos</option><option value={30}>A cada 30 minutos</option></select></label><label><span>Retenção local</span><select value={settings.localRetentionDays??90} onChange={e=>set("localRetentionDays",Number(e.target.value) as AppSettings["localRetentionDays"])}><option value={0}>Sem limite</option><option value={7}>7 dias</option><option value={14}>14 dias</option><option value={30}>30 dias</option><option value={90}>90 dias</option><option value={180}>180 dias</option><option value={365}>1 ano</option></select></label><label><span>Sincronizações simultâneas</span><select value={settings.maxConcurrentSyncs??2} onChange={e=>set("maxConcurrentSyncs",Number(e.target.value) as AppSettings["maxConcurrentSyncs"])}><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option></select></label><label><input type="checkbox" checked={Boolean(settings.batterySaverEnabled)} onChange={e=>set("batterySaverEnabled",e.target.checked)}/> Economia de bateria (reduz a frequência em segundo plano)</label><label><input type="checkbox" checked={Boolean(settings.memorySaverEnabled)} onChange={e=>set("memorySaverEnabled",e.target.checked)}/> Economia de memória (menos mensagens por lote)</label><label><input type="checkbox" checked={settings.notificationsEnabled} onChange={e=>set("notificationsEnabled",e.target.checked)}/> Notificações nativas de novas mensagens</label><label><input type="checkbox" checked={Boolean(settings.autoDeclineConflicts)} onChange={e=>set("autoDeclineConflicts",e.target.checked)}/> Recusar automaticamente convites que conflitam com a agenda</label><label><input type="checkbox" checked={Boolean(settings.quietHoursEnabled)} onChange={e=>set("quietHoursEnabled",e.target.checked)}/> Horário silencioso</label>{settings.quietHoursEnabled&&<div className="quiet-hours"><label><span>De</span><input type="time" value={settings.quietHoursStart??"22:00"} onChange={e=>set("quietHoursStart",e.target.value)}/></label><label><span>Até</span><input type="time" value={settings.quietHoursEnd??"07:00"} onChange={e=>set("quietHoursEnd",e.target.value)}/></label></div>}</div></div>
+    <div className="settings-row"><div><h3>Sincronização e notificações</h3><p>Atualização automática, retenção local e uso de recursos.</p></div><div className="send-settings"><label><span>Intervalo</span><select value={settings.syncIntervalMinutes} onChange={e=>set("syncIntervalMinutes",Number(e.target.value) as AppSettings["syncIntervalMinutes"])}><option value={1}>A cada 1 minuto</option><option value={5}>A cada 5 minutos</option><option value={10}>A cada 10 minutos</option><option value={15}>A cada 15 minutos</option><option value={30}>A cada 30 minutos</option></select></label><label><span>Retenção local</span><select value={settings.localRetentionDays??90} onChange={e=>set("localRetentionDays",Number(e.target.value) as AppSettings["localRetentionDays"])}><option value={0}>Sem limite</option><option value={7}>7 dias</option><option value={14}>14 dias</option><option value={30}>30 dias</option><option value={90}>90 dias</option><option value={180}>180 dias</option><option value={365}>1 ano</option></select></label><label><span>Sincronizações simultâneas</span><select value={settings.maxConcurrentSyncs??2} onChange={e=>set("maxConcurrentSyncs",Number(e.target.value) as AppSettings["maxConcurrentSyncs"])}><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option></select></label><label><input type="checkbox" checked={Boolean(settings.batterySaverEnabled)} onChange={e=>set("batterySaverEnabled",e.target.checked)}/> Economia de bateria (reduz a frequência em segundo plano)</label><label><input type="checkbox" checked={Boolean(settings.memorySaverEnabled)} onChange={e=>set("memorySaverEnabled",e.target.checked)}/> Economia de memória (menos mensagens por lote)</label><label><input type="checkbox" checked={settings.notificationsEnabled} onChange={e=>set("notificationsEnabled",e.target.checked)}/> Notificações nativas de e-mails e lembretes</label><label><input type="checkbox" checked={Boolean(settings.autoDeclineConflicts)} onChange={e=>set("autoDeclineConflicts",e.target.checked)}/> Recusar automaticamente convites que conflitam com a agenda</label><label><input type="checkbox" checked={Boolean(settings.quietHoursEnabled)} onChange={e=>set("quietHoursEnabled",e.target.checked)}/> Horário silencioso</label>{settings.quietHoursEnabled&&<div className="quiet-hours"><label><span>De</span><input type="time" value={settings.quietHoursStart??"22:00"} onChange={e=>set("quietHoursStart",e.target.value)}/></label><label><span>Até</span><input type="time" value={settings.quietHoursEnd??"07:00"} onChange={e=>set("quietHoursEnd",e.target.value)}/></label></div>}</div></div>
     <div className="settings-row"><div><h3>Ausência e encaminhamento</h3><p>Automação local executada durante sincronizações enquanto o Seven Mail estiver em execução.</p></div><div className="send-settings"><label><input type="checkbox" checked={Boolean(settings.autoReplyEnabled)} onChange={e=>set("autoReplyEnabled",e.target.checked)}/> Resposta automática</label>{settings.autoReplyEnabled&&<><input value={settings.autoReplySubject??""} onChange={e=>set("autoReplySubject",e.target.value)} placeholder="Assunto"/><textarea value={settings.autoReplyBody??""} onChange={e=>set("autoReplyBody",e.target.value)} placeholder="Mensagem de ausência"/><div className="quiet-hours"><label><span>Início</span><input type="datetime-local" value={settings.autoReplyStart?.slice(0,16)??""} onChange={e=>set("autoReplyStart",e.target.value||undefined)}/></label><label><span>Fim</span><input type="datetime-local" value={settings.autoReplyEnd?.slice(0,16)??""} onChange={e=>set("autoReplyEnd",e.target.value||undefined)}/></label></div></>}<label><input type="checkbox" checked={Boolean(settings.autoForwardEnabled)} onChange={e=>set("autoForwardEnabled",e.target.checked)}/> Encaminhamento automático</label>{settings.autoForwardEnabled&&<input type="email" value={settings.autoForwardAddress??""} onChange={e=>set("autoForwardAddress",e.target.value)} placeholder="destino@dominio.com"/>}</div></div>
     <div className="settings-row"><div><h3>Dados locais</h3><p>Cache pode ser limpo sem tocar na fila de saída. Backup inclui workspace, preferências e metadados das contas; senhas ficam somente no Keyring.</p></div><div className="paths"><span><b>Dados</b>{runtime?.dataDir||"Carregando..."}</span><span><b>Cache</b>{runtime?.cacheDir||"Carregando..."}</span><span><b>Fila</b>{runtime?.queueDir||"Carregando..."}</span><div className="data-actions"><button className="secondary" onClick={()=>void exportBackup(false)}><Icon name="download" size={14}/> Exportar backup</button><button className="secondary" onClick={()=>void exportBackup(true)}><Icon name="lock" size={14}/> Backup criptografado</button><button className="secondary" onClick={()=>void importBackup()}><Icon name="upload" size={14}/> Restaurar backup</button><button className="secondary" onClick={()=>void importPstArchive()}><Icon name="upload" size={14}/> Importar PST</button><button className="secondary" onClick={()=>void exportPstArchive()}><Icon name="download" size={14}/> Exportar PST</button><button className="secondary" onClick={()=>bridge.clearCache()}>Limpar apenas cache</button><button className="danger-link" onClick={()=>void secureWipeLocalData()}>Limpeza segura</button></div></div></div>
     <div className="settings-row"><div><h3>Privacidade de mensagens</h3><p>Reduz rastreamento e alerta sobre conteúdo potencialmente perigoso.</p></div><div className="toggles"><label><input type="checkbox" checked={settings.blockRemoteContent!==false} onChange={e=>set("blockRemoteContent",e.target.checked)}/> Bloquear imagens e conteúdo remoto</label><label><input type="checkbox" checked={settings.warnSuspiciousLinks!==false} onChange={e=>set("warnSuspiciousLinks",e.target.checked)}/> Avisar antes de abrir links suspeitos</label></div></div>
@@ -1382,6 +1383,7 @@ function UnlockedApp() {
   const [activeId,setActiveId] = useState<string|undefined>(launchAccountId);
   const [messages,setMessages] = useState<MailMessage[]>([]);
   const [quickNotifications,setQuickNotifications] = useState<MailMessage[]>([]);
+  const notifiedMessageKeys=useRef(new Set<string>());
   const [updateInfo,setUpdateInfo] = useState<UpdateInfo>();
   const dismissedUpdate = useRef<{version:string;at:number}|null>(null);
   const [mailFolders,setMailFolders] = useState<MailFolder[]>(FALLBACK_FOLDERS);
@@ -2844,14 +2846,7 @@ function UnlockedApp() {
     void update().catch(() => undefined);
   },[settings.startWithSystem]);
 
-  useEffect(()=>{
-    if (!settings.notificationsEnabled) return;
-    void ensureNotificationPermission().then((granted)=>{
-      if (!granted) {
-        setSettings((current)=>({...current,notificationsEnabled:false}));
-      }
-    });
-  },[settings.notificationsEnabled]);
+
 
   useEffect(()=>{
     if (!settings.notificationsEnabled) return;
@@ -2873,7 +2868,7 @@ function UnlockedApp() {
         if (!Number.isFinite(reminderAt) || reminderAt > now) continue;
 
         if (notificationsMutedNow(settings)) continue;
-        await notifyTaskReminder(task);
+        if(!(await notifyTaskReminder(task)))continue;
         const updated: TaskItem = { ...task, reminderNotifiedAt: new Date().toISOString() };
         const nextDocument: WorkspaceDocument<TaskItem> = {
           ...document,
@@ -2893,7 +2888,7 @@ function UnlockedApp() {
         if (!Number.isFinite(reminderAt) || reminderAt > now) continue;
 
         if (notificationsMutedNow(settings)) continue;
-        await notifyCalendarReminder(event);
+        if(!(await notifyCalendarReminder(event)))continue;
         const updated: CalendarEvent = { ...event, reminderNotifiedAt: new Date().toISOString() };
         const nextDocument: WorkspaceDocument<CalendarEvent> = {
           ...document,
@@ -2911,7 +2906,7 @@ function UnlockedApp() {
       disposed=true;
       window.clearInterval(timer);
     };
-  },[settings.notificationsEnabled]);
+  },[settings.notificationsEnabled,settings.quietHoursEnabled,settings.quietHoursStart,settings.quietHoursEnd]);
 
   useEffect(()=>{
     void bridge.listQueue().then((queue)=>{
@@ -3040,7 +3035,7 @@ function UnlockedApp() {
             syncLdapForAccount(account).catch(()=>undefined),
           ]);
           if (fresh.length>0 && settings.notificationsEnabled && !notificationsMutedNow(settings)) {
-            surfaceNewMessages(fresh);
+            void surfaceNewMessages(fresh);
           }
           void pushCloudMessages(after).catch(() => undefined);
         } catch (reason) {
@@ -3149,7 +3144,7 @@ function UnlockedApp() {
             if(activeAccount?.id===account.id) setMessages(after);
             if(unified) setMessages(await bridge.listCachedMessages());
             if(fresh.length>0&&settings.notificationsEnabled&&!notificationsMutedNow(settings)){
-              surfaceNewMessages(fresh);
+              void surfaceNewMessages(fresh);
             }
             void pushCloudMessages(after).catch(()=>undefined);
             setLastSyncAt(Date.now());
@@ -3252,7 +3247,7 @@ function UnlockedApp() {
           if(activeAccount?.id===account.id) setMessages(after);
           if(unified) setMessages(await bridge.listCachedMessages());
           if(fresh.length>0&&settings.notificationsEnabled&&!notificationsMutedNow(settings)){
-            surfaceNewMessages(fresh);
+            void surfaceNewMessages(fresh);
           }
           setLastSyncAt(Date.now());
           setSyncError(undefined);
@@ -3437,10 +3432,11 @@ function UnlockedApp() {
     setQuickNotifications((current)=>current.filter((item)=>item.id!==messageId));
   }
 
-  function surfaceNewMessages(fresh:MailMessage[]) {
-    const visible=fresh.filter((message)=>!message.isMuted);
+  async function surfaceNewMessages(fresh:MailMessage[]) {
+    const visible=freshNotificationMessages(fresh,notifiedMessageKeys.current);
     if(visible.length===0) return;
-    void notifyNewMessages(visible);
+    if(await notifyNewMessages(visible))return;
+    // In-app fallback only when native submission fails.
     setQuickNotifications((current)=>{
       const merged=[...visible,...current.filter((item)=>!visible.some((freshMessage)=>freshMessage.id===item.id))];
       return merged.slice(0,6);

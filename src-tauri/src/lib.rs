@@ -57,6 +57,33 @@ struct DesktopState {
 }
 
 #[tauri::command]
+fn show_native_notification(app:tauri::AppHandle,title:String,body:String)->Result<(),String>{
+    use tauri_plugin_notification::NotificationExt;
+    app_lock::require_unlocked()?;
+    let title=notification_text(&title,160);
+    let body=notification_text(&body,320);
+    if title.is_empty()||body.is_empty(){return Err("Notificação vazia.".into());}
+    app.notification().builder().title(title).body(body).show()
+        .map_err(|_|"Não foi possível encaminhar a notificação ao sistema.".to_string())
+}
+fn notification_text(value:&str,limit:usize)->String{
+    let text:String=value.trim().chars().filter(|c|!c.is_control()).take(limit).collect();
+    #[cfg(target_os="linux")]
+    let text=text.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;");
+    text
+}
+#[cfg(test)]
+mod native_notification_tests{
+    use super::notification_text;
+    #[test]
+    fn native_notification_text_is_bounded(){
+        assert_eq!(notification_text("  olá\n\r\t  ",10),"olá");
+        assert_eq!(notification_text("abcdef",3),"abc");
+        assert_eq!(notification_text("  ",160),"");
+    }
+}
+
+#[tauri::command]
 async fn runtime_info() -> Result<RuntimeInfo, String> {
     tauri::async_runtime::spawn_blocking(runtime_info_blocking)
         .await
@@ -1597,6 +1624,7 @@ pub fn run() {
             read_text_file,
             read_file_data_url,
             write_text_file,
+            show_native_notification,
             export_pst,
             import_pst,
             import_eml,
