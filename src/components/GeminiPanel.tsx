@@ -2,6 +2,8 @@ import { useEffect,useRef,useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Icon } from "../icons";
+import { CreativePreview,GeminiMarkdown,type CreativeMode,type CreativeResult } from "./GeminiCreative";
+import type { SignatureItem } from "../types";
 import { bridge } from "../lib/bridge";
 import type { AccountProfile,MailMessage } from "../types";
 import type { ComposeDraft } from "./Composer";
@@ -47,7 +49,7 @@ function AttachmentPreview({item,onRemove,disabled}:{item:SelectedFile;onRemove:
 }
 const docs="https://aistudio.google.com/apikey";
 export function GeminiMark(){return <img className="gemini-brand-mark" src="/providers/gemini.svg" width={21} height={21} alt="" aria-hidden="true"/>}
-export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOpen}:{accounts:AccountProfile[];initialAccountId?:string;onClose:()=>void;onDraft:(draft:ComposeDraft)=>void;composeOpen:boolean}){
+export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOpen,onSaveSignature}:{accounts:AccountProfile[];initialAccountId?:string;onClose:()=>void;onDraft:(draft:ComposeDraft)=>void;composeOpen:boolean;onSaveSignature:(signature:SignatureItem)=>Promise<void>}){
   const [accountId,setAccountId]=useState(initialAccountId??accounts[0]?.id??"");
   const grantRef=useRef<Grant|null>(null);
   const alive=useRef(true);
@@ -55,6 +57,8 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   const [messageId,setMessageId]=useState("");
   const [history,setHistory]=useState<Turn[]>([]);
   const [question,setQuestion]=useState("");
+  const [creativeMode,setCreativeMode]=useState<CreativeMode>("chat");
+  const [creativeResult,setCreativeResult]=useState<CreativeResult|null>(null);
   const [busy,setBusy]=useState(false);
   const [streaming,setStreaming]=useState(false);
   const [partial,setPartial]=useState("");
@@ -119,7 +123,7 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   function newConversation(){
     if(busy||!configured)return;
     if(settingsOpen)closeSettings();
-    setFiles([]);setHistory([]);setAnswer(null);setQuestion("");setError("");
+    setFiles([]);setHistory([]);setAnswer(null);setCreativeResult(null);setQuestion("");setError("");
   }
   function changeContext(value:boolean){
     if(includeMail===value)return;
@@ -141,7 +145,7 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
   }
   async function revoke(){
     const token=grantRef.current?.token;
-    grantRef.current=null;setFiles([]);setIncludeMail(true);setPartial("");setHistory([]);setAnswer(null);setMessageId("");setSearch("");setQuestion("");setReplyMode(false);
+    grantRef.current=null;setCreativeResult(null);setFiles([]);setIncludeMail(true);setPartial("");setHistory([]);setAnswer(null);setMessageId("");setSearch("");setQuestion("");setReplyMode(false);
     if(token)await invoke("gemini_revoke",{token}).catch(()=>{});
   }
   async function connectGoogle(){
@@ -197,9 +201,9 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
     const text=question.trim()||(files.length?"Analise os arquivos anexados.":"");
     if(!text||busy||requestActive.current||!account||!configured)return;
     const id=account.id;
-    if(replyMode&&!messageId){setError("Selecione o e-mail para responder.");return;}
+    if(creativeMode==="chat"&&replyMode&&!messageId){setError("Selecione o e-mail para responder.");return;}
     requestActive.current=true;
-    setBusy(true);setStreaming(true);setPartial("");setError("");setAnswer(null);setQuestion("");
+    setBusy(true);setStreaming(creativeMode==="chat");setPartial("");setError("");setAnswer(null);setCreativeResult(null);setQuestion("");
     const prior=history.slice(-6).map(turn=>({...turn,text:Array.from(turn.text).slice(0,1200).join("")}));
     const displayText=files.length?`${text}\nArquivos: ${files.map(item=>item.file.name).join(", ")}`:text;
     setHistory(value=>[...value,{role:"user",text:displayText}]);
@@ -213,6 +217,11 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
         current={token,accountId:id};grantRef.current=current;
       }
       const sessionToken=current.token;
+      if(creativeMode!=="chat"){
+        const result=await invoke<CreativeResult>("gemini_create",{token:sessionToken,accountId:id,mode:creativeMode,question:text,files:payloadFiles});
+        if(!alive.current||!requestActive.current||grantRef.current?.token!==sessionToken)return;
+        setCreativeResult(result);setHistory(value=>[...value,{role:"assistant",text:result.text||"Imagem criada."}]);setFiles([]);return;
+      }
       const onDelta=new Channel<string>();
       onDelta.onmessage=delta=>{if(alive.current&&requestActive.current&&grantRef.current?.token===sessionToken)setPartial(value=>value+delta);};
       const result=await invoke<Answer>("gemini_ask",{token:sessionToken,accountId:current.accountId,question:text,history:prior,messageId:includeMail?(messageId||null):null,draftReply:includeMail&&replyMode,includeMail,files:payloadFiles,onDelta});
@@ -264,7 +273,8 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
         <div className="gemini-permission gemini-compact-context"><Icon name="shield" size={14}/><span>{includeMail?`Contexto: ${account?.email}`:"Contexto de e-mail desativado"} · somente leitura</span></div>
         {!history.length&&!streaming&&<div className="gemini-empty-conversation"><GeminiMark/><h3>Como posso ajudar?</h3><p>Pergunte sobre seus e-mails ou arquivos.</p></div>}
 
-        <div className="gemini-history" aria-live="polite">{history.map((turn,index)=><div key={index} className={`gemini-turn ${turn.role}`}><b>{turn.role==="user"?"Você":"Gemini"}</b><p>{turn.text}</p></div>)}{streaming&&<div className="gemini-turn assistant" aria-busy="true"><b>Gemini</b><p>{partial||"Consultando Gemini…"}</p></div>}{busy&&!streaming&&<p role="status">Processando…</p>}</div>
+        <div className="gemini-history" aria-live="polite">{history.map((turn,index)=><div key={index} className={`gemini-turn ${turn.role}`}><b>{turn.role==="user"?"Você":"Gemini"}</b>{turn.role==="assistant"?<GeminiMarkdown text={turn.text}/>:<p>{turn.text}</p>}</div>)}{streaming&&<div className="gemini-turn assistant" aria-busy="true"><b>Gemini</b><GeminiMarkdown text={partial||"Consultando Gemini…"}/></div>}{busy&&!streaming&&<p role="status">Processando…</p>}</div>
+        {creativeResult&&account&&<CreativePreview key={account.id+creativeMode} result={creativeResult} mode={creativeMode} accountId={account.id} email={account.email} onSaveSignature={onSaveSignature} busy={busy}/>}
         {answer&&<small className="gemini-context-count">Contexto: {answer.messageCount} mensagem(ns) armazenada(s) localmente.</small>}
         {answer?.proposalId&&answer.draft&&<div className="gemini-approval"><b><Icon name="shield" size={16}/> Autorização necessária</b><small>Conta: {account?.email}</small><small>Para: {answer.draft.to}</small><small>Assunto: {answer.draft.subject}</small><p>Nenhum e-mail será enviado.</p><div><button type="button" className="secondary" onClick={()=>setAnswer(null)}>Recusar</button><button type="button" className="primary" disabled={busy||composeOpen} onClick={()=>void approve()}>Criar rascunho</button></div></div>}
       </>}
@@ -281,6 +291,7 @@ export function GeminiPanel({accounts,initialAccountId,onClose,onDraft,composeOp
           addFiles(images);
         }}/>
         {files.length>0&&<div className="gemini-attachments"><small>Arquivos serão enviados ao Google ao clicar em enviar.</small>{files.map(item=><AttachmentPreview key={item.id} item={item} disabled={busy} onRemove={()=>setFiles(value=>value.filter(file=>file.id!==item.id))}/>)}</div>}
+        <div className="gemini-creative-mode"><select aria-label="Modo Gemini" value={creativeMode} disabled={busy} onChange={e=>{setCreativeMode(e.target.value as CreativeMode);setCreativeResult(null);setError("");}}><option value="chat">Conversar</option><option value="image">Criar / editar imagem</option><option value="signature">Criar assinatura</option><option value="document">Criar documento</option></select>{creativeMode!=="chat"&&<small>Envia somente sua solicitação e anexos selecionados. Pode consumir cota paga.</small>}</div>
         <textarea ref={input} aria-label="Pergunte ao Gemini" disabled={!readable||busy} value={question} maxLength={4000} rows={2} onChange={e=>setQuestion(e.target.value)} placeholder="Pergunte ao Gemini..." onPaste={e=>{const pasted=Array.from(e.clipboardData.files);if(pasted.length){e.preventDefault();addFiles(pasted);}}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void ask();}}}/>
         <div className="gemini-composer-toolbar">
           <button type="button" className="icon-button gemini-composer-attach" title="Anexar arquivo · até 4 arquivos, 8 MiB no total" aria-label="Anexar arquivo" disabled={!readable||busy||files.length>=MAX_FILES} onClick={()=>fileInput.current?.click()}><Icon name="paperclip" size={17}/></button>

@@ -141,3 +141,16 @@ test("Gemini authentication gates conversation and token ring uses bounded provi
  assert.match(rust,/output_tokens,output_token_limit:MAX_OUTPUT_TOKENS/);
  assert.ok(existsSync(new URL("../public/providers/gemini.svg",import.meta.url)));
 });
+
+
+test("creative modes use explicit selection and scoped native transport",()=>{
+ const creative=readFileSync(new URL("../src/components/GeminiCreative.tsx",import.meta.url),"utf8");
+ assert.ok(rust.includes("pub async fn gemini_create"));
+ assert.ok(rust.includes("gemini-3.1-flash-image"));
+ assert.ok(rust.includes("responseModalities"));
+ assert.ok(panel.includes('invoke<CreativeResult>("gemini_create"'));
+ assert.ok(creative.includes("sanitizeSignatureHtml(html)"));
+ assert.ok(creative.includes("window.confirm"));
+ assert.ok(creative.includes("isDefault:false,isReplyDefault:false"));
+ assert.ok(creative.includes("GeminiMarkdown"));
+});

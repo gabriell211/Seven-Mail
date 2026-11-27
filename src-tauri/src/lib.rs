@@ -1514,6 +1514,7 @@ pub fn run() {
             gemini::gemini_open_read_session,
             gemini::gemini_revoke,
             gemini::gemini_ask,
+            gemini::gemini_create,
             gemini::gemini_approve_draft,
             runtime_info,
             check_for_update,

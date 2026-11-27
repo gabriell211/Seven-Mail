@@ -3691,7 +3691,7 @@ function UnlockedApp() {
         {section==="rules"&&<PersistentRulesView onRunRules={runRulesNow}/>} 
         {section==="settings"&&<SettingsView settings={settings} onChange={setSettings} runtime={runtime} accounts={accounts} activeAccountId={activeAccount?.id} onAccountsChange={(next)=>{setAccounts(next);if(!next.some((account)=>account.id===activeId)){setActiveId(next.find((account)=>account.isDefault)?.id??next[0]?.id);}}} signatures={signatures} onSaveSignature={saveSignature} onDeleteSignature={deleteSignature} profiles={profiles} activeProfileId={activeProfileId} onActivateProfile={activateProfile} onSaveProfile={saveProfile} onDeleteProfile={deleteProfile} onUpdateInfo={setUpdateInfo}/>}
       </div>
-      {geminiOpen&&<GeminiPanel key={activeProfileId??"default"} accounts={profileAccounts} initialAccountId={activeAccount?.id} composeOpen={composeOpen} onClose={()=>setGeminiOpen(false)} onDraft={draft=>{setGeminiOpen(false);openDraft(draft);}}/>}
+      {geminiOpen&&<GeminiPanel key={activeProfileId??"default"} accounts={profileAccounts} initialAccountId={activeAccount?.id} composeOpen={composeOpen} onSaveSignature={saveSignature} onClose={()=>setGeminiOpen(false)} onDraft={draft=>{setGeminiOpen(false);openDraft(draft);}}/>}
     </main>
     {composeOpen&&<Composer accounts={profileAccounts} signatures={signatures} initialAccountId={composeAccount?.id} initialDraft={draftToOpen} settings={settings} onClose={closeComposer} onQueued={(info)=>{handleQueuedSend(info);void refreshDrafts();}}/>}
     {undoSend&&<div className="undo-send" role="status"><span><Icon name="send" size={16}/><b>Mensagem na fila</b><small>Envio em instantes</small></span><button onClick={()=>void undoQueuedSend()}>Desfazer</button></div>}
