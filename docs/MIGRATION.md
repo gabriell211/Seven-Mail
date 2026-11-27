@@ -7,7 +7,7 @@
 - **EML:** importação, exportação e preservação da fonte original.
 - **MSG:** importação de mensagem, corpo e metadados disponíveis.
 - **OFT:** leitura como modelo reutilizável no compositor.
-- **PST:** importação recursiva das pastas/mensagens para o cache local e exportação das mensagens locais para um novo PST.
+- **PST:** importação recursiva das pastas/mensagens para o cache local e exportação das mensagens e itens de workspace locais para um novo PST.
 - **MBOX:** quando presente no fluxo de migração, mantenha a origem intacta e importe para uma conta de destino configurada.
 
 O Seven Mail nunca precisa alterar o arquivo PST/MSG/OFT original durante a importação.
@@ -46,26 +46,28 @@ Campos que não existirem no arquivo recebem fallback seguro; uma propriedade au
 
 ## Exportação PST
 
-**Exportar PST** cria um novo arquivo Unicode a partir das mensagens existentes no cache local, sem alterar a origem. O destino deve ter um nome ainda inexistente e estar em um sistema de arquivos que suporte hard links (por exemplo, NTFS). A publicação não sobrescreve um PST existente.
+**Exportar PST** cria um novo arquivo Unicode a partir das mensagens existentes no cache local e dos calendários, contatos e tarefas selecionados pelo filtro de conta, sem alterar a origem. O destino deve ter um nome ainda inexistente e estar em um sistema de arquivos que suporte hard links (por exemplo, NTFS). A publicação não sobrescreve um PST existente.
 
 O exportador organiza pastas não vazias pela hierarquia local, separa contas por identificador quando há mais de uma e preserva destinatários Para, CC e CCO disponíveis no cache ou na fonte original. O importador lê a tabela de destinatários e os indicadores MAPI de leitura, sinalização ativa e importância. CCO não recebido no cabeçalho original não pode ser reconstruído.
 
-### Limites e próximos critérios de homologação
+### Implementação nativa e critérios de homologação
 
-A biblioteca `outlook-pst-rw` 1.2.9 escreve mensagens, destinatários e hierarquia, mas sua interface de escrita não oferece propriedades MAPI arbitrárias, propriedades nomeadas ou classes de itens de calendário, contatos e tarefas.
+O gravador usa uma cópia vendorizada de `pstsmith` 0.1.0 (licença MIT, origem e revisão fixadas no repositório), adaptada para escrever as classes de contêiner `IPF.Appointment`, `IPF.Contact` e `IPF.Task`. O leitor `outlook-pst-rw` permanece independente. As propriedades nomeadas usam GUID e LID/nome, não IDs fixos de um arquivo específico.
 
-- [ ] Escrita de categorias nativas (`PidNameKeywords`, PS_PUBLIC_STRINGS). Leitura e registro de nomes implementados nesta branch, pendentes de fixture Outlook; cores originais não são recuperadas.
-- [ ] Escrita de sinalizadores, leitura, conclusão de acompanhamento e datas de acompanhamento.
-- [ ] Exportação de calendários (`IPM.Appointment`), recorrência e fuso original. Importação básica de eventos únicos, horários UTC, local, participantes e categorias implementada, pendente de validação.
-- [ ] Exportação de contatos (`IPM.Contact`). Importação básica de nome, e-mails, telefones, empresa, cargo, notas e categorias implementada, pendente de validação.
-- [ ] Exportação de tarefas (`IPM.Task`) e recorrência/status avançados. Importação básica de título, datas disponíveis, prioridade, notas e categorias implementada, pendente de validação.
-- [ ] Anexos e pastas vazias, bem como pastas especiais e metadados de contas.
+- [x] Escrita de itens `IPM.Appointment`, `IPM.Contact`, `IPM.Task` e pastas nativas correspondentes.
+- [x] Leitura e escrita de categorias atribuídas aos itens (`PidNameKeywords`).
+- [x] Leitura e escrita de sinalização ativa, leitura, importância e destinatários Para/CC/CCO disponíveis.
+- [x] Eventos únicos com horários, local, dia inteiro, participantes, disponibilidade, privacidade e lembretes.
+- [x] Contatos com nome, e-mails, telefones, empresa, cargo, apelido e notas, respeitando os limites do mapeamento.
+- [x] Tarefas com título, notas, prioridade, datas, conclusão e lembretes.
+- [ ] Recorrências, exceções, fuso original, estado avançado de tarefas e acompanhamento completo de mensagens.
+- [ ] Lista mestra e cores de categorias, campos adicionais de contato, anexos importados, pastas vazias e especiais.
 - [ ] Preservação de CC/CCO nas futuras revisões de sincronização em nuvem, com isolamento de privacidade.
-- [ ] Testes de ida e volta com PST produzido e aberto no Outlook clássico real.
+- [ ] Validação dos testes automatizados e homologação de ida e volta com Outlook clássico real.
 
-Não considere a migração PST integral até esses critérios serem implementados e homologados. Calendários e contatos ainda podem ser migrados separadamente por ICS e CSV/vCard.
+O exportador grava anexos MIME quando a fonte original está disponível; interrompe a exportação se uma mensagem sinaliza anexos mas eles não podem ser recuperados. Recorrências não representadas são rejeitadas explicitamente. A saída é publicada somente após finalizar a escrita. Não considere a migração integral até os critérios restantes serem implementados e homologados.
 
-Referências: [API do gravador PST 1.2.9](https://docs.rs/outlook-pst-rw/1.2.9/outlook_pst/struct.UnicodePstFile.html) e [propriedades nomeadas do Outlook](https://learn.microsoft.com/en-us/office/client-developer/outlook/mapi/about-named-properties-used-by-outlook).
+Referências: [pstsmith](https://github.com/baozdemir/pstsmith), [propriedades nomeadas do Outlook](https://learn.microsoft.com/en-us/office/client-developer/outlook/mapi/about-named-properties-used-by-outlook).
 
 ## Dados locais de versões anteriores
 
@@ -106,4 +108,4 @@ Credenciais não são copiadas de forma insegura entre dispositivos.
 
 ### Importação de itens MAPI
 
-O leitor resolve propriedades nomeadas pelo GUID e LID/nome do mapa do próprio PST, sem assumir que IDs `0x8000+` sejam iguais entre arquivos. Itens de calendário, contatos e tarefas são encaminhados ao workspace, não tratados como e-mails. A importação de recorrências e classes desconhecidas ainda retorna erro explícito; itens importados anteriormente podem permanecer no cache, portanto a importação ainda não é transacional. O exportador continua restrito a mensagens, não sendo um backup completo de workspace.
+O leitor resolve propriedades nomeadas pelo GUID e LID/nome do mapa do próprio PST, sem assumir que IDs `0x8000+` sejam iguais entre arquivos. Itens de calendário, contatos e tarefas são encaminhados ao workspace, não tratados como e-mails. A importação de recorrências e classes desconhecidas ainda retorna erro explícito; itens importados anteriormente podem permanecer no cache, portanto a importação ainda não é transacional. O exportador inclui mensagens, calendários, contatos e tarefas, mas não substitui um backup integral do workspace.
