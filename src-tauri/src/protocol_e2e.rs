@@ -44,6 +44,13 @@ fn smtp_imap_pop3_roundtrip() {
 
     let imap_account = test_account("ci-protocol-imap", "imap");
     let pop3_account = test_account("ci-protocol-pop3", "pop3");
+    let mut plain_account = test_account("ci-protocol-imap-plain", "imap");
+    plain_account.imap_port = Some(3143);
+    plain_account.imap_security_mode = Some("plain".into());
+    assert!(imap_sync::test(&plain_account).expect("Plain IMAP login failed"));
+    let mut oauth_plain = plain_account.clone();
+    oauth_plain.oauth_enabled = true;
+    assert!(imap_sync::test(&oauth_plain).expect_err("OAuth must reject plaintext").contains("OAuth exige TLS"));
 
     assert!(
         providers::test_smtp(&imap_account).expect("SMTP connection test failed"),
@@ -124,6 +131,12 @@ fn smtp_imap_pop3_roundtrip() {
         "SMTP accepted the message, but Seven Mail could not observe it through IMAP. Last error: {}",
         imap_error.unwrap_or_else(|| "none".to_string())
     );
+
+    assert!(imap_sync::test_find_subject(&plain_account, "INBOX", &subject)
+        .expect("Plain IMAP search must succeed"));
+    imap_sync::sync_latest(&paths, &plain_account, 25).expect("Plain IMAP sync must succeed");
+    assert!(storage::list_cached_messages(&paths, Some(&plain_account.id))
+        .expect("Plain IMAP cache must be readable").iter().any(|message| message.subject == subject));
 
     let mut pop3_ok = false;
     let mut pop3_error = None;
