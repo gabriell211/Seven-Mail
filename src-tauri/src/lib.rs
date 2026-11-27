@@ -1500,7 +1500,7 @@ pub fn run() {
             gemini::gemini_status,
             gemini::gemini_configure,
             gemini::gemini_disconnect,
-            gemini::gemini_authorize,
+            gemini::gemini_open_read_session,
             gemini::gemini_revoke,
             gemini::gemini_ask,
             gemini::gemini_approve_draft,

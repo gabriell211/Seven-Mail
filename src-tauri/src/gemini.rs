@@ -7,7 +7,6 @@ use uuid::Uuid;
 
 const MAX_REPLY: u64 = 128 * 1024;
 const MAX_PROMPT: usize = 120 * 1024;
-const CONSENT_TTL: Duration = Duration::from_secs(30 * 60);
 const PROPOSAL_TTL: Duration = Duration::from_secs(5 * 60);
 static ACCESS: Mutex<Option<Access>> = Mutex::new(None);
 static REQUEST: Mutex<()> = Mutex::new(());
@@ -16,7 +15,6 @@ pub(crate) fn revoke_all(){if let Ok(mut access)=ACCESS.lock(){*access=None;}}
 struct Access {
     token: String,
     account_id: String,
-    granted_at: Instant,
     proposal: Option<Proposal>,
 }
 struct Proposal {
@@ -49,16 +47,16 @@ pub struct Turn {
 }
 fn clipped(value:&str,max:usize)->String { value.chars().take(max).collect() }
 fn scope(access:&Access,token:&str,account:&str)->bool{
-    access.token==token && access.account_id==account && access.granted_at.elapsed()<CONSENT_TTL
+    access.token==token && access.account_id==account
 }
 fn require_scope(token:&str,account:&str)->Result<(),String>{
     let guard=ACCESS.lock().map_err(|_|"Permissões indisponíveis.")?;
-    if guard.as_ref().is_some_and(|a|scope(a,token,account)){Ok(())}else{Err("Autorize novamente a leitura desta conta.".into())}
+    if guard.as_ref().is_some_and(|a|scope(a,token,account)){Ok(())}else{Err("Sessão de leitura encerrada. Abra novamente o painel.".into())}
 }
 const KEY_SCOPE: &str = "gemini";
 const KEY_ID: &str = "desktop";
 const API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta/models";
-const DEFAULT_MODEL: &str = "gemini-4-argon";
+const DEFAULT_MODEL: &str = "gemini-3.8-flash";
 
 fn read_key() -> Result<Option<String>, String> {
     credentials::load_scoped(KEY_SCOPE, KEY_ID).map_err(|_| "Cofre de credenciais indisponível.".into())
@@ -124,16 +122,16 @@ pub async fn gemini_disconnect() -> Result<(),String> {
     }).await.map_err(|_|"Falha ao desconectar Gemini.".to_string())?
 }
 #[tauri::command]
-pub async fn gemini_authorize(account_id:String)->Result<String,String>{
+pub async fn gemini_open_read_session(account_id:String)->Result<String,String>{
     tauri::async_runtime::spawn_blocking(move||{
         app_lock::require_unlocked()?;
-        if read_key()?.is_none(){return Err("Configure a chave Gemini antes de autorizar leitura.".into());}
+        if read_key()?.is_none(){return Err("Configure a chave Gemini antes de consultar e-mails.".into());}
         let accounts=storage::list_accounts(&AppPaths::resolve()?)?;
         if !accounts.iter().any(|a|a.id==account_id){return Err("Conta não encontrada.".into());}
         let token=Uuid::new_v4().to_string();
-        *ACCESS.lock().map_err(|_|"Permissões indisponíveis.")?=Some(Access{token:token.clone(),account_id,granted_at:Instant::now(),proposal:None});
+        *ACCESS.lock().map_err(|_|"Permissões indisponíveis.")?=Some(Access{token:token.clone(),account_id,proposal:None});
         Ok(token)
-    }).await.map_err(|_|"Falha ao autorizar o Gemini.".to_string())?
+    }).await.map_err(|_|"Falha ao abrir sessão de leitura.".to_string())?
 }
 #[tauri::command]
 pub fn gemini_revoke(token:String)->Result<(),String>{
@@ -204,7 +202,7 @@ pub async fn gemini_ask(token:String,account_id:String,question:String,history:V
         let answer=invoke_gemini(prompt,&model)?;
         app_lock::require_unlocked()?;
         let mut guard=ACCESS.lock().map_err(|_|"Permissões indisponíveis.")?;
-        let access=guard.as_mut().filter(|a|scope(a,&token,&account_id)).ok_or("A autorização foi encerrada.")?;
+        let access=guard.as_mut().filter(|a|scope(a,&token,&account_id)).ok_or("A sessão de leitura foi encerrada.")?;
         access.proposal=None;
         let (proposal_id,draft)=if draft_reply{
             let message=chosen.ok_or("Mensagem não encontrada.")?;
@@ -223,7 +221,7 @@ pub async fn gemini_ask(token:String,account_id:String,question:String,history:V
 pub fn gemini_approve_draft(token:String,account_id:String,proposal_id:String)->Result<Draft,String>{
     app_lock::require_unlocked()?;
     let mut guard=ACCESS.lock().map_err(|_|"Permissões indisponíveis.")?;
-    let access=guard.as_mut().filter(|a|scope(a,&token,&account_id)).ok_or("Autorize novamente a conta.")?;
+    let access=guard.as_mut().filter(|a|scope(a,&token,&account_id)).ok_or("Sessão de leitura encerrada.")?;
     let proposal=access.proposal.take().ok_or("Proposta não encontrada.")?;
     if proposal.id!=proposal_id||proposal.created_at.elapsed()>PROPOSAL_TTL{return Err("Proposta inválida ou expirada.".into());}
     Ok(proposal.draft)
@@ -233,7 +231,7 @@ mod tests{
     use super::*;
     #[test]
     fn access_is_scoped_to_token_and_account(){
-        let access=Access{token:"t".into(),account_id:"a".into(),granted_at:Instant::now(),proposal:None};
+        let access=Access{token:"t".into(),account_id:"a".into(),proposal:None};
         assert!(scope(&access,"t","a"));
         assert!(!scope(&access,"t","b"));
         assert!(!scope(&access,"different","a"));

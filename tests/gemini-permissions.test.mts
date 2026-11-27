@@ -11,10 +11,13 @@ test("Gemini uses native HTTPS, scoped vault and no external runtime or mutation
  assert.doesNotMatch(rust,/Command::new|node_modules|queue_operation|message_action|delete_workspace|flush_outbox/);
  assert.equal(existsSync(new URL("../copilot-runtime",import.meta.url)),false);
 });
-test("consent and one-time draft approval remain mandatory",()=>{
+test("read-only session is automatic and one-time draft approval remains mandatory",()=>{
  assert.match(rust,/require_scope\(&token,&account_id\)\?/);
  assert.match(rust,/messages.retain\(\|m\|m.account_id==account_id\)/);
  assert.match(rust,/access.proposal.take\(\)/);
+ assert.match(panel,/gemini_open_read_session/);
+ assert.doesNotMatch(panel,/Autorizar leitura|setConsent|30 minutos/);
+ assert.doesNotMatch(rust,/CONSENT_TTL/);
  assert.match(panel,/window.confirm/);
  assert.match(panel,/gemini_approve_draft/);
  assert.doesNotMatch(panel,/GitHub|Copilot|Node\.js/i);
