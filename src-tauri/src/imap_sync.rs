@@ -6,12 +6,16 @@ use crate::{
     storage::{self, AppPaths},
 };
 use async_imap::{extensions::idle::IdleResponse, types::{Flag, NameAttribute}, Client};
-use async_native_tls::{TlsConnector, TlsStream};
+use async_native_tls::TlsConnector;
 use async_std::net::TcpStream;
 use futures::TryStreamExt;
 use mail_parser::{MessageParser, MimeHeaders};
 
-type SecureClient = Client<TlsStream<TcpStream>>;
+// Both TCP and TLS use the same IMAP session machinery.
+trait ImapTransport: futures::io::AsyncRead + futures::io::AsyncWrite + Unpin + std::fmt::Debug + Send {}
+impl<T: futures::io::AsyncRead + futures::io::AsyncWrite + Unpin + std::fmt::Debug + Send> ImapTransport for T {}
+type ImapStream = Box<dyn ImapTransport>;
+type ImapClient = Client<ImapStream>;
 
 static ACTIVE_ACCOUNTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
@@ -46,14 +50,33 @@ async fn bounded<T>(
         .map_err(|_| format!("Tempo limite IMAP excedido: {operation}."))?
 }
 
-async fn connect(account: &AccountProfile) -> Result<SecureClient, String> {
+async fn connect(account: &AccountProfile) -> Result<ImapClient, String> {
     let settings = providers::settings_for(account);
-    let address = format!("{}:{}", settings.imap_host, settings.imap_port);
+    let mode = settings.imap_security_mode.to_ascii_lowercase();
+    if !matches!(mode.as_str(), "tls" | "starttls" | "plain") {
+        return Err("Modo de segurança IMAP inválido.".into());
+    }
+    if mode == "plain" && account.oauth_enabled {
+        return Err("IMAP com OAuth exige TLS para proteger o token de acesso.".into());
+    }
+    if mode == "plain" && !providers::plaintext_host_allowed(&settings.imap_host) {
+        return Err("Servidor IMAP inválido. Informe um nome de domínio ou IP, sem URL ou porta.".into());
+    }
+    let host = settings.imap_host.trim().trim_start_matches('[').trim_end_matches(']');
+    let address = if host.contains(':') { format!("[{host}]:{}", settings.imap_port) } else { format!("{host}:{}", settings.imap_port) };
     let timeout = std::time::Duration::from_secs(account.connection_timeout_seconds.clamp(5, 300));
     let tcp = async_std::future::timeout(timeout, TcpStream::connect(&address))
         .await
         .map_err(|_| format!("Tempo limite de conexão IMAP excedido ({:?}).", timeout))?
         .map_err(|error| format!("Falha ao conectar ao IMAP {address}: {error}"))?;
+
+    if mode == "plain" {
+        let stream: ImapStream = Box::new(tcp);
+        let mut client = Client::new(stream);
+        client.read_response().await.map_err(|error| error.to_string())?
+            .ok_or_else(|| "Servidor IMAP encerrou antes da saudação.".to_string())?;
+        return Ok(client);
+    }
 
     let connector = TlsConnector::new().use_sni(true);
     #[cfg(test)]
@@ -67,7 +90,7 @@ async fn connect(account: &AccountProfile) -> Result<SecureClient, String> {
         connector
     };
 
-    if settings.imap_security_mode.eq_ignore_ascii_case("starttls") {
+    if mode == "starttls" {
         let mut client = Client::new(tcp);
         client
             .read_response()
@@ -80,16 +103,16 @@ async fn connect(account: &AccountProfile) -> Result<SecureClient, String> {
             .map_err(|error| format!("STARTTLS IMAP falhou: {error}"))?;
         let tcp = client.into_inner();
         let tls = connector
-            .connect(settings.imap_host.as_str(), tcp)
+            .connect(host, tcp)
             .await
             .map_err(|error| format!("TLS IMAP falhou: {error}"))?;
-        Ok(Client::new(tls))
+        Ok(Client::new(Box::new(tls) as ImapStream))
     } else {
         let tls = connector
-            .connect(settings.imap_host.as_str(), tcp)
+            .connect(host, tcp)
             .await
             .map_err(|error| format!("TLS IMAP falhou: {error}"))?;
-        let mut client = Client::new(tls);
+        let mut client = Client::new(Box::new(tls) as ImapStream);
         client
             .read_response()
             .await
@@ -197,11 +220,11 @@ impl async_imap::Authenticator for &OAuth2 {
     }
 }
 
-async fn login(account: &AccountProfile) -> Result<async_imap::Session<TlsStream<TcpStream>>, String> {
+async fn login(account: &AccountProfile) -> Result<async_imap::Session<ImapStream>, String> {
     bounded(account, "conexão e autenticação", login_inner(account)).await
 }
 
-async fn login_inner(account: &AccountProfile) -> Result<async_imap::Session<TlsStream<TcpStream>>, String> {
+async fn login_inner(account: &AccountProfile) -> Result<async_imap::Session<ImapStream>, String> {
     let client = connect(account).await?;
     if !account.can("read") {
         return Err("A conta compartilhada não possui permissão de leitura.".to_string());
@@ -654,7 +677,7 @@ struct SpecialFolders {
 }
 
 async fn special_folders(
-    session: &mut async_imap::Session<TlsStream<TcpStream>>,
+    session: &mut async_imap::Session<ImapStream>,
 ) -> Result<SpecialFolders, String> {
     let stream = session
         .list(Some(""), Some("*"))
@@ -689,7 +712,7 @@ async fn special_folders(
 }
 
 async fn apply_remote_action(
-    session: &mut async_imap::Session<TlsStream<TcpStream>>,
+    session: &mut async_imap::Session<ImapStream>,
     operation: &crate::models::QueueOperation,
     folders: &SpecialFolders,
 ) -> Result<(), String> {

@@ -55,6 +55,7 @@ jobs:
             -Dgreenmail.users=seven:sevenpass@test.local
         ports:
           - 3025:3025
+          - 3143:3143
           - 3993:3993
           - 3995:3995
     env:
@@ -82,7 +83,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import socket, ssl, time
-          ports = (3025, 3993, 3995)
+          ports = (3025, 3143, 3993, 3995)
           deadline = time.monotonic() + 30
           pending = set(ports)
           # GreenMail uses a self-signed fixture certificate on loopback.
@@ -90,15 +91,15 @@ jobs:
           context = ssl._create_unverified_context()
           def probe(port):
               with socket.create_connection(("127.0.0.1", port), timeout=2) as raw:
-                  connection = context.wrap_socket(raw, server_hostname="localhost") if port != 3025 else raw
+                  connection = context.wrap_socket(raw, server_hostname="localhost") if port in (3993, 3995) else raw
                   with connection:
                       with connection.makefile("rb") as reader:
                           greeting = reader.readline(8192)
-                          prefix, command = {3025: (b"220", b"QUIT\r\n"), 3993: (b"* OK", b"a1 LOGOUT\r\n"), 3995: (b"+OK", b"QUIT\r\n")}[port]
+                          prefix, command = {3025: (b"220", b"QUIT\r\n"), 3143: (b"* OK", b"a1 LOGOUT\r\n"), 3993: (b"* OK", b"a1 LOGOUT\r\n"), 3995: (b"+OK", b"QUIT\r\n")}[port]
                           if not greeting.startswith(prefix):
                               raise OSError("Unexpected GreenMail greeting")
                           connection.sendall(command)
-                          if port == 3993:
+                          if port in (3143, 3993):
                               while True:
                                   line = reader.readline(8192)
                                   if not line or line.startswith(b"a1 "):
