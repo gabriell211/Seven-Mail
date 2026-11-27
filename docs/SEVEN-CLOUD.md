@@ -24,5 +24,5 @@ Homologar consentimento real Google e Microsoft, renovar e desconectar; implemen
 Arquivos oficiais para distribuição local, sem consultas a CDNs durante a utilização:
 - Google Drive: https://www.gstatic.com/images/branding/productlogos/drive_2026/v2/web-64dp/logo_drive_2026_color_2x_web_64dp.png (https://developers.google.com/workspace/drive/api/guides/branding).
 - OneDrive: https://www.microsoft.com/content/dam/microsoft/bade/images/icons/en-us/m365-app-icons-fy26/OneDrive-Icon-FY26.svg.
-- TeraBox: https://s5.teraboxcdn.com/common-static/favicon.ico (favicon da página oficial).
+- TeraBox: https://s5.teraboxcdn.com/common-static/favicon.ico (favicon da página oficial; o servidor retornou PNG, armazenado com extensão `.png`).
 As marcas identificam seus respectivos serviços e não representam endosso do Seven Mail. O layout apenas redimensiona preservando a proporção. Google Drive e OneDrive estão versionados em `public/providers/`; o TeraBox será adicionado após validação do arquivo oficial (inclusive quando servido com compressão HTTP). A tarefa isolada de CI valida os formatos antes de incorporar os arquivos. Os builds e a execução não consultam CDNs para exibir marcas.
