@@ -8,11 +8,9 @@ use outlook_pst::{
     ltp::prop_context::PropertyValue,
     messaging::{folder::Folder as PstFolder, message::Message as PstMessage},
     ndb::node_id::NodeId,
-    UnicodePstFile,
-    UnicodePstMessage,
-    UnicodePstRecipient,
-    UnicodePstRecipientType,
 };
+#[cfg(test)]
+use outlook_pst::{UnicodePstFile, UnicodePstMessage, UnicodePstRecipient, UnicodePstRecipientType};
 
 const MAX_TEXT_FILE_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_EML_FILE_BYTES: u64 = 64 * 1024 * 1024;
@@ -889,6 +887,7 @@ fn pst_export_folder(message: &MailMessage, separate_accounts: bool) -> Vec<&str
     components
 }
 
+#[cfg(test)]
 fn pst_export_recipients<'a>(
     to: &'a [MailAddress], cc: &'a [MailAddress], bcc: &'a [MailAddress],
 ) -> Vec<UnicodePstRecipient<'a>> {
@@ -1409,6 +1408,11 @@ mod native_pst_writer {
         let mut path = vec!["Seven Workspace", folder];
         if !imported_folder.is_empty() && imported_folder != folder { path.extend(imported_folder.split('/').filter(|s| !s.is_empty())); }
         else if doc.kind == "task" && !string(p,"listName").is_empty() { path.push(string(p,"listName")); }
+        let container = match doc.kind.as_str() { "calendar" => "IPF.Appointment", "contact" => "IPF.Contact", "task" => "IPF.Task", _ => unreachable!() };
+        for depth in 2..=path.len() {
+            writer.ensure_typed_folder_path(&path[..depth], container)
+                .map_err(|error| format!("Falha ao criar pasta PST tipada: {error}"))?;
+        }
         append(writer, &path, Item {
             message_class: class, subject, sender: None, recipients: &recipients, body, html_body: None,
             message_id: None, delivery_time: None, creation_time: stamp, last_modification_time: stamp, unsent: false,

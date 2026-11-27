@@ -1136,7 +1136,7 @@ function SettingsView({settings,onChange,runtime,accounts,activeAccountId,onAcco
     });
     if(!destination) return;
     const count=await bridge.exportPst(undefined,destination);
-    window.alert(count===1?"1 mensagem exportada para PST.":`${count} mensagens exportadas para PST.`);
+    window.alert(count===1?"1 item exportado para PST.":`${count} itens exportados para PST (mensagens, contatos, calendários ou tarefas).`);
   }
 
   async function importBackup() {

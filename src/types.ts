@@ -100,7 +100,7 @@ export interface MailMessage {
   isMuted?: boolean;
   isPhishing?: boolean;
   isImportant?: boolean;
-  sourceFormat?: "msg" | "oft" | "eml";
+  sourceFormat?: "msg" | "oft" | "eml" | "pst";
 }
 
 export interface QueueOperation {

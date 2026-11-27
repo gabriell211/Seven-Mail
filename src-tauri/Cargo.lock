@@ -3749,8 +3749,6 @@ dependencies = [
 [[package]]
 name = "pstsmith"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1e59856035896e56bbbcf4b212ce6f317b96f075f43f1ac7cf612a36cf123c6"
 dependencies = [
  "byteorder",
  "thiserror 2.0.21",
