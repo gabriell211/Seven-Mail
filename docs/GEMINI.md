@@ -76,3 +76,5 @@ Escolha Conversar, Criar/editar imagem, Criar assinatura ou Criar documento no s
 ## Configuração simplificada (API key)
 
 A interface Gemini não inicia mais OAuth Google. Obtenha uma chave no Google AI Studio, cole-a e valide. O modelo padrão é selecionado automaticamente; a seleção avançada fica disponível após a configuração. Autorizações OAuth antigas não liberam a conversa: configure uma chave para substituir a credencial armazenada. O OAuth das contas de e-mail não é alterado. As seções OAuth acima descrevem a implementação legada, não o fluxo atual.
+
+Conexão inicial: diálogo independente, antes de montar a conversa. A engrenagem reabre o mesmo diálogo para substituir a chave após validação. Cancelar mantém a credencial anterior. Preferências avançadas acessíveis por link no diálogo de troca.

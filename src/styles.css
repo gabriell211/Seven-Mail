@@ -1249,3 +1249,12 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 @media(prefers-reduced-motion:reduce){.gemini-token-value{transition:none}}
 
 .gemini-creative-mode{display:grid;gap:4px;padding:2px 0}.gemini-creative-mode select{align-self:start;width:fit-content;max-width:100%;border:0;border-radius:6px;background:var(--soft);color:var(--text);font-size:11px;padding:4px}.gemini-creative-mode small{color:var(--muted);font-size:10px}.gemini-creative-result{display:grid;gap:8px;min-width:0}.gemini-generated-image{display:block;max-width:100%;max-height:380px;object-fit:contain;border-radius:9px}.gemini-signature-preview{background:white;color:#222;border:1px solid var(--line);padding:10px;overflow:auto;max-height:280px}.gemini-markdown p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}.gemini-markdown hr{border:0;border-top:1px solid var(--line);margin:9px 0}.gemini-md-heading{font-weight:750}.gemini-md-bullet{padding-left:8px}.gemini-markdown code{background:var(--soft);border-radius:3px;padding:1px 3px}
+
+.gemini-connection-dialog{box-sizing:border-box;width:min(480px,calc(100vw - 32px));max-width:none;margin:auto;padding:22px;border:1px solid var(--line);border-radius:15px;background:var(--solid);color:var(--text);box-shadow:0 18px 60px #0003}
+.gemini-connection-dialog::backdrop{background:#10102065}
+.gemini-connection-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}.gemini-connection-heading h2{font-size:15px;margin:0}
+.gemini-connection-dialog form{display:grid;gap:12px;margin:0}.gemini-connection-dialog p{font-size:13px;color:var(--muted);margin:0}
+.gemini-connection-dialog input{box-sizing:border-box;width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--solid);color:var(--text);font-size:13px}
+.gemini-connection-dialog .gemini-connect-submit{width:100%;min-height:46px;justify-content:center;font-size:14px}
+.gemini-connection-dialog .gemini-key-link{justify-self:center;background:none;border:0;color:var(--text);text-decoration:underline;text-underline-offset:3px;padding:3px 8px;font-size:13px}
+.gemini-connection-dialog .gemini-preferences-link{font-size:11px;color:var(--muted)}.gemini-connection-dialog :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
