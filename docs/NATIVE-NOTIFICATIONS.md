@@ -1,0 +1,4 @@
+# Notificações nativas
+Os avisos automáticos utilizam a interface Rust do plugin Tauri, sem botão de teste na interface. A preferência existente é opt-in; horários silenciosos e contas/mensagens silenciadas continuam respeitados. Os avisos mostram remetente e assunto, sem corpo de mensagem. O agrupamento e a deduplicação são limitados à sessão. Caso o encaminhamento nativo falhe, a interface utiliza o aviso interno existente. O plugin não confirma apresentação pelo sistema; Não Perturbe e permissões do sistema podem suprimir o aviso.
+Para homologar, instalar o aplicativo, ativar notificações nas configurações e receber uma nova mensagem não lida enquanto aberto ou minimizado na bandeja. Validar lembretes e horários silenciosos. Notificações com processo encerrado e ações por clique não estão implementadas.
+Referência: https://v2.tauri.app/plugin/notification/
