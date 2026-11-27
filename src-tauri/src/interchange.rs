@@ -1328,3 +1328,68 @@ foreach ($acl in @($directoryAcl, $fileAcl)) {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[cfg(test)]
+mod pst_interop_tests {
+    use super::*;
+
+    #[test]
+    fn pst_roundtrip_preserves_nested_folder_and_recipient_roles() {
+        let root = std::env::temp_dir().join(format!("seven-pst-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let archive = root.join("fixture.pst");
+        let to = vec![MailAddress { name: Some("Primary".into()), email: "to@example.test".into() }];
+        let cc = vec![MailAddress { name: Some("Copy".into()), email: "cc@example.test".into() }];
+        let bcc = vec![MailAddress { name: Some("Blind".into()), email: "bcc@example.test".into() }];
+        let recipients = pst_export_recipients(&to, &cc, &bcc);
+        let fixture = UnicodePstMessage {
+            subject: "Nested fixture",
+            sender_name: "Sender",
+            sender_email: "sender@example.test",
+            recipients: &recipients,
+            body: "PST interoperability",
+            html_body: Some("<p>PST interoperability</p>"),
+            message_id: "<seven-pst-fixture@example.test>",
+            delivery_time: 133_750_080_000_000_000,
+        };
+        {
+            UnicodePstFile::create_in_folder(&archive, &["Projects", "2026"], &fixture).unwrap();
+        }
+        {
+            let store = outlook_pst::open_store(&archive).unwrap();
+            let subtree = store.open_folder(&store.properties().ipm_sub_tree_entry_id().unwrap()).unwrap();
+            fn child(parent: &dyn PstFolder, name: &str) -> Rc<dyn PstFolder> {
+                for row in parent.hierarchy_table().unwrap().rows_matrix() {
+                    let node = NodeId::from(u32::from(row.id()));
+                    let store = parent.store();
+                    let entry = store.properties().make_entry_id(node).unwrap();
+                    let folder = store.open_folder(&entry).unwrap();
+                    if folder.properties().display_name().unwrap().to_string() == name {
+                        return folder;
+                    }
+                }
+                panic!("Missing folder {name}");
+            }
+            let projects = child(subtree.as_ref(), "Projects");
+            let year = child(projects.as_ref(), "2026");
+            let row = year.contents_table().unwrap().rows_matrix().next().unwrap();
+            let entry = store.properties().make_entry_id(NodeId::from(u32::from(row.id()))).unwrap();
+            let imported = store.open_message(&entry, None).unwrap();
+            let decoded = pst_recipients(imported.as_ref()).unwrap();
+            assert_eq!(decoded.to.len(), 1);
+            assert_eq!(decoded.cc.len(), 1);
+            assert_eq!(decoded.bcc.len(), 1);
+            assert_eq!(decoded.to[0].email, "to@example.test");
+            assert_eq!(decoded.cc[0].email, "cc@example.test");
+            assert_eq!(decoded.bcc[0].email, "bcc@example.test");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn pst_flags_use_mapi_integer_values_only() {
+        assert_eq!(pst_integer(Some(&PropertyValue::Integer32(2))), Some(2));
+        assert_eq!(pst_integer(None), None);
+        assert_eq!(pst_integer(Some(&PropertyValue::Boolean(true))), None);
+    }
+}
