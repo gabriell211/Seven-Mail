@@ -7,7 +7,8 @@ const logo=readFileSync(new URL("../public/integrations/seven-desk.svg",import.m
 test("meeting actions use the bundled Seven Desk brand",()=>{
   assert.match(logo,/seven-purple/);
   assert.equal(app.split('src="/integrations/seven-desk.svg"').length-1,2);
-  assert.match(app,/onClick=\{\(\)=>startMeeting\(\)\}/);
+  assert.match(app,/onClick=\{onNewMeeting\}/);
+  assert.match(app,/onNewMeeting=\{\(\)=>startMeeting\(\)\}/);
 });
 test("meeting draft opens the existing editor rather than saving immediately",()=>{
   const start=app.indexOf("function startMeeting(");
@@ -17,4 +18,13 @@ test("meeting draft opens the existing editor rather than saving immediately",()
   assert.match(source,/setSection\("calendar"\)/);
   assert.doesNotMatch(source,/upsertWorkspace|pushCloudDocument/);
   assert.match(calendar,/setEditing\(initialMeeting\)/);
+});
+
+test("desktop reading commands use functional ribbon and overflow controls",()=>{
+  assert.match(app,/className="mail-ribbon" role="toolbar"/);
+  assert.match(app,/className="reading-command-strip"/);
+  assert.match(app,/<CommandMenu label="Mais opções da mensagem"/);
+  assert.doesNotMatch(app,/className="reply-actions advanced-actions"/);
+  assert.match(app,/disabled=\{!canForward\}/);
+  assert.match(app,/onRefreshAll=\{\(\)=>void syncNow\(true\)\}/);
 });
