@@ -16,13 +16,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p marks
-          curl --fail --silent --show-error --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 40 --retry 1 'https://www.gstatic.com/images/branding/productlogos/drive_2026/v2/web-64dp/logo_drive_2026_color_2x_web_64dp.png' -o marks/google-drive.png
-          curl --fail --silent --show-error --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 40 --retry 1 'https://www.microsoft.com/content/dam/microsoft/bade/images/icons/en-us/m365-app-icons-fy26/OneDrive-Icon-FY26.svg' -o marks/onedrive.svg
-          curl --fail --silent --show-error --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 40 --retry 1 'https://s5.teraboxcdn.com/common-static/favicon.ico' -o marks/terabox.ico
+          curl --fail --silent --show-error --compressed --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 40 --retry 1 'https://www.gstatic.com/images/branding/productlogos/drive_2026/v2/web-64dp/logo_drive_2026_color_2x_web_64dp.png' -o marks/google-drive.png
+          curl --fail --silent --show-error --compressed --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 40 --retry 1 'https://www.microsoft.com/content/dam/microsoft/bade/images/icons/en-us/m365-app-icons-fy26/OneDrive-Icon-FY26.svg' -o marks/onedrive.svg
+          curl --fail --silent --show-error --compressed --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 40 --retry 1 'https://s5.teraboxcdn.com/common-static/favicon.ico' -o marks/terabox.ico
           python3 - <<'PY'
-          import base64, hashlib, pathlib, struct, xml.etree.ElementTree as ET
+          import base64, gzip, hashlib, io, pathlib, struct, xml.etree.ElementTree as ET
           for path in sorted(pathlib.Path("marks").iterdir()):
               data = path.read_bytes()
+              if data.startswith(b"\x1f\x8b"):
+                  with gzip.GzipFile(fileobj=io.BytesIO(data)) as stream:
+                      data = stream.read(65537)
+                  path.write_bytes(data)
               assert 16 <= len(data) <= 65536, path
               if path.suffix == ".png":
                   assert data.startswith(b"\x89PNG\r\n\x1a\n")
@@ -30,7 +34,18 @@ jobs:
                   w,h = struct.unpack(">II",data[16:24])
                   assert 0<w<=1024 and 0<h<=1024
               elif path.suffix == ".ico":
-                  assert data[:4] == b"\x00\x00\x01\x00"
+                  if data.startswith(b"\x89PNG\r\n\x1a\n"):
+                      assert data[12:16] == b"IHDR", path
+                      w,h = struct.unpack(">II",data[16:24])
+                      assert 0<w<=256 and 0<h<=256, path
+                      data = struct.pack("<HHHBBBBHHII",0,1,1,w%256,h%256,0,0,1,32,len(data),22) + data
+                      path.write_bytes(data)
+                  assert data[:4] == b"\x00\x00\x01\x00", (path, data[:8].hex())
+                  count = struct.unpack_from("<H",data,4)[0]
+                  assert 0<count<=64 and 6+16*count<=len(data), path
+                  for i in range(count):
+                      size,offset = struct.unpack_from("<II",data,6+16*i+8)
+                      assert size>0 and offset>=6+16*count and offset+size<=len(data), path
               else:
                   assert b"<!DOCTYPE" not in data and b"<!ENTITY" not in data
                   root = ET.fromstring(data)
