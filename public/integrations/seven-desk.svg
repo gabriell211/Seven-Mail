@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128" height="128" role="img" aria-label="Seven Desk">
+  <defs>
+    <linearGradient id="seven-purple" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#C575FF"/>
+      <stop offset="100%" stop-color="#6D2BEC"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#seven-purple)" d="M61 11 C49 -3 23 5 9 26 C-5 45 11 47 32 37 C45 30 54 28 53 35 C45 45 24 60 6 55 C19 69 47 56 56 39 C65 23 52 20 32 29 C23 33 14 37 13 34 C24 21 45 7 61 11 Z"/>
+</svg>

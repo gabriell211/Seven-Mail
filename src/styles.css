@@ -1009,3 +1009,58 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .mailbox-children .folder-organizer>.folder-actions{display:none}
 .mailbox-children .folder-organizer:hover>.folder-actions,.mailbox-children .folder-organizer:focus-within>.folder-actions{display:flex;position:absolute;right:0;top:100%;background:var(--solid);border:1px solid var(--line2);border-radius:8px;z-index:5;padding:3px;box-shadow:var(--shadow)}
 .mailbox-status{margin:6px 5px;color:var(--muted);font-size:11px;line-height:1.5}
+
+/* Seven Desk brand mark from the canonical website asset. */
+.seven-desk-meeting img{display:block;object-fit:contain;flex:none}
+.topbar-meeting{flex:none;min-height:38px;white-space:nowrap;gap:7px}
+.topbar-meeting span{font-size:12px}
+@media(max-width:1180px){.topbar-meeting{padding-inline:9px}.topbar-meeting span{display:none}}
+
+/* Compact desktop command ribbon and reading header, matching the supplied reference. */
+.mail-workspace{height:100%;min-height:0;min-width:0;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
+.mail-workspace>.mail-layout{min-height:0;min-width:0;height:100%}
+.mail-ribbon{display:flex;flex-wrap:wrap;align-items:center;gap:4px 0;padding:5px 10px;border-bottom:1px solid var(--line);background:var(--solid);position:relative;z-index:4;min-width:0}
+.ribbon-group{display:flex;align-items:center;gap:2px;padding:0 7px;border-right:1px solid var(--line);min-width:0}
+.ribbon-group:last-child{border-right:0}
+.ribbon-command{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:7px 8px;min-height:34px;border-radius:5px;border:1px solid transparent;background:transparent;font-size:12px;font-weight:500;color:var(--text);white-space:nowrap}
+.ribbon-command:hover:not(:disabled),.ribbon-command[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+.ribbon-command:disabled,.reading-command-strip>button:disabled{opacity:.4;cursor:not-allowed}
+.ribbon-icon{width:35px;padding:6px}
+.ribbon-command svg,.ribbon-move svg{flex:none;color:var(--muted)}
+.ribbon-replies .ribbon-command svg,.reading-command-strip>button svg{color:var(--accent)}
+.ribbon-move{display:flex;align-items:center;gap:5px;padding-inline:5px}
+.ribbon-move select{font-size:12px;background:var(--solid);color:var(--text);border:1px solid var(--line2);border-radius:5px;min-height:31px;max-width:135px}
+.reading-pane{min-width:0;min-height:0}
+.reading-compact-header{padding:20px 20px 8px;display:block}
+.reading-compact-header h1{font-size:clamp(17px,1.5vw,23px);line-height:1.35;font-weight:600;letter-spacing:normal;overflow-wrap:anywhere}
+.reading-sender-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:4px 20px 12px}
+.reading-sender-row .sender{margin:0;padding:0;border:0;flex:1 1 210px;min-width:0;align-items:flex-start}
+.reading-sender-row .sender>div{min-width:0}
+.reading-sender-row .sender b{font-size:13px;line-height:1.5;font-weight:600;overflow-wrap:anywhere}
+.sender-address{font-size:12px;color:var(--muted);font-weight:400}
+.reading-sender-row .sender small,.reading-sender-row .sender time{font-size:11px;overflow-wrap:anywhere}
+.reading-command-strip{display:flex;align-items:center;flex-wrap:wrap;gap:0;flex:none;max-width:100%}
+.reading-command-strip>button,.reading-command-strip .command-menu-trigger{display:flex;align-items:center;justify-content:center;gap:6px;min-height:33px;padding:6px 9px;border:1px solid var(--line2);background:var(--solid);color:var(--text);font-size:12px;font-weight:500}
+.reading-command-strip>button:first-child{border-radius:5px 0 0 5px}
+.reading-command-strip>button+button{margin-left:-1px}
+.reading-command-strip>button:nth-child(3){border-radius:0 5px 5px 0}
+.reading-command-strip>button:hover:not(:disabled){background:var(--accent-soft)}
+.command-menu{position:relative;flex:none}
+.command-menu-trigger{display:grid;place-items:center;width:34px;height:34px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--muted)}
+.command-menu-trigger:hover,.command-menu-trigger[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+.reading-more{margin-left:6px}
+.command-menu-panel{position:absolute;top:calc(100% + 4px);right:0;z-index:25;width:min(260px,calc(100vw - 28px));max-height:min(420px,45vh);overflow:auto;display:flex;flex-direction:column;gap:2px;padding:5px;border:1px solid var(--line2);border-radius:7px;background:var(--solid);box-shadow:0 8px 24px rgba(20,20,45,.16)}
+.command-menu-panel>button{display:flex;justify-content:flex-start;align-items:center;gap:9px;min-height:33px;padding:7px 8px;text-align:left;font-size:12px;font-weight:500;border:0;border-radius:5px;background:transparent;color:var(--text);flex:none}
+.command-menu-panel>button:not(:disabled):hover{background:var(--accent-soft)}
+.command-menu-panel>button:disabled{opacity:.45}
+.command-menu-panel>button>svg,.command-menu-panel>button>img{flex:none;color:var(--muted)}
+.command-menu-panel>select{margin:4px;min-height:32px}
+.mail-advanced-filters[hidden]{display:none}
+.reading-pane .mail-body{max-width:none;padding:8px 20px 20px;font-size:14px;line-height:1.6}
+.reading-pane .remote-content-banner{margin:0 20px 8px;font-size:11px;line-height:1.45;flex-wrap:wrap}
+.reading-pane .message-categories{margin-inline:20px}
+@media(max-width:1200px){.ribbon-command{font-size:11px;padding-inline:6px}.ribbon-group{padding-inline:5px}.reading-command-strip>button{font-size:11px;padding-inline:7px}}
+@media print{.mail-ribbon,.reading-command-strip,.reading-assist-actions,.message-reactions,.command-menu{display:none!important}.mail-workspace{display:block!important;height:auto!important;overflow:visible!important}.reading-sender-row{padding:0!important}}
+
+.command-menu-panel>button.active{background:var(--accent-soft);color:var(--accent)}
+.reading-command-strip>button:focus-visible,.command-menu-trigger:focus-visible,.ribbon-command:focus-visible{outline:2px solid var(--accent);outline-offset:1px}

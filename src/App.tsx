@@ -23,6 +23,7 @@ import { VirtualList } from "./components/VirtualList";
 import { BrandLogo } from "./components/BrandLogo";
 import { ProviderSelector } from "./components/ProviderSelector";
 import { AccountSwitcher } from "./components/AccountSwitcher";
+import { CommandMenu } from "./components/CommandMenu";
 import { AccountFolderSection } from "./components/AccountFolderSection";
 import { countUnreadByFolder, mailboxMessages, readExpandedMailboxes } from "./lib/mailbox-navigation";
 import { ConnectionError } from "./components/ConnectionError";
@@ -487,7 +488,7 @@ function EmptyInbox({onAdd}:{onAdd:()=>void}) {
   </div>;
 }
 
-function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onForwardAsAttachment,onComposeWithAttachments,onResendMessage,onRedirectMessage,onRecallMessage,onCreateTaskFromMessage,onCreateEventFromMessage,onImportEml,onExportEml,onCreateCategory,onEditCategory,onDeleteCategory,onToggleCategory,onToggleCategoryFavorite,onUseSavedSearch,onDeleteSavedSearch,onCreateFolder,onCreateSubfolder,onRenameFolder,onDeleteFolder,onMoveToFolder,onCopyToFolder,onMoveToAccount,onToggleFolderFavorite,onReorderFolder,onUpdateMetadata,onIgnoreConversation,onSetSenderCleanup,onAllowRemoteContent,onBlockSender,onTrustSender,onReleaseSender,focusMessageId,onFolderChange,onAccountFolderChange,onCompose,onAdd,onRefresh,onMessageAction,syncing,settings}:{accounts:AccountProfile[];messages:MailMessage[];unfilteredMessages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onForwardAsAttachment:(message:MailMessage)=>void;onComposeWithAttachments:(message:MailMessage)=>void;onResendMessage:(message:MailMessage)=>void;onRedirectMessage:(message:MailMessage)=>void;onRecallMessage:(message:MailMessage)=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateEventFromMessage:(message:MailMessage)=>void;onImportEml?:()=>void;onExportEml:(message:MailMessage)=>void;onCreateCategory:()=>void;onEditCategory:(category:CategoryItem)=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onToggleCategoryFavorite:(category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;onCreateFolder?:()=>void;onCreateSubfolder?:(folder:MailFolder)=>void;onRenameFolder?:(folder:MailFolder)=>void;onDeleteFolder?:(folder:MailFolder)=>void;onMoveToFolder?:(message:MailMessage,folder:MailFolder)=>void;onCopyToFolder?:(message:MailMessage,folder:MailFolder)=>void;onMoveToAccount?:(message:MailMessage,targetAccountId:string)=>void;onToggleFolderFavorite?:(folder:MailFolder)=>void;onReorderFolder?:(folder:MailFolder,direction:-1|1)=>void;onUpdateMetadata:(message:MailMessage,metadata:{importance?:"low"|"normal"|"high";snoozedUntil?:string;isMuted?:boolean;isPhishing?:boolean;isImportant?:boolean})=>void;onIgnoreConversation:(message:MailMessage)=>void;onSetSenderCleanup:(message:MailMessage)=>void;onAllowRemoteContent:(sender:string)=>void;onBlockSender:(email:string)=>void;onTrustSender:(email:string)=>void;onReleaseSender:(email:string)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onAccountFolderChange:(accountId:string,folder:MailFolder)=>void;onCompose:()=>void;onAdd:()=>void;onRefresh:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;settings:AppSettings}) {
+function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,folder,localDrafts,categories,savedSearches,onOpenDraft,onComposeFromMessage,onForwardAsAttachment,onComposeWithAttachments,onResendMessage,onRedirectMessage,onRecallMessage,onCreateTaskFromMessage,onCreateEventFromMessage,onImportEml,onExportEml,onCreateCategory,onEditCategory,onDeleteCategory,onToggleCategory,onToggleCategoryFavorite,onUseSavedSearch,onDeleteSavedSearch,onCreateFolder,onCreateSubfolder,onRenameFolder,onDeleteFolder,onMoveToFolder,onCopyToFolder,onMoveToAccount,onToggleFolderFavorite,onReorderFolder,onUpdateMetadata,onIgnoreConversation,onSetSenderCleanup,onAllowRemoteContent,onBlockSender,onTrustSender,onReleaseSender,focusMessageId,onFolderChange,onAccountFolderChange,onCompose,onNewMeeting,onOpenPeople,onAdd,onRefresh,onRefreshAll,onMessageAction,syncing,settings}:{accounts:AccountProfile[];messages:MailMessage[];unfilteredMessages:MailMessage[];activeAccount?:AccountProfile;folders:MailFolder[];folder:MailFolder;localDrafts:ComposeDraft[];categories:CategoryItem[];savedSearches:SavedSearchItem[];onOpenDraft:(draft:ComposeDraft)=>void;onComposeFromMessage:(message:MailMessage,mode:"reply"|"replyAll"|"forward")=>void;onForwardAsAttachment:(message:MailMessage)=>void;onComposeWithAttachments:(message:MailMessage)=>void;onResendMessage:(message:MailMessage)=>void;onRedirectMessage:(message:MailMessage)=>void;onRecallMessage:(message:MailMessage)=>void;onCreateTaskFromMessage:(message:MailMessage)=>void;onCreateEventFromMessage:(message:MailMessage)=>void;onImportEml?:()=>void;onExportEml:(message:MailMessage)=>void;onCreateCategory:()=>void;onEditCategory:(category:CategoryItem)=>void;onDeleteCategory:(category:CategoryItem)=>void;onToggleCategory:(message:MailMessage,category:CategoryItem)=>void;onToggleCategoryFavorite:(category:CategoryItem)=>void;onUseSavedSearch:(item:SavedSearchItem)=>void;onDeleteSavedSearch:(item:SavedSearchItem)=>void;onCreateFolder?:()=>void;onCreateSubfolder?:(folder:MailFolder)=>void;onRenameFolder?:(folder:MailFolder)=>void;onDeleteFolder?:(folder:MailFolder)=>void;onMoveToFolder?:(message:MailMessage,folder:MailFolder)=>void;onCopyToFolder?:(message:MailMessage,folder:MailFolder)=>void;onMoveToAccount?:(message:MailMessage,targetAccountId:string)=>void;onToggleFolderFavorite?:(folder:MailFolder)=>void;onReorderFolder?:(folder:MailFolder,direction:-1|1)=>void;onUpdateMetadata:(message:MailMessage,metadata:{importance?:"low"|"normal"|"high";snoozedUntil?:string;isMuted?:boolean;isPhishing?:boolean;isImportant?:boolean})=>void;onIgnoreConversation:(message:MailMessage)=>void;onSetSenderCleanup:(message:MailMessage)=>void;onAllowRemoteContent:(sender:string)=>void;onBlockSender:(email:string)=>void;onTrustSender:(email:string)=>void;onReleaseSender:(email:string)=>void;focusMessageId?:string;onFolderChange:(folder:MailFolder)=>void;onAccountFolderChange:(accountId:string,folder:MailFolder)=>void;onCompose:()=>void;onNewMeeting:()=>void;onOpenPeople:()=>void;onAdd:()=>void;onRefresh:()=>void;onRefreshAll:()=>void;onMessageAction:(messageId:string,action:"read"|"unread"|"flag"|"unflag"|"pin"|"unpin"|"archive"|"delete"|"spam"|"inbox")=>Promise<void>;syncing:boolean;settings:AppSettings}) {
   const [selectedId,setSelectedId] = useState<string>();
   const selectedMailboxId=activeAccount?.id??"__all__";
   const [expandedMailboxes,setExpandedMailboxes]=useState<string[]>(()=>readExpandedMailboxes());
@@ -498,6 +499,9 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
   useEffect(()=>{try{localStorage.setItem("seven-mail:expanded-mailboxes",JSON.stringify(expandedMailboxes));}catch{/* optional preference */}},[expandedMailboxes]);
   const toggleMailbox=(id:string)=>setExpandedMailboxes(current=>current.includes(id)?current.filter(item=>item!==id):[...current,id]);
   const [quickFilter,setQuickFilter] = useState<MailQuickFilter>("all");
+  const [advancedFiltersOpen,setAdvancedFiltersOpen]=useState(false);
+  const [readingToolsOpen,setReadingToolsOpen]=useState(false);
+  useEffect(()=>{setReadingToolsOpen(false);},[selectedId]);
   const [sort,setSort] = useState<"newest"|"oldest"|"sender"|"subject"|"unread"|"size"|"status">("newest");
   const [focusTab,setFocusTab] = useState<InboxTab>("all");
   const [conversationView,setConversationView] = useState(false);
@@ -824,7 +828,41 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
           return <div className="organizer-row folder-organizer" key={item.path}>{button}<div className="folder-actions"><button className={favoriteFolderPaths.includes(item.path)?"organizer-delete active":"organizer-delete"} aria-label={`Favoritar ${item.name}`} onClick={()=>onToggleFolderFavorite?.(item)}><Icon name="star" size={12}/></button><button className="organizer-delete" title="Nova subpasta" aria-label={`Nova subpasta em ${item.name}`} onClick={()=>onCreateSubfolder?.(item)}><Icon name="plus" size={12}/></button><button className="organizer-delete" title="Mover acima" onClick={()=>onReorderFolder?.(item,-1)}>↑</button><button className="organizer-delete" title="Mover abaixo" onClick={()=>onReorderFolder?.(item,1)}>↓</button><button className="organizer-delete folder-edit" aria-label={`Renomear ${item.name}`} onClick={()=>onRenameFolder?.(item)}><Icon name="settings" size={12}/></button><button className="organizer-delete" aria-label={`Excluir ${item.name}`} onClick={()=>onDeleteFolder?.(item)}><Icon name="x" size={12}/></button></div></div>;
         })}
       </nav>);
-  return <><div className={`mail-layout reading-${settings.readingPane} preview-${settings.previewLines}`}>
+  const canForward=Boolean(selected&&providerPolicy?.canForward!==false);
+  const canCopy=Boolean(selected&&providerPolicy?.canCopy!==false);
+  const messageCommand=(action:"read"|"unread"|"flag"|"unflag"|"archive"|"delete"|"pin"|"unpin")=>{if(selected)void act(selected.id,action);};
+  return <><div className="mail-workspace"><div className="mail-ribbon" role="toolbar" aria-label="Comandos de e-mail">
+    <div className="ribbon-group">
+      <button type="button" className="ribbon-command" onClick={onCompose}><Icon name="mail" size={18}/><span>Novo e-mail</span></button>
+      <button type="button" className="ribbon-command seven-desk-meeting" onClick={onNewMeeting}><img src="/integrations/seven-desk.svg" alt="" width={20} height={20}/><span>Nova reunião</span></button>
+    </div>
+    <div className="ribbon-group">
+      <button type="button" className="ribbon-command ribbon-icon" aria-label="Excluir" title="Excluir" disabled={!selected} onClick={()=>messageCommand("delete")}><Icon name="trash" size={18}/></button>
+      <button type="button" className="ribbon-command ribbon-icon" aria-label="Arquivar" title="Arquivar" disabled={!selected} onClick={()=>messageCommand("archive")}><Icon name="archive" size={18}/></button>
+      <label className="ribbon-move" title="Mover para uma pasta"><Icon name="inbox" size={17}/><select aria-label="Mover para" disabled={!selected||!onMoveToFolder} value="" onChange={event=>{const target=folders.find(item=>item.path===event.target.value);if(selected&&target)onMoveToFolder?.(selected,target);}}><option value="">Mover para</option>{folders.filter(item=>item.path!==selected?.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select></label>
+    </div>
+    <div className="ribbon-group ribbon-replies">
+      <button type="button" className="ribbon-command ribbon-icon" title="Responder" aria-label="Responder" disabled={!selected} onClick={()=>selected&&onComposeFromMessage(selected,"reply")}><Icon name="reply" size={19}/></button>
+      <button type="button" className="ribbon-command ribbon-icon" title="Responder a todos" aria-label="Responder a todos" disabled={!selected} onClick={()=>selected&&onComposeFromMessage(selected,"replyAll")}><Icon name="people" size={18}/></button>
+      <button type="button" className="ribbon-command ribbon-icon" title="Encaminhar" aria-label="Encaminhar" disabled={!canForward} onClick={()=>selected&&onComposeFromMessage(selected,"forward")}><Icon name="forward" size={19}/></button>
+    </div>
+    <div className="ribbon-group">
+      <button type="button" className="ribbon-command" disabled={!selected} onClick={()=>messageCommand(selected?.isRead?"unread":"read")}><Icon name="mail" size={18}/><span>{selected?.isRead?"Não lido":"Lido / Não lido"}</span></button>
+      <button type="button" className="ribbon-command ribbon-icon" title="Sinalizar mensagem" aria-label="Sinalizar mensagem" aria-pressed={Boolean(selected?.isFlagged)} disabled={!selected} onClick={()=>messageCommand(selected?.isFlagged?"unflag":"flag")}><Icon name="flag" size={18}/></button>
+    </div>
+    <div className="ribbon-group">
+      <button type="button" className="ribbon-command" onClick={onOpenPeople}><Icon name="people" size={18}/><span>Pesquisar pessoas</span></button>
+      <button type="button" className="ribbon-command ribbon-icon" title="Filtros de mensagens" aria-label="Filtros de mensagens" aria-expanded={advancedFiltersOpen} onClick={()=>setAdvancedFiltersOpen(value=>!value)}><Icon name="filter" size={18}/></button>
+    </div>
+    <div className="ribbon-group">
+      <button type="button" className="ribbon-command" disabled={accounts.length===0||syncing} onClick={onRefreshAll}><Icon name="refresh" size={18}/><span>{syncing?"Sincronizando…":"Enviar/Receber contas"}</span></button>
+      <CommandMenu label="Mais comandos" className="ribbon-more">
+        <button type="button" onClick={onRefresh} disabled={accounts.length===0||syncing}><Icon name="refresh" size={16}/> Sincronizar pasta atual</button>
+        {onImportEml&&<button type="button" onClick={onImportEml}><Icon name="upload" size={16}/> Importar EML ou MSG</button>}
+        <button type="button" onClick={()=>setConversationView(value=>!value)}><Icon name="people" size={16}/> {conversationView?"Exibir mensagens individuais":"Agrupar por conversa"}</button>
+      </CommandMenu>
+    </div>
+  </div><div className={`mail-layout reading-${settings.readingPane} preview-${settings.previewLines}`}>
     <aside className="folder-pane">
       <button className="compose-button" onClick={onCompose}><Icon name="plus" size={17}/> Novo e-mail</button>
       <div className="group-title folder-group-title"><span>CONTAS E PASTAS</span><button className="group-add" aria-label="Adicionar conta" title="Adicionar conta" onClick={onAdd}><Icon name="plus" size={14}/></button></div>
@@ -858,7 +896,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
     <section className="message-pane">
       <header className="pane-header">
         <div><span className="eyebrow">{folder.name.toUpperCase()}</span><h2>{folder.name}</h2></div>
-        <div className="pane-tools">{onImportEml&&activeAccount&&<button className="icon-button" title="Importar EML ou MSG" aria-label="Importar EML ou MSG" onClick={onImportEml}><Icon name="upload" size={16}/></button>}<button className={conversationView?"icon-button active":"icon-button"} title="Visualização por conversa" aria-label="Alternar visualização por conversa" onClick={()=>setConversationView(value=>!value)}><Icon name="people" size={16}/></button><select className="mail-sort" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Ordenar mensagens"><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="sender">Remetente</option><option value="subject">Assunto</option><option value="size">Tamanho</option><option value="status">Status</option><option value="unread">Não lidas primeiro</option></select><div className="icon-group"><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button"><Icon name="more"/></button></div></div>
+        <div className="pane-tools">{onImportEml&&activeAccount&&<button className="icon-button" title="Importar EML ou MSG" aria-label="Importar EML ou MSG" onClick={onImportEml}><Icon name="upload" size={16}/></button>}<button className={conversationView?"icon-button active":"icon-button"} title="Visualização por conversa" aria-label="Alternar visualização por conversa" onClick={()=>setConversationView(value=>!value)}><Icon name="people" size={16}/></button><select className="mail-sort" value={sort} onChange={e=>setSort(e.target.value as typeof sort)} aria-label="Ordenar mensagens"><option value="newest">Mais recentes</option><option value="oldest">Mais antigas</option><option value="sender">Remetente</option><option value="subject">Assunto</option><option value="size">Tamanho</option><option value="status">Status</option><option value="unread">Não lidas primeiro</option></select><div className="icon-group"><button className={syncing?"icon-button spinning":"icon-button"} onClick={onRefresh} disabled={accounts.length===0||syncing} aria-label="Sincronizar caixa"><Icon name="refresh"/></button><button className="icon-button" title="Filtros de mensagens" aria-label="Filtros de mensagens" aria-expanded={advancedFiltersOpen} onClick={()=>setAdvancedFiltersOpen(value=>!value)}><Icon name="filter" size={16}/></button></div></div>
       </header>
       {folder.role==="inbox"&&settings.focusInboxEnabled&&<div className="segmented focus-tabs" role="group" aria-label="Tipo de caixa de entrada">{([["all","Todas"],["focused","Prioritária"],["other","Outros"]] as const).map(([tab,label])=><button key={tab} className={focusTab===tab?"active":""} aria-pressed={focusTab===tab} onClick={()=>setFocusTab(tab)}>{label}</button>)}</div>}
       <div className="segmented mail-filters">
@@ -868,7 +906,7 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
         <button className={quickFilter==="pinned"?"active":""} onClick={()=>setQuickFilter("pinned")}>Fixadas</button>
         <button className={quickFilter==="attachments"?"active":""} onClick={()=>setQuickFilter("attachments")}>Anexos</button>
       </div>
-      <div className="mail-advanced-filters">
+      <div className="mail-advanced-filters" hidden={!advancedFiltersOpen&&periodFilter==="all"&&!senderFilter&&priorityFilter==="all"}>
         <select value={periodFilter} onChange={(event)=>setPeriodFilter(event.target.value as typeof periodFilter)} aria-label="Filtrar por período"><option value="all">Qualquer período</option><option value="today">Últimas 24h</option><option value="7d">Últimos 7 dias</option><option value="30d">Últimos 30 dias</option></select>
         <select value={senderFilter} onChange={(event)=>setSenderFilter(event.target.value)} aria-label="Filtrar por remetente"><option value="">Qualquer remetente</option>{senderOptions.map((sender)=><option key={sender.email} value={sender.email.toLocaleLowerCase("pt-BR")}>{sender.name||sender.email}</option>)}</select>
         <select value={priorityFilter} onChange={(event)=>setPriorityFilter(event.target.value as typeof priorityFilter)} aria-label="Filtrar por prioridade"><option value="all">Qualquer prioridade</option><option value="high">Alta</option><option value="normal">Normal</option><option value="low">Baixa</option></select>
@@ -899,34 +937,18 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
 
     <section className="reading-pane">
       {selected ? <>
-        <header className="reading-header"><div><span className="eyebrow">MENSAGEM</span><h1>{selected.subject}</h1></div><div className="icon-group">
-  <button className={selected.isPinned?"icon-button active":"icon-button"} title={selected.isPinned?"Desafixar":"Fixar"} onClick={()=>void act(selected.id,selected.isPinned?"unpin":"pin")}><Icon name="pin"/></button>
-  <button className="icon-button" title={selected.isFlagged?"Remover sinalização":"Sinalizar"} onClick={()=>void act(selected.id,selected.isFlagged?"unflag":"flag")}><Icon name="flag"/></button>
-  <button className="icon-button" title="Arquivar" onClick={()=>void act(selected.id,"archive")}><Icon name="archive"/></button>
-  <button className="icon-button" title="Excluir" onClick={()=>void act(selected.id,"delete")}><Icon name="trash"/></button>
-  <button className="icon-button" title={selected.isRead?"Marcar como não lida":"Marcar como lida"} onClick={()=>void act(selected.id,selected.isRead?"unread":"read")}><Icon name="mail"/></button>
-  <button className="icon-button" title="Responder" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply"/></button>
-  <button className="icon-button" title="Responder a todos" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people"/></button>
-  <button className="icon-button" title="Encaminhar" onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward"/></button>
-  <button className="icon-button" title="Mais opções"><Icon name="more"/></button>
-</div></header>
-        <div className="sender">{settings.showSenderPhotos!==false&&<span className="avatar big">{(selected.from.name||selected.from.email)[0].toUpperCase()}</span>}<div><b>{selected.from.name||selected.from.email}</b><small>{selected.from.email}{isTrusted(selected)?" · confiável":isBlocked(selected)?" · bloqueado":""}</small></div><time>{new Date(selected.receivedAt).toLocaleString()}</time></div>
-        {categories.length>0&&<div className="message-categories">{categories.map(category=>{const active=selected.categories.includes(category.name);return <button key={category.id} className={active?"category-chip active":"category-chip"} onClick={()=>onToggleCategory(selected,category)}><i style={{background:category.color}}/>{category.name}</button>;})}</div>}
-        {activeAccount&&folders.length>1&&<div className="move-folder-row"><span>Organizar</span>{onMoveToFolder&&<select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onMoveToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Mover para...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select>}{onCopyToFolder&&<select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onCopyToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Copiar para...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select>}</div>}
-        <SafeMessageBody message={selected} settings={settings} onAllowRemote={onAllowRemoteContent}/>
-        <ReadingAssist message={selected}/>
-        {providerPolicy&&(providerPolicy.sensitivityLabelId||!providerPolicy.reactionsAllowed||!providerPolicy.canForward||!providerPolicy.canCopy)&&<div className="provider-policy-banner"><Icon name="shield" size={14}/><div><b>Política do provedor aplicada</b><span>{providerPolicy.sensitivityLabelId?`Rótulo ${providerPolicy.sensitivityLabelId}. `:""}{!providerPolicy.canForward?"Encaminhamento bloqueado. ":""}{!providerPolicy.canCopy?"Cópia bloqueada. ":""}{!providerPolicy.reactionsAllowed?"Reações desativadas pelo remetente/servidor.":""}</span></div></div>}
-        {providerPolicy?.reactionsAllowed!==false&&folder.role!=="sent"&&<div className="message-reactions" aria-label="Reagir à mensagem">
-          {["👍","❤️","😂","🎉","😮","🙏"].map((emoji)=><button key={emoji} disabled={reactionBusy} title={`Reagir com ${emoji}`} onClick={()=>{setReactionBusy(true);void bridge.sendMessageReaction(selected.accountId,selected.id,emoji).then(()=>window.alert(`Reação ${emoji} enviada.`)).catch((reason)=>window.alert(reason instanceof Error?reason.message:String(reason))).finally(()=>setReactionBusy(false));}}>{emoji}</button>)}
-        </div>}
-        {(settings.quickSteps??[]).length>0&&<div className="message-quick-steps">{(settings.quickSteps??[]).map((step)=><button className="secondary" key={step.id} onClick={()=>void runQuickStep(selected,step)}><Icon name="rule" size={13}/>{step.name}{step.shortcut&&<kbd>{step.shortcut}</kbd>}</button>)}</div>}
-        <div className="reply-actions advanced-actions">
-          <button className="secondary" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={15}/> Responder</button>
-          <button className="secondary" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people" size={15}/> Responder a todos</button>
-          <button className="secondary" disabled={providerPolicy?.canForward===false} title={providerPolicy?.canForward===false?"Bloqueado pela política de sensibilidade":undefined} onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward" size={15}/> Encaminhar</button>
-          <button className="secondary" disabled={providerPolicy?.canCopy===false} title={providerPolicy?.canCopy===false?"Bloqueado pela política de sensibilidade":undefined} onClick={()=>onForwardAsAttachment(selected)}><Icon name="paperclip" size={15}/> Como anexo</button>{selected.hasAttachments&&<button className="secondary" disabled={providerPolicy?.canCopy===false} onClick={()=>onComposeWithAttachments(selected)}><Icon name="copy" size={15}/> Usar anexos</button>}
+        <header className="reading-header reading-compact-header"><h1>{selected.subject||"(sem assunto)"}</h1></header>
+        <div className="reading-sender-row">
+          <div className="sender">{settings.showSenderPhotos!==false&&<span className="avatar big">{Array.from(selected.from.name||selected.from.email)[0]?.toUpperCase()||"?"}</span>}<div><b>{selected.from.name||selected.from.email} <span className="sender-address">&lt;{selected.from.email}&gt;</span></b><small>Para: {selected.to.map(item=>item.name||item.email).join(", ")||"—"}{isTrusted(selected)?" · confiável":isBlocked(selected)?" · bloqueado":""}</small><time>{new Date(selected.receivedAt).toLocaleString("pt-BR")}</time></div></div>
+          <div className="reading-command-strip" role="group" aria-label="Responder e outras ações">
+            <button type="button" onClick={()=>onComposeFromMessage(selected,"reply")}><Icon name="reply" size={17}/><span>Responder</span></button>
+            <button type="button" onClick={()=>onComposeFromMessage(selected,"replyAll")}><Icon name="people" size={17}/><span>Responder a todos</span></button>
+            <button type="button" disabled={!canForward} onClick={()=>onComposeFromMessage(selected,"forward")}><Icon name="forward" size={17}/><span>Encaminhar</span></button>
+            <CommandMenu label="Mais opções da mensagem" className="reading-more">
+          <button className="secondary seven-desk-meeting" onClick={()=>onCreateEventFromMessage(selected)}><img src="/integrations/seven-desk.svg" alt="" width={18} height={18}/> Reunião</button>
+          <button className="secondary" disabled={!canCopy} title={providerPolicy?.canCopy===false?"Bloqueado pela política de sensibilidade":undefined} onClick={()=>onForwardAsAttachment(selected)}><Icon name="paperclip" size={15}/> Encaminhar como anexo</button>{selected.hasAttachments&&<button className="secondary" disabled={!canCopy} onClick={()=>onComposeWithAttachments(selected)}><Icon name="copy" size={15}/> Usar anexos</button>}
           <button className="secondary" onClick={()=>onResendMessage(selected)}><Icon name="send" size={15}/> Reenviar</button>
-          <button className="secondary" disabled={providerPolicy?.canForward===false} onClick={()=>onRedirectMessage(selected)}><Icon name="forward" size={15}/> Redirecionar</button>
+          <button className="secondary" disabled={!canForward} onClick={()=>onRedirectMessage(selected)}><Icon name="forward" size={15}/> Redirecionar</button>
           {folder.role==="sent"&&<button className="secondary danger-lite" onClick={()=>onRecallMessage(selected)}><Icon name="refresh" size={15}/> Recolher envio</button>}
           {folder.role==="trash"&&<button className="secondary" onClick={()=>void act(selected.id,"inbox")}><Icon name="inbox" size={15}/> Restaurar</button>}
           <button className="secondary" onClick={()=>snooze(selected)}><Icon name="clock" size={15}/> Adiar</button>
@@ -934,22 +956,37 @@ function MailView({accounts,messages,unfilteredMessages,activeAccount,folders,fo
           <button className={selected.isMuted?"secondary active":"secondary"} onClick={()=>onUpdateMetadata(selected,{isMuted:!selected.isMuted})}><Icon name="moon" size={15}/> {selected.isMuted?"Liberar conversa":"Silenciar"}</button>
           <button className="secondary danger-lite" onClick={()=>onIgnoreConversation(selected)}><Icon name="trash" size={15}/> Ignorar conversa</button>
           <button className="secondary" onClick={()=>onSetSenderCleanup(selected)}><Icon name="archive" size={15}/> Limpeza automática</button>
-          <select className="priority-select" value={selected.importance??"normal"} onChange={e=>onUpdateMetadata(selected,{importance:e.target.value as "low"|"normal"|"high"})}><option value="low">Prioridade baixa</option><option value="normal">Prioridade normal</option><option value="high">Prioridade alta</option></select>
+          <select aria-label="Prioridade da mensagem" className="priority-select" value={selected.importance??"normal"} onChange={e=>onUpdateMetadata(selected,{importance:e.target.value as "low"|"normal"|"high"})}><option value="low">Prioridade baixa</option><option value="normal">Prioridade normal</option><option value="high">Prioridade alta</option></select>
           <button className="secondary" onClick={()=>setDetails({message:selected,tab:"attachments"})}><Icon name="paperclip" size={15}/> Anexos</button>
           <button className="secondary" onClick={()=>setDetails({message:selected,tab:"headers"})}><Icon name="mail" size={15}/> Cabeçalhos</button>
           <button className="secondary" onClick={()=>setDetails({message:selected,tab:"source"})}><Icon name="note" size={15}/> Fonte</button>
           <button className="secondary" onClick={()=>window.print()}><Icon name="note" size={15}/> Imprimir</button>
           <button className="secondary" onClick={()=>openMessageWindow(selected)}><Icon name="plus" size={15}/> Nova janela</button>
           <button className="secondary" onClick={()=>onCreateTaskFromMessage(selected)}><Icon name="check" size={15}/> Criar tarefa</button>
-          <button className="secondary" onClick={()=>onCreateEventFromMessage(selected)}><Icon name="calendar" size={15}/> Criar evento</button>
           <button className="secondary" onClick={()=>onExportEml(selected)}><Icon name="download" size={15}/> Salvar EML</button>
           <button className="secondary danger-lite" onClick={()=>{onUpdateMetadata(selected,{isPhishing:true});void act(selected.id,"spam");}}><Icon name="shield" size={15}/> Phishing</button>
           {isBlocked(selected)?<button className="secondary" onClick={()=>onReleaseSender(selected.from.email)}>Liberar remetente</button>:<button className="secondary" onClick={()=>onBlockSender(selected.from.email)}>Bloquear remetente</button>}
           {!isTrusted(selected)&&<button className="secondary" onClick={()=>onTrustSender(selected.from.email)}>Confiar remetente</button>}
+              <button type="button" onClick={()=>messageCommand(selected.isPinned?"unpin":"pin")}><Icon name="pin" size={16}/> {selected.isPinned?"Desafixar":"Fixar"}</button>
+              <button type="button" onClick={()=>setReadingToolsOpen(value=>!value)}><Icon name="volume" size={16}/> Ferramentas de leitura</button>
+              <button type="button" onClick={()=>messageCommand("delete")}><Icon name="trash" size={16}/> Excluir</button>
+              <button type="button" onClick={()=>messageCommand("archive")}><Icon name="archive" size={16}/> Arquivar</button>
+            </CommandMenu>
+          </div>
         </div>
+        {categories.length>0&&<div className="message-categories">{categories.map(category=>{const active=selected.categories.includes(category.name);return <button key={category.id} className={active?"category-chip active":"category-chip"} onClick={()=>onToggleCategory(selected,category)}><i style={{background:category.color}}/>{category.name}</button>;})}</div>}
+        {readingToolsOpen&&activeAccount&&folders.length>1&&<div className="move-folder-row"><span>Organizar</span>{onMoveToFolder&&<select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onMoveToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Mover para...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select>}{onCopyToFolder&&<select defaultValue="" onChange={e=>{const target=folders.find(item=>item.path===e.target.value);if(target){onCopyToFolder(selected,target);e.currentTarget.value="";}}}><option value="" disabled>Copiar para...</option>{folders.filter(item=>item.path!==selected.remoteFolder).map(item=><option key={item.path} value={item.path}>{item.name}</option>)}</select>}</div>}
+        <SafeMessageBody message={selected} settings={settings} onAllowRemote={onAllowRemoteContent}/>
+        {readingToolsOpen&&<ReadingAssist key={selected.id} message={selected}/>}
+        {providerPolicy&&(providerPolicy.sensitivityLabelId||!providerPolicy.reactionsAllowed||!providerPolicy.canForward||!providerPolicy.canCopy)&&<div className="provider-policy-banner"><Icon name="shield" size={14}/><div><b>Política do provedor aplicada</b><span>{providerPolicy.sensitivityLabelId?`Rótulo ${providerPolicy.sensitivityLabelId}. `:""}{!providerPolicy.canForward?"Encaminhamento bloqueado. ":""}{!providerPolicy.canCopy?"Cópia bloqueada. ":""}{!providerPolicy.reactionsAllowed?"Reações desativadas pelo remetente/servidor.":""}</span></div></div>}
+        {readingToolsOpen&&providerPolicy?.reactionsAllowed!==false&&folder.role!=="sent"&&<div className="message-reactions" aria-label="Reagir à mensagem">
+          {["👍","❤️","😂","🎉","😮","🙏"].map((emoji)=><button key={emoji} disabled={reactionBusy} title={`Reagir com ${emoji}`} onClick={()=>{setReactionBusy(true);void bridge.sendMessageReaction(selected.accountId,selected.id,emoji).then(()=>window.alert(`Reação ${emoji} enviada.`)).catch((reason)=>window.alert(reason instanceof Error?reason.message:String(reason))).finally(()=>setReactionBusy(false));}}>{emoji}</button>)}
+        </div>}
+        {(settings.quickSteps??[]).length>0&&<div className="message-quick-steps">{(settings.quickSteps??[]).map((step)=><button className="secondary" key={step.id} onClick={()=>void runQuickStep(selected,step)}><Icon name="rule" size={13}/>{step.name}{step.shortcut&&<kbd>{step.shortcut}</kbd>}</button>)}</div>}
+
       </> : <div className="reading-empty"><BrandLogo variant="hero"/><span className="eyebrow">SEVEN MAIL</span><h2>Selecione uma mensagem</h2><p>Leia, responda e organize sem sair da mesma tela.</p></div>}
     </section>
-  </div>{details&&<MessageDetailsModal message={details.message} initialTab={details.tab} onClose={()=>setDetails(null)}/>}</>;
+  </div></div>{details&&<MessageDetailsModal message={details.message} initialTab={details.tab} onClose={()=>setDetails(null)}/>}</>;
 }
 
 function CalendarView() {
@@ -1333,6 +1370,7 @@ function UnlockedApp() {
   const launchMessageId = launchParams.get("message") ?? undefined;
   const launchAccountId = launchParams.get("account") ?? undefined;
   const [section,setSection] = useState<AppSection>("mail");
+  const [meetingDraft,setMeetingDraft]=useState<CalendarEvent|null>(null);
   const [accounts,setAccounts] = useState<AccountProfile[]>([]);
   const [activeId,setActiveId] = useState<string|undefined>(launchAccountId);
   const [messages,setMessages] = useState<MailMessage[]>([]);
@@ -2430,33 +2468,34 @@ function UnlockedApp() {
     window.alert("Redirecionamento adicionado à caixa de saída.");
   }
 
-  async function createEventFromMessage(message: MailMessage) {
-    const start = new Date(Date.now()+60*60*1000);
-    const end = new Date(start.getTime()+60*60*1000);
-    const event: CalendarEvent = {
+  function startMeeting(message?:MailMessage) {
+    const localInput=(minutes:number)=>{
+      const date=new Date(Date.now()+minutes*60_000);
+      return new Date(date.getTime()-date.getTimezoneOffset()*60_000).toISOString().slice(0,16);
+    };
+    const participants=message?.from.email?[message.from.email]:[];
+    setMeetingDraft({
       id:crypto.randomUUID(),
-      title:message.subject || "Evento a partir de e-mail",
-      description:`Criado a partir de e-mail de ${message.from.name || message.from.email}.\n\n${message.preview}`,
+      title:message?.subject||"",
+      description:message?`Criado a partir de e-mail de ${message.from.name||message.from.email}.\n\n${message.preview}`:"",
       location:"",
-      startAt:start.toISOString(),
-      endAt:end.toISOString(),
+      startAt:localInput(60),
+      endAt:localInput(120),
       allDay:false,
-      color:"#3d83f6",
-      participants:[message.from.email],
-      organizer:message.from.email,
-      invitationMessageId:message.id,
-      keepInvitationInInbox:true,
-      attendeeResponse:"needs-action",
-    };
-    const document: WorkspaceDocument<CalendarEvent> = {
-      id:event.id,
-      kind:"calendar",
-      updatedAt:new Date().toISOString(),
-      payload:event,
-    };
-    await bridge.upsertWorkspace(document);
-    void pushCloudDocument(document).catch(() => undefined);
+      color:"#7868ff",
+      participants,
+      requiredParticipants:participants,
+      optionalParticipants:[],
+      calendarId:"local",
+      recurrence:"none",
+      status:"confirmed",
+      timezone:settings.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
     setSection("calendar");
+  }
+
+  function createEventFromMessage(message:MailMessage) {
+    startMeeting(message);
   }
 
   async function createTaskFromMessage(message: MailMessage, navigate = true) {
@@ -3449,7 +3488,7 @@ function UnlockedApp() {
       });
   }
 
-  async function syncNow() {
+  async function syncNow(allAccounts=false) {
     if (profileAccounts.length===0 || syncState==="syncing") return;
     if(!navigator.onLine){
       setSyncState("offline");
@@ -3459,16 +3498,17 @@ function UnlockedApp() {
     setSyncState("syncing");
     setSyncError(undefined);
     try {
-      const targets = (unified ? profileAccounts : (activeAccount ? [activeAccount] : [])).filter((account)=>!account.muted);
+      const targets = (allAccounts||unified ? profileAccounts : (activeAccount ? [activeAccount] : [])).filter((account)=>!account.muted);
       if(targets.length===0){
         setSyncState("unknown");
         setSyncError("Nenhuma conta ativa para sincronizar.");
         return;
       }
+      if(allAccounts) await bridge.flushOutbox();
       await forEachConcurrent(targets,settings.maxConcurrentSyncs??2,async(account)=>{
         await bridge.flushMailActions(account.id).catch(() => 0);
-        const path = unified ? "INBOX" : selectedFolder.path;
-        const label = unified ? "Caixa de entrada" : selectedFolder.name;
+        const path = allAccounts||unified ? "INBOX" : selectedFolder.path;
+        const label = allAccounts||unified ? "Caixa de entrada" : selectedFolder.name;
         await bridge.syncFolder(account.id,path,label,settings.memorySaverEnabled?25:50);
         await Promise.all([
           syncDavForAccount(account),
@@ -3654,8 +3694,8 @@ function UnlockedApp() {
         </div>}
       </header>
       <div className="content" role="region" aria-label={NAV.find((item)=>item.id===section)?.label??"Conteúdo"}>
-        {section==="mail"&&<MailView accounts={profileAccounts} messages={filtered} unfilteredMessages={scoped} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onForwardAsAttachment={(message)=>void forwardAsAttachment(message)} onComposeWithAttachments={(message)=>void composeWithAttachments(message)} onResendMessage={(message)=>void resendMessage(message)} onRedirectMessage={(message)=>void redirectMessage(message)} onRecallMessage={(message)=>void recallMessage(message)} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onCreateSubfolder={activeAccount?(folder)=>void createCustomFolder(folder):undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onMoveToAccount={(message,targetAccountId)=>void moveMessageAcrossAccounts(message,targetAccountId)} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onIgnoreConversation={(message)=>void ignoreConversation(message)} onSetSenderCleanup={setSenderCleanup} onAllowRemoteContent={(sender)=>setSettings((current)=>({...current,remoteContentAllowedSenders:[...new Set([...(current.remoteContentAllowedSenders??[]),sender.toLocaleLowerCase("pt-BR")])]}))} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={next=>selectAccountFolder(activeAccount?.id??"__all__",next)} onAccountFolderChange={selectAccountFolder} onCompose={startNewMessage} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={{...settings,mailPageSize:settings.memorySaverEnabled?25:(settings.mailPageSize??50)}}/>} 
-        {section==="calendar"&&<PersistentCalendarView accounts={profileAccounts} settings={settings}/>} 
+        {section==="mail"&&<MailView accounts={profileAccounts} messages={filtered} unfilteredMessages={scoped} activeAccount={activeAccount} folders={mailFolders} folder={selectedFolder} localDrafts={localDrafts} categories={categories} savedSearches={savedSearches} onOpenDraft={openDraft} onComposeFromMessage={composeFromMessage} onForwardAsAttachment={(message)=>void forwardAsAttachment(message)} onComposeWithAttachments={(message)=>void composeWithAttachments(message)} onResendMessage={(message)=>void resendMessage(message)} onRedirectMessage={(message)=>void redirectMessage(message)} onRecallMessage={(message)=>void recallMessage(message)} onCreateTaskFromMessage={(message)=>void createTaskFromMessage(message)} onCreateEventFromMessage={(message)=>void createEventFromMessage(message)} onImportEml={activeAccount?()=>void importEml():undefined} onExportEml={(message)=>void exportEml(message)} onCreateCategory={()=>void createCategory()} onEditCategory={(category)=>void editCategory(category)} onDeleteCategory={(category)=>void deleteCategory(category)} onToggleCategory={(message,category)=>void toggleMessageCategory(message,category)} onToggleCategoryFavorite={(category)=>void toggleCategoryFavorite(category)} onUseSavedSearch={(item)=>setSearch(item.query)} onDeleteSavedSearch={(item)=>void deleteSavedSearch(item)} onCreateFolder={activeAccount?()=>void createCustomFolder():undefined} onCreateSubfolder={activeAccount?(folder)=>void createCustomFolder(folder):undefined} onRenameFolder={activeAccount?(folder)=>void renameCustomFolder(folder):undefined} onDeleteFolder={activeAccount?(folder)=>void deleteCustomFolder(folder):undefined} onMoveToFolder={activeAccount?(message,folder)=>void moveToFolder(message,folder):undefined} onCopyToFolder={activeAccount?(message,folder)=>void copyToFolder(message,folder):undefined} onMoveToAccount={(message,targetAccountId)=>void moveMessageAcrossAccounts(message,targetAccountId)} onToggleFolderFavorite={activeAccount?(folder)=>void toggleFolderFavorite(folder):undefined} onReorderFolder={activeAccount?(folder,direction)=>reorderFolder(folder,direction):undefined} onUpdateMetadata={(message,metadata)=>void updateMessageMetadata(message,metadata)} onIgnoreConversation={(message)=>void ignoreConversation(message)} onSetSenderCleanup={setSenderCleanup} onAllowRemoteContent={(sender)=>setSettings((current)=>({...current,remoteContentAllowedSenders:[...new Set([...(current.remoteContentAllowedSenders??[]),sender.toLocaleLowerCase("pt-BR")])]}))} onBlockSender={(email)=>addPolicy("blockedSenders",email)} onTrustSender={(email)=>addPolicy("trustedSenders",email)} onReleaseSender={releaseSender} focusMessageId={focusMessageId} onFolderChange={next=>selectAccountFolder(activeAccount?.id??"__all__",next)} onAccountFolderChange={selectAccountFolder} onCompose={startNewMessage} onNewMeeting={()=>startMeeting()} onOpenPeople={()=>{setSearch("");setSection("people");}} onAdd={()=>setAccountOpen(true)} onRefresh={()=>void syncNow()} onRefreshAll={()=>void syncNow(true)} onMessageAction={applyMessageAction} syncing={syncState==="syncing"} settings={{...settings,mailPageSize:settings.memorySaverEnabled?25:(settings.mailPageSize??50)}}/>} 
+        {section==="calendar"&&<PersistentCalendarView accounts={profileAccounts} settings={settings} initialMeeting={meetingDraft} onMeetingOpened={()=>setMeetingDraft(null)}/>} 
         {section==="people"&&<PersistentPeopleView query={search} accounts={profileAccounts}/>}
         {section==="tasks"&&<PersistentTasksView onOpenRelatedMessage={(messageId)=>void openRelatedMessage(messageId)}/>} 
         {section==="notes"&&<PersistentNotesView query={search}/>}
