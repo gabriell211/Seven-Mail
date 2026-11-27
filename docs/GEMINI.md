@@ -18,6 +18,10 @@ O modelo ativo é persistido junto à chave no cofre nativo e restaurado ao abri
 - A chave nunca é devolvida ao frontend, nem incluída na URL. O backend não segue redirecionamentos e não registra o corpo das respostas de erro.
 - A API gratuita não deve receber dados pessoais, sensíveis ou confidenciais. Use projeto faturado autorizado pela organização e revise https://ai.google.dev/gemini-api/terms. A funcionalidade destina-se ao uso profissional por adultos em regiões suportadas.
 
+## Arquivos e imagens
+
+Use Anexar arquivo ou cole uma imagem no campo de pergunta. São aceitos PNG, JPEG, WebP, PDF, TXT/CSV/MD em UTF-8, MP3, WAV e MP4, conforme as modalidades do modelo ativo. Limites locais: quatro arquivos, 5 MiB por arquivo (64 KiB para texto) e 8 MiB no total. As imagens possuem prévia local e os arquivos podem ser removidos antes do envio. O primeiro anexo desativa o contexto de e-mails e limpa o histórico anterior; o usuário pode reativá-lo explicitamente. Os bytes são enviados apenas ao solicitar geração, por inlineData ou texto delimitado, sem armazenamento de arquivos separado na API nem persistência de anexos no aplicativo. A resposta é transmitida por SSE. O backend valida base64, tamanho, MIME permitido e assinaturas básicas; a validação não substitui análise antivírus. Não há acesso automático aos anexos de e-mails nem suporte a DOCX, XLSX, ZIP ou arquivos grandes. O suporte real depende do modelo e precisa de homologação.
+
 ## Streaming
 
 A API utiliza SSE (streamGenerateContent?alt=sse), com entrega progressiva por canal IPC individual do Tauri. A resposta final só gera proposta de rascunho após STOP e validação de sessão. Erro, truncamento, bloqueio, revogação ou cancelamento descartam o texto parcial. Parar geração encerra a entrega local imediatamente; a conexão HTTP é abandonada ao próximo evento recebido ou timeout de até 90 segundos. Não há garantia de cancelamento instantâneo do processamento ou cobrança no servidor remoto.

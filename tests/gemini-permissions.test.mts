@@ -45,3 +45,17 @@ test("model is persisted in the native vault and can be changed without reenteri
  assert.match(panel,/selectedModel/);
  assert.doesNotMatch(panel,/draftReply:replyMode,model:/);
 });
+
+test("explicit multimodal attachment input is bounded and does not automatically send mail",()=>{
+ assert.match(rust,/struct MediaInput/);
+ assert.match(rust,/fn valid_media_signature/);
+ assert.match(rust,/STANDARD.decode/);
+ assert.match(rust,/MAX_MEDIA_BYTES/);
+ assert.match(rust,/inlineData/);
+ assert.match(rust,/if include_mail\{storage::list_cached_messages/);
+ assert.match(panel,/type="file"/);
+ assert.match(panel,/onPaste=/);
+ assert.match(panel,/if\(!files.length\)changeContext\(false\)/);
+ assert.match(panel,/files:payloadFiles/);
+ assert.match(panel,/URL.revokeObjectURL/);
+});

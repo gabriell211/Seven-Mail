@@ -1138,3 +1138,5 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 @media print{.gemini-panel,.gemini-trigger{display:none!important}}
 
 .gemini-setup .gemini-label{margin:8px 0}.gemini-setup input:not([type=checkbox]){width:100%;min-width:0;background:var(--soft);color:var(--text);border:1px solid var(--line2);border-radius:8px;padding:8px}.gemini-setup>div{display:flex;gap:6px;flex-wrap:wrap}
+
+.gemini-file-picker{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.gemini-file-picker small,.gemini-attachments>small{font-size:11px;color:var(--muted)}.gemini-attachments{display:grid;gap:5px;max-height:150px;overflow:auto}.gemini-attachment{display:flex;gap:8px;align-items:center;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--soft);min-width:0}.gemini-attachment img{width:36px;height:36px;object-fit:cover;border-radius:5px}.gemini-attachment>span{flex:1;min-width:0;display:grid;font-size:11px}.gemini-attachment b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.gemini-attachment small{color:var(--muted)}
