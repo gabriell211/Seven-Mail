@@ -165,15 +165,18 @@ jobs:
           releaseBody: |
             Seven Mail v__VERSION__
 
-            Novidades da v1.0.6:
-            - Gemini com interface simplificada, marca multicolorida e configurações em uma engrenagem.
-            - Conversa liberada após autorização Google ou validação de chave da API.
-            - Campo de mensagem compacto, com botões separados de arquivo e imagem.
-            - Indicador circular de tokens de saída por resposta; estimativa durante streaming e consumo informado pelo Google quando disponível.
-            - Nuvem Seven com conexões opcionais Google Drive e OneDrive e preparação para TeraBox.
-            - Site oficial, política de privacidade e termos de serviço atualizados.
+            Novidades da v1.0.7:
+            - Novo tema escuro em grafite, com alternância rápida pela lua e pelo sol, preferência salva e engrenagem distinta para configurações.
+            - Migração PST Unicode com hierarquia de pastas não vazias, destinatários Para/CC/CCO disponíveis, categorias atribuídas, leitura, sinalização ativa e importância.
+            - Importação e exportação PST de calendários (eventos únicos), contatos e tarefas, com classes MAPI e pastas nativas correspondentes.
+            - Leitura segura do mapa de propriedades nomeadas MAPI e correções de compilação Windows.
+            - Mensagens não lidas com marcador roxo, destaque e contador alinhado ao filtro.
+            - Gemini conectado exclusivamente por chave da API, em janela independente; a engrenagem permite trocar a chave.
+            - Geração e edição de imagens, criação de assinaturas com prévia e aprovação, documentos Markdown e exportação.
+            - Respostas com formatação Markdown básica e notificações nativas automáticas de e-mails, tarefas e calendário, sem botão de teste.
+            - Correções no site oficial.
 
-            O indicador não representa a cota global da conta. O login Google depende das permissões e da verificação do aplicativo no Google Cloud. A homologação real do login e da interface ainda está pendente. TeraBox e backup/restauração externos ainda não estão disponíveis.
+            A compatibilidade PST foi ampliada, mas não é integral: recorrências, exceções, fuso original, anexos importados, pastas vazias e especiais, lista mestra/cores de categorias e acompanhamento avançado ainda têm limitações. A homologação no Outlook clássico real permanece pendente. A geração de imagens depende do modelo e da cota do projeto Google; os avisos nativos dependem das configurações do sistema. A homologação visual e prática dessas funcionalidades permanece pendente.
 
             Windows:
             - MSI
@@ -190,8 +193,8 @@ jobs:
           prerelease: false
           args: --bundles ${{ matrix.bundles }}
 
-  publish-v106:
-    name: Publish verified v1.0.6
+  publish-v107:
+    name: Publish verified v1.0.7
     needs: release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -208,8 +211,8 @@ jobs:
         run: |
           set -euo pipefail
           tag="$(tr -d '\r\n' < .github/release-trigger)"
-          if [[ "$tag" != v1.0.6 ]]; then
-            echo "Automatic publication is scoped to the requested v1.0.6."
+          if [[ "$tag" != v1.0.7 ]]; then
+            echo "Automatic publication is scoped to the requested v1.0.7."
             exit 0
           fi
           version="$(jq -r .version src-tauri/tauri.conf.json)"
