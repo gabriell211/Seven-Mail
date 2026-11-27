@@ -1251,11 +1251,6 @@ mod native_pst_writer {
             name: Name::Lid(lid), value }
     }
 
-    fn categories<'a>(values: &'a [&'a str]) -> Named<'a> {
-        Named { set: pstsmith::PS_PUBLIC_STRINGS_SET, name: Name::Name("Keywords"),
-            value: Value::MultipleUnicode(values) }
-    }
-
     fn role_rows<'a>(to: &'a [MailAddress], cc: &'a [MailAddress], bcc: &'a [MailAddress]) -> Vec<Recipient<'a>> {
         let mut result = Vec::new();
         for (addresses, role) in [(to, Role::To), (cc, Role::Cc), (bcc, Role::Bcc)] {
@@ -1277,8 +1272,6 @@ mod native_pst_writer {
     pub fn mail(writer: &mut Writer, folder: &[&str], m: &MailMessage, raw: Option<&[u8]>) -> Result<(), String> {
         let rows = role_rows(&m.to, &m.cc, &m.bcc);
         let cats = m.categories.iter().map(String::as_str).collect::<Vec<_>>();
-        let mut named_props = Vec::new();
-        if !cats.is_empty() { named_props.push(categories(&cats)); }
         let properties = [Tagged { id: 0x1090, value: Value::Integer32(if m.is_flagged { 2 } else { 0 }) }];
         let time = pst_filetime(&m.received_at);
         let parsed = raw.and_then(|bytes| mail_parser::MessageParser::default().parse(bytes));
@@ -1305,9 +1298,9 @@ mod native_pst_writer {
             sender: Some(Sender { name: m.from.name.as_deref().unwrap_or(&m.from.email), email: &m.from.email, address_type: "SMTP" }),
             recipients: &rows, body: m.body_text.as_deref().unwrap_or(&m.preview), html_body: m.body_html.as_deref(),
             message_id: Some(&m.id), delivery_time: Some(time), creation_time: time, last_modification_time: time,
-            unsent: false, properties: &properties, named_properties: &named_props, search_key: None,
+            unsent: false, properties: &properties, named_properties: &[], search_key: None,
             is_read: m.is_read, importance: importance(m.importance.as_deref()), client_submit_time: None,
-            categories: &[], transport_headers: None,
+            categories: &cats, transport_headers: None,
         }, &parts)
     }
 
@@ -1341,7 +1334,6 @@ mod native_pst_writer {
         let cats = strings(p, "categories");
         let mut props = Vec::new();
         let mut names = Vec::new();
-        if !cats.is_empty() { names.push(categories(&cats)); }
         let modified = chrono::DateTime::parse_from_rfc3339(&doc.updated_at)
             .map_err(|_| "Versão de documento inválida para PST.".to_string())?;
         let stamp = pst_filetime(&modified.to_rfc3339());
@@ -1424,7 +1416,7 @@ mod native_pst_writer {
             message_id: None, delivery_time: None, creation_time: stamp, last_modification_time: stamp, unsent: false,
             properties: &props, named_properties: &names, search_key: Some(doc.id.as_bytes()), is_read: true,
             importance: importance(p.get("priority").and_then(Json::as_str)), client_submit_time: None,
-            categories: &[], transport_headers: None,
+            categories: &cats, transport_headers: None,
         }, &[])
     }
 }
@@ -1473,12 +1465,14 @@ pub fn export_pst(paths: &AppPaths, account_id: Option<&str>, destination: &str)
 
     // Build beside the destination, then publish without replacing existing files.
     let temporary = parent.join(format!(".seven-mail-pst-{}", uuid::Uuid::new_v4()));
-    let mut directory = fs::DirBuilder::new();
+    let directory = fs::DirBuilder::new();
     #[cfg(unix)]
-    {
+    let directory = {
         use std::os::unix::fs::DirBuilderExt;
+        let mut directory = directory;
         directory.mode(0o700);
-    }
+        directory
+    };
     directory.create(&temporary).map_err(|error| format!("Não foi possível preparar a exportação: {error}"))?;
     let archive = temporary.join("archive.pst");
     let result = (|| -> Result<(), String> {
