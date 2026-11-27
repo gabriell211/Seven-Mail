@@ -64,6 +64,15 @@ const KEY_SCOPE: &str = "gemini";
 const KEY_ID: &str = "desktop";
 const API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL: &str = "gemini-3.8-flash";
+// Public identifiers from the registered Desktop OAuth client, not secrets.
+const DEFAULT_GOOGLE_CLIENT_ID: &str = "635154959399-jhv30056f5sjkftrnh9ocdf6oq7il516.apps.googleusercontent.com";
+const DEFAULT_GOOGLE_PROJECT: &str = "gen-lang-client-0988107998";
+fn google_client_default()->&'static str{
+    option_env!("SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID").filter(|id|!id.trim().is_empty()).unwrap_or(DEFAULT_GOOGLE_CLIENT_ID)
+}
+fn google_project_default()->&'static str{
+    option_env!("SEVEN_MAIL_GEMINI_GOOGLE_PROJECT").filter(|id|!id.trim().is_empty()).unwrap_or(DEFAULT_GOOGLE_PROJECT)
+}
 
 // Persist the key and selected model in one vault record, avoiding partial
 // configuration updates. Legacy records contained only the API key.
@@ -267,12 +276,10 @@ pub async fn gemini_google_connect(app:tauri::AppHandle,attempt_id:String,accoun
             },
             None=>None,
         };
-        let client_id=if client_id.trim().is_empty(){
-            option_env!("SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID").filter(|id|!id.trim().is_empty()).map(str::to_owned)
-                .or_else(||expected.as_ref().and_then(|a|a.oauth_client_id.clone())).unwrap_or_default()
-        }else{client_id.trim().to_owned()};
-        let client_secret=if client_secret.is_empty(){option_env!("SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_SECRET").unwrap_or_default().to_owned()}else{client_secret};
-        let project=if project.trim().is_empty(){option_env!("SEVEN_MAIL_GEMINI_GOOGLE_PROJECT").unwrap_or_default().to_owned()}else{project.trim().to_owned()};
+        let client_id=if client_id.trim().is_empty(){google_client_default().to_owned()}else{client_id.trim().to_owned()};
+        // An optional installed-app secret must belong to the selected client.
+        let client_secret=if client_secret.is_empty()&&client_id==google_client_default(){option_env!("SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_SECRET").unwrap_or_default().to_owned()}else{client_secret};
+        let project=if project.trim().is_empty(){google_project_default().to_owned()}else{project.trim().to_owned()};
         *GOOGLE_PENDING.lock().map_err(|_|"OAuth indisponível.")?=Some(attempt_id.clone());
         let check=||{app_lock::require_unlocked()?;if GOOGLE_PENDING.lock().map_err(|_|"OAuth indisponível.")?.as_deref()!=Some(attempt_id.as_str()){return Err("Autorização Google cancelada.".into());}Ok(())};
         let result=(||{
