@@ -1236,3 +1236,14 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .gemini-composer .gemini-attachments{margin:2px 0 4px}
 .gemini-history:empty{display:none}
 @media(prefers-reduced-motion:reduce){.gemini-composer{transition:none}}
+
+.gemini-brand-mark{display:block;object-fit:contain;flex:none;width:21px;height:21px}
+.gemini-trigger .gemini-brand-mark{width:18px;height:18px}
+.gemini-empty-conversation>.gemini-brand-mark,.gemini-welcome>.gemini-brand-mark{width:32px;height:32px}
+.gemini-token-ring{position:relative;width:40px;height:40px;display:grid;place-items:center;margin-left:auto;flex:none}
+.gemini-token-arc{position:absolute;inset:0;width:40px;height:40px;pointer-events:none;transform:rotate(-90deg);overflow:visible}
+.gemini-token-arc circle{fill:none;stroke-width:2;stroke-linecap:round}
+.gemini-token-track{stroke:var(--line2)}
+.gemini-token-value{stroke:var(--accent);transition:stroke-dasharray .18s linear}
+.gemini-token-ring .gemini-composer-send{position:relative;margin:0}
+@media(prefers-reduced-motion:reduce){.gemini-token-value{transition:none}}

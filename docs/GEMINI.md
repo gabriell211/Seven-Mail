@@ -63,3 +63,8 @@ Homologue primeiro com usuários de teste autorizados; para público externo, co
 ### Cliente desktop registrado
 
 O aplicativo usa o Client ID público do cliente instalado registrado no projeto `gen-lang-client-0988107998`. O arquivo JSON recebido não é incluído no repositório. O fluxo PKCE omite o client_secret por padrão, conforme o parâmetro opcional documentado para OAuth desktop. Se o endpoint exigir o valor do cliente instalado, configure `SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_SECRET` como secret de Actions para o build de release, ou informe-o na configuração avançada local. Um valor de cliente instalado distribuído no binário não é confidencial; jamais use segredo de cliente web ou API key nesse campo. A existência do JSON não confirma que o projeto esteja publicado, verificado, com API ativa, permissões de cota ou consentimento aprovados.
+
+
+## Indicador de tokens e identidade
+
+O anel do botão de envio mostra o saldo do limite de saída por resposta (8.192 tokens), não a cota global, o saldo financeiro nem o contexto completo. Durante streaming, quando não há contagem real disponível, utiliza uma estimativa de quatro caracteres visíveis por token, explicitada no tooltip, sem estimar o raciocínio oculto. Ao concluir, usa candidatesTokenCount + thoughtsTokenCount informados em usageMetadata; ausência de metadados não é interpretada como zero. Uma nova consulta reinicia o indicador. Marca multicolorida Gemini distribuída localmente a partir do espelho https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/gemini-color.svg; marca pertence ao Google, sem implicar endosso. A conversa exige credencial válida armazenada (OAuth ou chave API), com configuração disponível antes da autorização.

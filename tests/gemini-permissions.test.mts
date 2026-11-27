@@ -84,9 +84,9 @@ test("Gemini settings are closed by default and accessed beside new conversation
  assert.match(panel,/\[settingsOpen,setSettingsOpen\]=useState\(false\)/);
  assert.match(panel,/aria-label="Nova conversa"[^]*?aria-label="Configurações do Gemini"[^]*?aria-label="Fechar Gemini"/);
  assert.match(panel,/aria-expanded=\{settingsOpen\}/);
- assert.match(panel,/\{settingsOpen\?<section className="gemini-setup"/);
+ assert.match(panel,/settingsOpen\|\|!configured\?<section className="gemini-setup"/);
  assert.match(panel,/Chave da API<input type="password"/);
- assert.match(panel,/\{!settingsOpen&&<footer>/);
+ assert.match(panel,/\{configured&&!loadingConfig&&!settingsOpen&&<footer>/);
  assert.doesNotMatch(panel,/<details className="gemini-setup"/);
  assert.match(panel,/if\(busy\)return;\s*setApiKey\("");setGoogleClientSecret\("")/);
  assert.match(panel,/settingsTitle\.current\?\.focus\(\)/);
@@ -95,7 +95,7 @@ test("Gemini settings are closed by default and accessed beside new conversation
 
 
 test("conversation hides configuration and context filters while retaining explicit read-only and approval controls",()=>{
- const settings=panel.slice(panel.indexOf('{settingsOpen?<section'),panel.indexOf('</section>:<>'));
+ const settings=panel.slice(panel.indexOf('settingsOpen||!configured?<section'),panel.indexOf('</section>:<>'));
  const conversation=panel.slice(panel.indexOf('</section>:<>'));
  for(const label of ["Conta de e-mail","Buscar e-mail no cache","Chave da API","Preparar resposta para aprovação"]) {
   assert.ok(settings.includes(label),label);
@@ -109,7 +109,7 @@ test("conversation hides configuration and context filters while retaining expli
 
 
 test("compact Gemini composer provides separate image and document pickers",()=>{
- const composer=panel.slice(panel.indexOf('{!settingsOpen&&<footer>'));
+ const composer=panel.slice(panel.indexOf('{configured&&!loadingConfig&&!settingsOpen&&<footer>'));
  assert.match(composer,/className="gemini-composer"/);
  assert.match(composer,/ref=\{fileInput\} accept=\{fileAccept\}/);
  assert.match(composer,/ref=\{imageInput\} accept=\{imageAccept\}/);
@@ -125,4 +125,19 @@ test("compact Gemini composer provides separate image and document pickers",()=>
  assert.match(composer,/files\.length>=MAX_FILES/);
  const css=readFileSync(new URL("../src/styles.css",import.meta.url),"utf8");
  assert.match(css,/\.gemini-composer-toolbar \.gemini-composer-send\{[^}]*border-radius:50%/);
+});
+
+
+test("Gemini authentication gates conversation and token ring uses bounded provider usage",()=>{
+ assert.match(panel,/setSettingsOpen\(!value.configured\)/);
+ assert.match(panel,/configured&&!loadingConfig&&!settingsOpen&&<footer>/);
+ assert.match(panel,/src="\/providers\/gemini.svg"/);
+ assert.match(panel,/gemini-token-ring/);
+ assert.match(panel,/Estimativa pelo texto visível/);
+ assert.match(panel,/answer\?\.outputTokens/);
+ assert.match(rust,/const MAX_OUTPUT_TOKENS: u32 = 8192/);
+ assert.match(rust,/metadata.get\("candidatesTokenCount"\)/);
+ assert.match(rust,/metadata.get\("thoughtsTokenCount"\)/);
+ assert.match(rust,/output_tokens,output_token_limit:MAX_OUTPUT_TOKENS/);
+ assert.ok(existsSync(new URL("../public/providers/gemini.svg",import.meta.url)));
 });
