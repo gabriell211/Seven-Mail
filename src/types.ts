@@ -82,6 +82,8 @@ export interface MailMessage {
   preview: string;
   from: MailAddress;
   to: MailAddress[];
+  cc?: MailAddress[];
+  bcc?: MailAddress[];
   receivedAt: string;
   isRead: boolean;
   isFlagged: boolean;
@@ -98,7 +100,7 @@ export interface MailMessage {
   isMuted?: boolean;
   isPhishing?: boolean;
   isImportant?: boolean;
-  sourceFormat?: "msg" | "oft" | "eml";
+  sourceFormat?: "msg" | "oft" | "eml" | "pst";
 }
 
 export interface QueueOperation {

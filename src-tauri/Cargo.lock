@@ -3747,6 +3747,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pstsmith"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
 name = "quick-xml"
 version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4574,6 +4583,7 @@ dependencies = [
  "msg_parser",
  "openssl",
  "outlook-pst-rw",
+ "pstsmith",
  "quick-xml",
  "regex",
  "reqwest",
