@@ -78,3 +78,17 @@ test("Google OAuth is separate from email authorization and uses a native loopba
  assert.match(panel,/Entrar com Google/);
  assert.doesNotMatch(oauth,/oauth::access_token|mail.google.com\/.*scope/);
 });
+
+
+test("Gemini settings are closed by default and accessed beside new conversation",()=>{
+ assert.match(panel,/\[settingsOpen,setSettingsOpen\]=useState\(false\)/);
+ assert.match(panel,/aria-label="Nova conversa"[^]*?aria-label="Configurações do Gemini"[^]*?aria-label="Fechar Gemini"/);
+ assert.match(panel,/aria-expanded=\{settingsOpen\}/);
+ assert.match(panel,/\{settingsOpen\?<section className="gemini-setup"/);
+ assert.match(panel,/Chave da API<input type="password"/);
+ assert.match(panel,/\{!settingsOpen&&<footer>/);
+ assert.doesNotMatch(panel,/<details className="gemini-setup"/);
+ assert.match(panel,/if\(busy\)return;\s*setApiKey\("");setGoogleClientSecret\("")/);
+ assert.match(panel,/settingsTitle\.current\?\.focus\(\)/);
+ assert.match(panel,/e\.key==="Escape"&&settingsOpen&&!busy/);
+});

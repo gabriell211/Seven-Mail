@@ -1199,3 +1199,18 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .seven-storage-card details label{margin-top:8px}
 @container (max-width:420px){.seven-storage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @container (max-width:270px){.seven-storage-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* Gemini settings live in their own panel view, leaving the conversation uncluttered. */
+.gemini-settings-toggle[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent)}
+.gemini-setup{display:grid;gap:14px}
+.gemini-setup>.gemini-settings-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.gemini-settings-heading h3{margin:0;font-size:15px;color:var(--text);outline-offset:4px}
+.gemini-settings-card{display:grid;gap:10px;padding:12px;border:1px solid var(--line);border-radius:10px;min-width:0;background:var(--solid)}
+.gemini-settings-card h4{font-size:13px;color:var(--text);margin:0}
+.gemini-settings-card p{margin:0}
+.gemini-settings-card .gemini-label{margin:0}
+.gemini-settings-card>div{display:flex;gap:6px;flex-wrap:wrap}
+.gemini-settings-card>button{justify-self:start;max-width:100%}
+.gemini-settings-card details{padding:8px;border:1px solid var(--line);border-radius:8px}
+.gemini-settings-card details .gemini-label{margin-top:8px}
+.gemini-welcome-setup{display:flex;align-items:center;gap:6px;justify-self:start}
