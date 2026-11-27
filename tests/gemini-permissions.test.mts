@@ -39,7 +39,8 @@ test("model is persisted in the native vault and can be changed without reenteri
  assert.match(rust,/fn save_config/);
  assert.match(rust,/pub async fn gemini_set_model\(model:String\)/);
  assert.match(rust,/validate_model_access\(&config.api_key,model\)/);
- assert.match(rust,/let GeminiConfig\{api_key:key,model\}=read_config/);
+ assert.match(rust,/let config=read_config\(\)\?/);
+ assert.match(rust,/let GeminiConfig\{api_key:key,model\}=config/);
  assert.match(panel,/gemini_set_model/);
  assert.match(panel,/gemini_list_models/);
  assert.match(panel,/selectedModel/);
@@ -58,4 +59,10 @@ test("explicit multimodal attachment input is bounded and does not automatically
  assert.match(panel,/if\(!files.length\)changeContext\(false\)/);
  assert.match(panel,/files:payloadFiles/);
  assert.match(panel,/URL.revokeObjectURL/);
+});
+
+test("live API smoke tests are opt-in and share the production transport",()=>{
+ assert.match(rust,/generate_stream\(config,prompt,files,on_delta,check_active\)/);
+ assert.match(rust,/SEVEN_MAIL_GEMINI_TEST_API_KEY/);
+ for(const name of ["live_text_and_stream","live_image_and_stream","live_pdf_and_stream"])assert.match(rust,new RegExp(`fn ${name}\\(`));
 });
