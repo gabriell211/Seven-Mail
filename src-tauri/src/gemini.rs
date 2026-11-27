@@ -268,7 +268,7 @@ pub async fn gemini_google_connect(app:tauri::AppHandle,attempt_id:String,accoun
             None=>None,
         };
         let client_id=if client_id.trim().is_empty(){
-            option_env!("SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID").map(str::to_owned)
+            option_env!("SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_ID").filter(|id|!id.trim().is_empty()).map(str::to_owned)
                 .or_else(||expected.as_ref().and_then(|a|a.oauth_client_id.clone())).unwrap_or_default()
         }else{client_id.trim().to_owned()};
         let client_secret=if client_secret.is_empty(){option_env!("SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_SECRET").unwrap_or_default().to_owned()}else{client_secret};
