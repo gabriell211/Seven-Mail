@@ -45,3 +45,18 @@ test("Tauri npm and Rust plugin lockfiles agree on major/minor releases", () => 
     }
   }
 });
+
+
+test("desktop release version agrees across manifests and lockfiles", () => {
+  const json = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8"));
+  const version = json("../package.json").version;
+  assert.match(version, /^\d+\.\d+\.\d+$/);
+  const npmLock = json("../package-lock.json");
+  assert.equal(npmLock.version, version);
+  assert.equal(npmLock.packages[""].version, version);
+  assert.equal(json("../src-tauri/tauri.conf.json").version, version);
+  const cargoManifest = readFileSync(new URL("../src-tauri/Cargo.toml", import.meta.url), "utf8");
+  assert.equal(cargoManifest.match(/^version = "([^"]+)"$/m)?.[1], version);
+  assert.deepEqual(versions.get("seven-mail"), [version]);
+  assert.equal(readFileSync(new URL("../.github/release-trigger", import.meta.url), "utf8").trim(), "v" + version);
+});

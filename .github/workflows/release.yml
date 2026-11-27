@@ -165,17 +165,15 @@ jobs:
           releaseBody: |
             Seven Mail v__VERSION__
 
-            Novidades da v1.0.5:
-            - Gemini integrado nativamente, com respostas em streaming, arquivos e seleção persistente de modelo.
-            - Login Google OAuth desktop com PKCE e chave de API como alternativa.
-            - Contexto de e-mail em modo leitura e aprovação explícita antes da criação de rascunhos.
-            - Assinaturas com editor de texto rico e imagens incorporadas.
-            - Interface simplificada, leitura em voz alta e leitura imersiva.
-            - Configuração de contas compacta, incluindo IMAP sem criptografia quando explicitamente escolhido.
-            - API Gemini 3.5 Flash-Lite homologada com texto, imagem e PDF.
+            Novidades da v1.0.6:
+            - Gemini com interface simplificada, marca multicolorida e configurações em uma engrenagem.
+            - Conversa liberada após autorização Google ou validação de chave da API.
+            - Campo de mensagem compacto, com botões separados de arquivo e imagem.
+            - Indicador circular de tokens de saída por resposta; estimativa durante streaming e consumo informado pelo Google quando disponível.
+            - Nuvem Seven com conexões opcionais Google Drive e OneDrive e preparação para TeraBox.
+            - Site oficial, política de privacidade e termos de serviço atualizados.
 
-            Login OAuth depende de consentimento e permissões do projeto Google Cloud.
-            A homologação real do login no aplicativo, áudio e vídeo ainda está pendente.
+            O indicador não representa a cota global da conta. O login Google depende das permissões e da verificação do aplicativo no Google Cloud. A homologação real do login e da interface ainda está pendente. TeraBox e backup/restauração externos ainda não estão disponíveis.
 
             Windows:
             - MSI
@@ -192,8 +190,8 @@ jobs:
           prerelease: false
           args: --bundles ${{ matrix.bundles }}
 
-  publish-v105:
-    name: Publish verified v1.0.5
+  publish-v106:
+    name: Publish verified v1.0.6
     needs: release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -210,8 +208,8 @@ jobs:
         run: |
           set -euo pipefail
           tag="$(tr -d '\r\n' < .github/release-trigger)"
-          if [[ "$tag" != v1.0.5 ]]; then
-            echo "Automatic publication is scoped to the requested v1.0.5."
+          if [[ "$tag" != v1.0.6 ]]; then
+            echo "Automatic publication is scoped to the requested v1.0.6."
             exit 0
           fi
           version="$(jq -r .version src-tauri/tauri.conf.json)"
