@@ -82,6 +82,8 @@ export interface MailMessage {
   preview: string;
   from: MailAddress;
   to: MailAddress[];
+  cc?: MailAddress[];
+  bcc?: MailAddress[];
   receivedAt: string;
   isRead: boolean;
   isFlagged: boolean;
