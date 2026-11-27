@@ -43,7 +43,7 @@ fn json<T:serde::de::DeserializeOwned>(response:reqwest::blocking::Response)->Re
     if body.len() as u64>MAX_RESPONSE{return Err("Resposta OAuth acima do limite.".into());}
     serde_json::from_slice(&body).map_err(|_|"Resposta OAuth inválida.".into())
 }
-fn random()->Result<String,String>{
+pub(crate) fn random()->Result<String,String>{
     let mut bytes=[0u8;32];
     openssl::rand::rand_bytes(&mut bytes).map_err(|_|"Falha ao gerar segredo OAuth.")?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))
@@ -102,7 +102,7 @@ fn parse_callback(target:&str,state:&str)->Result<Option<String>,String>{
     let params:Vec<_>=url.query_pairs().collect();
     let read=|name:&str|->Option<&str>{let mut v=params.iter().filter(|(k,_)|k==name);let first=v.next()?.1.as_ref();if v.next().is_some(){None}else{Some(first)}};
     if read("state")!=Some(state){return Ok(None);}
-    if read("error").is_some(){return Err("Autorização Google recusada ou cancelada.".into());}
+    if read("error").is_some(){return Err("Autorização recusada ou cancelada.".into());}
     let code=read("code").filter(|v|valid_token(v)).ok_or("Código OAuth inválido.")?;
     Ok(Some(code.to_owned()))
 }
@@ -111,7 +111,7 @@ fn response(stream:&mut TcpStream,success:bool){
     let body=if success{"Autorizacao recebida. Volte ao Seven Mail."}else{"Solicitacao invalida. Volte ao Seven Mail."};
     let _=write!(stream,"HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",body.len());
 }
-fn await_callback(listener:TcpListener,state:&str,check_active:impl Fn()->Result<(),String>)->Result<String,String>{
+pub(crate) fn await_callback(listener:TcpListener,state:&str,check_active:impl Fn()->Result<(),String>)->Result<String,String>{
     listener.set_nonblocking(true).map_err(|_|"Listener OAuth indisponível.")?;
     let deadline=Instant::now()+Duration::from_secs(180);
     while Instant::now()<deadline{
@@ -135,7 +135,7 @@ fn await_callback(listener:TcpListener,state:&str,check_active:impl Fn()->Result
             Err(_)=>return Err("Falha no retorno OAuth local.".into()),
         }
     }
-    Err("Tempo limite para entrar com Google. Tente novamente.".into())
+    Err("Tempo limite para autorização. Tente novamente.".into())
 }
 pub(crate) fn authorize(
     client_id:String,client_secret:String,project:String,expected_email:Option<String>,

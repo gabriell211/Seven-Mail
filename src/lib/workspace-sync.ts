@@ -21,12 +21,12 @@ async function syncCollection<T>(kind: WorkspaceKind): Promise<Array<WorkspaceDo
     const owner = await getAuthorizedCloudOwner();
     if (owner) {
       const cloud = await pullCloudDocuments<T>(kind);
-      if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada durante sincronização.");
+      if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão da Nuvem Seven alterada durante sincronização.");
       const local = await bridge.listWorkspaceForSync<T>(kind);
       const localById = new Map(local.map((document) => [document.id, document]));
       const remoteById = new Map(cloud.map((document) => [document.id, document]));
       for (const remote of cloud) {
-        if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada durante sincronização.");
+        if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão da Nuvem Seven alterada durante sincronização.");
         const current = localById.get(remote.id);
         const decision = current ? reconcileDocuments(current, remote) : "remote";
         if (decision === "remote") {
@@ -38,7 +38,7 @@ async function syncCollection<T>(kind: WorkspaceKind): Promise<Array<WorkspaceDo
         }
       }
       for (const document of local) {
-        if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão Neon alterada durante sincronização.");
+        if (await getAuthorizedCloudOwner() !== owner) throw new Error("Sessão da Nuvem Seven alterada durante sincronização.");
         if (!remoteById.has(document.id)) await pushCloudDocument(document, owner);
       }
     }

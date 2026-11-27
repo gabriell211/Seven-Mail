@@ -146,7 +146,7 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 }
 
 
-/* Neon cloud account */
+/* Seven Cloud account */
 .cloud-settings{align-items:flex-start}
 .cloud-panel{width:min(430px,100%);display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--border);background:var(--surface-2);border-radius:14px}
 .cloud-panel input{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:10px;padding:10px 12px;outline:none}
@@ -1176,3 +1176,26 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .gemini-setup .gemini-label{margin:8px 0}.gemini-setup input:not([type=checkbox]){width:100%;min-width:0;background:var(--soft);color:var(--text);border:1px solid var(--line2);border-radius:8px;padding:8px}.gemini-setup>div{display:flex;gap:6px;flex-wrap:wrap}
 
 .gemini-file-picker{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.gemini-file-picker small,.gemini-attachments>small{font-size:11px;color:var(--muted)}.gemini-attachments{display:grid;gap:5px;max-height:150px;overflow:auto}.gemini-attachment{display:flex;gap:8px;align-items:center;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--soft);min-width:0}.gemini-attachment img{width:36px;height:36px;object-fit:cover;border-radius:5px}.gemini-attachment>span{flex:1;min-width:0;display:grid;font-size:11px}.gemini-attachment b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.gemini-attachment small{color:var(--muted)}
+
+/* External storage connections: equal horizontal tiles, local provider marks. */
+.settings-workspace>.seven-storage-settings{grid-template-columns:minmax(0,1fr);gap:14px}
+.seven-storage-settings>div:first-child p{max-width:unset}
+.seven-storage-list{display:grid;gap:10px;width:100%;min-width:0;container-type:inline-size}
+.seven-storage-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:stretch}
+.seven-storage-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:14px 10px;display:flex;flex-direction:column;align-items:stretch;gap:9px;min-width:0;text-align:center;overflow-wrap:anywhere}
+.seven-storage-title{display:flex;flex-direction:column;gap:8px;align-items:center}
+.seven-storage-logo{display:grid;place-items:center;width:48px;height:48px;flex:none}
+.seven-storage-logo img{width:40px;height:40px;object-fit:contain}
+.seven-storage-logo svg{color:var(--muted)}
+.seven-storage-title>span:last-child{display:grid;gap:2px;min-width:0}
+.seven-storage-title b{font-size:13px}
+.seven-storage-title small,.seven-storage-card>small,.seven-storage-list>small{color:var(--muted);font-size:11px;line-height:1.45}
+.seven-storage-card>div:last-child{display:flex;flex-direction:column;gap:6px;margin-top:auto}
+.seven-storage-card button{width:100%;min-width:0;min-height:32px;white-space:normal}
+.seven-storage-card label{display:grid;gap:4px;font-size:11px;text-align:left}
+.seven-storage-card input{width:100%;min-width:0;border:1px solid var(--line);border-radius:7px;background:var(--solid);color:var(--text);padding:8px}
+.seven-storage-card details{font-size:11px;color:var(--muted);text-align:left;min-width:0}
+.seven-storage-card summary{cursor:pointer}
+.seven-storage-card details label{margin-top:8px}
+@container (max-width:420px){.seven-storage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container (max-width:270px){.seven-storage-grid{grid-template-columns:minmax(0,1fr)}}

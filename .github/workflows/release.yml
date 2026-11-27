@@ -158,6 +158,7 @@ jobs:
           SEVEN_MAIL_GEMINI_GOOGLE_PROJECT: ${{ vars.SEVEN_MAIL_GEMINI_GOOGLE_PROJECT }}
           # Optional installed-app value only; never a confidential web-client secret.
           SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_SECRET: ${{ secrets.SEVEN_MAIL_GEMINI_GOOGLE_CLIENT_SECRET }}
+          SEVEN_MAIL_ONEDRIVE_CLIENT_ID: ${{ vars.SEVEN_MAIL_ONEDRIVE_CLIENT_ID }}
         with:
           tagName: v__VERSION__
           releaseName: "Seven Mail v__VERSION__"
