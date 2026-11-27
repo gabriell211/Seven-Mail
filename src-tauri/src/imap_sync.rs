@@ -187,6 +187,8 @@ fn parse_message(
         preview,
         from: mail_address(parsed.from().and_then(|value| value.first())),
         to: recipients(parsed.to()),
+        cc: recipients(parsed.cc()),
+        bcc: recipients(parsed.bcc()),
         received_at,
         is_read,
         is_flagged,

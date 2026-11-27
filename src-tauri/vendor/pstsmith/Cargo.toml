@@ -1,0 +1,21 @@
+[package]
+name = "pstsmith"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/baozdemir/pstsmith"
+description = "Vendored pstsmith reader/writer with typed folders for Seven Mail"
+
+[lib]
+name = "pstsmith"
+
+[features]
+default = []
+mem-profile = []
+op-counters = []
+
+[dependencies]
+byteorder = "1"
+thiserror = "2"
+tracing = "0.1"

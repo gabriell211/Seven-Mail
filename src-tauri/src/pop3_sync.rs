@@ -304,8 +304,7 @@ fn parse_message(account: &AccountProfile, uid: &str, raw: &[u8]) -> Result<Mail
         name: addr.and_then(|value| value.name()).map(ToOwned::to_owned),
         email: addr.and_then(|value| value.address()).unwrap_or("desconhecido@localhost").to_owned(),
     };
-    let recipients = parsed
-        .to()
+    let recipients = |addresses: Option<&mail_parser::Address<'_>>| addresses
         .map(|items| items.iter().map(|item| MailAddress {
             name: item.name().map(ToOwned::to_owned),
             email: item.address().unwrap_or("desconhecido@localhost").to_owned(),
@@ -328,7 +327,9 @@ fn parse_message(account: &AccountProfile, uid: &str, raw: &[u8]) -> Result<Mail
         subject: parsed.subject().unwrap_or("(sem assunto)").to_owned(),
         preview: parsed.body_preview(180).map(|value| value.into_owned()).unwrap_or_default(),
         from: address(parsed.from().and_then(|value| value.first())),
-        to: recipients,
+        to: recipients(parsed.to()),
+        cc: recipients(parsed.cc()),
+        bcc: recipients(parsed.bcc()),
         received_at: parsed.date().map(|date| date.to_rfc3339()).unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
         is_read: false,
         is_flagged: false,

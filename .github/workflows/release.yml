@@ -166,13 +166,17 @@ jobs:
             Seven Mail v__VERSION__
 
             Novidades da v1.0.7:
+            - Novo tema escuro em grafite, com alternância rápida pela lua e pelo sol, preferência salva e engrenagem distinta para configurações.
+            - Migração PST Unicode com hierarquia de pastas não vazias, destinatários Para/CC/CCO disponíveis, categorias atribuídas, leitura, sinalização ativa e importância.
+            - Importação e exportação PST de calendários (eventos únicos), contatos e tarefas, com classes MAPI e pastas nativas correspondentes.
+            - Leitura segura do mapa de propriedades nomeadas MAPI e correções de compilação Windows.
             - Mensagens não lidas com marcador roxo, destaque e contador alinhado ao filtro.
             - Gemini conectado exclusivamente por chave da API, em janela independente; a engrenagem permite trocar a chave.
             - Geração e edição de imagens, criação de assinaturas com prévia e aprovação, documentos Markdown e exportação.
-            - Respostas com formatação Markdown básica e suporte a notificações nativas de novos e-mails, tarefas e calendário.
-            - Avisos automáticos sem botão de teste, com deduplicação e respeito ao horário silencioso.
+            - Respostas com formatação Markdown básica e notificações nativas automáticas de e-mails, tarefas e calendário, sem botão de teste.
+            - Correções no site oficial.
 
-            A geração de imagens depende do acesso ao modelo e da cota do projeto Google. A apresentação das notificações depende das configurações do sistema operacional. A homologação prática dessas funcionalidades permanece pendente. A compatibilidade PST ampliada com Outlook está em desenvolvimento e não faz parte desta versão.
+            A compatibilidade PST foi ampliada, mas não é integral: recorrências, exceções, fuso original, anexos importados, pastas vazias e especiais, lista mestra/cores de categorias e acompanhamento avançado ainda têm limitações. A homologação no Outlook clássico real permanece pendente. A geração de imagens depende do modelo e da cota do projeto Google; os avisos nativos dependem das configurações do sistema. A homologação visual e prática dessas funcionalidades permanece pendente.
 
             Windows:
             - MSI

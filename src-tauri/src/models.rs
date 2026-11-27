@@ -178,6 +178,10 @@ pub struct MailMessage {
     pub preview: String,
     pub from: MailAddress,
     pub to: Vec<MailAddress>,
+    #[serde(default)]
+    pub cc: Vec<MailAddress>,
+    #[serde(default)]
+    pub bcc: Vec<MailAddress>,
     pub received_at: String,
     pub is_read: bool,
     pub is_flagged: bool,
