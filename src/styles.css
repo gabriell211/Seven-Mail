@@ -1,15 +1,20 @@
 :root{
   font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   color:#1d1e29;background:#f4f5fa;
-  --bg:#f4f5fa;--surface:rgba(255,255,255,.9);--solid:#fff;--soft:#f7f7fb;
+  color-scheme:light;--bg:#f4f5fa;--surface:rgba(255,255,255,.9);--solid:#fff;--soft:#f7f7fb;--surface-2:#eef0f6;--border:var(--line2);
   --line:rgba(25,27,40,.09);--line2:rgba(25,27,40,.15);--text:#1c1e29;
   --muted:#74788a;--muted2:#9ca0b1;--accent:#6f60f4;--accent2:#9481ff;
   --accent-soft:rgba(111,96,244,.1);--green:#34b784;--shadow:0 24px 70px rgba(55,45,115,.1)
 }
 :root[data-theme="dark"]{
-  color:#f2f2f7;background:#101116;--bg:#101116;--surface:rgba(24,25,33,.91);--solid:#1b1c24;--soft:#20212a;
-  --line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.12);--text:#f2f2f7;--muted:#a0a3b1;--muted2:#747887;
-  --accent:#8a7aff;--accent2:#b08dff;--accent-soft:rgba(138,122,255,.14);--shadow:0 28px 80px rgba(0,0,0,.25)
+  color-scheme:dark;color:#f0eff6;background:#12131a;
+  --bg:#12131a;--surface:rgba(26,27,37,.96);--solid:#1a1b25;--soft:#242632;--surface-2:#20212c;
+  --line:rgba(222,224,248,.10);--line2:rgba(222,224,248,.20);--border:var(--line2);
+  --text:#f0eff6;--muted:#b4b6c7;--muted2:#979bad;
+  --accent:#b6a5ff;--accent2:#c6b6ff;--accent-soft:rgba(158,135,255,.15);
+  --action:#6247c5;--action2:#6a4dcc;--on-action:#fff;
+  --green:#69d8aa;--success-text:#84e1b5;--danger-text:#ff9caa;--warning-text:#f5c77b;
+  --shadow:0 16px 48px rgba(0,0,0,.26)
 }
 *{box-sizing:border-box}html,body,#root{margin:0;height:100%;min-height:100vh;min-width:980px}body{overflow:hidden;background:var(--bg);color:var(--text);zoom:var(--ui-scale,1)}
 button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:pointer}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -1266,3 +1271,29 @@ button,input,textarea,select{font:inherit}button{border:0;color:inherit;cursor:p
 .gemini-connection-dialog .gemini-connect-submit{width:100%;min-height:46px;justify-content:center;font-size:14px}
 .gemini-connection-dialog .gemini-key-link{justify-self:center;background:none;border:0;color:var(--text);text-decoration:underline;text-underline-offset:3px;padding:3px 8px;font-size:13px}
 .gemini-connection-dialog .gemini-preferences-link{font-size:11px;color:var(--muted)}.gemini-connection-dialog :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Appearance shortcut: stays compact and inherits focus/keyboard behaviour. */
+.topbar .theme-toggle{width:36px;height:36px;flex:0 0 36px;margin:0 1px;display:grid;place-items:center;border-radius:10px;color:var(--muted);background:transparent;border:1px solid transparent}
+.topbar .theme-toggle:hover{color:var(--accent);background:var(--accent-soft);border-color:var(--line)}
+.topbar .theme-toggle[aria-pressed="true"]{color:var(--accent);background:var(--accent-soft)}
+@media screen{
+  :root[data-theme="dark"] .app-shell{background:var(--bg)}
+  :root[data-theme="dark"] .nav-rail{background:#171822;backdrop-filter:none}
+  :root[data-theme="dark"] .topbar{background:var(--solid);backdrop-filter:none}
+  :root[data-theme="dark"] .folder-pane{background:var(--surface-2)}
+  :root[data-theme="dark"] .search{background:var(--bg);border-color:var(--line2);box-shadow:none}
+  :root[data-theme="dark"] .message.unread{background:color-mix(in srgb,var(--accent) 8%,var(--solid));border-color:color-mix(in srgb,var(--accent) 17%,transparent)}
+  :root[data-theme="dark"] .message.unread.selected,:root[data-theme="dark"] .message.selected{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 48%,transparent)}
+  :root[data-theme="dark"] .compose-button,:root[data-theme="dark"] .primary{background:linear-gradient(135deg,var(--action2),var(--action));color:var(--on-action);box-shadow:0 5px 16px #0003}
+  :root[data-theme="dark"] .folder b,:root[data-theme="dark"] .task-check.done,:root[data-theme="dark"] .day.today>span,:root[data-theme="dark"] .calendar-week-day.today>header b,:root[data-theme="dark"] .quick-notification-actions button:first-child,:root[data-theme="dark"] .gemini-composer-toolbar .gemini-composer-send{background:var(--action);color:var(--on-action)}
+  :root[data-theme="dark"] .secure-note,:root[data-theme="dark"] .priority.low,:root[data-theme="dark"] .cloud-ok,:root[data-theme="dark"] .account-health.ok,:root[data-theme="dark"] .auth-results article.pass span,:root[data-theme="dark"] .attendee-response-panel .response-accepted{color:var(--success-text)}
+  :root[data-theme="dark"] .form-error,:root[data-theme="dark"] .sync.error,:root[data-theme="dark"] .danger-link,:root[data-theme="dark"] .priority.high,:root[data-theme="dark"] .cloud-error,:root[data-theme="dark"] .account-health.error,:root[data-theme="dark"] .danger-icon,:root[data-theme="dark"] .danger-ghost,:root[data-theme="dark"] .send-feedback.error>span svg,:root[data-theme="dark"] .organizer-delete:hover,:root[data-theme="dark"] .task-card.overdue .task-copy small,:root[data-theme="dark"] .message.blocked .message-meta b,:root[data-theme="dark"] .danger-lite,:root[data-theme="dark"] .auth-results article.fail span,:root[data-theme="dark"] .attendee-response-panel .response-declined,:root[data-theme="dark"] .policy-error,:root[data-theme="dark"] .signature-notice,:root[data-theme="dark"] .gemini-error{color:var(--danger-text)}
+  :root[data-theme="dark"] .cloud-status.warning,:root[data-theme="dark"] .attendee-response-panel .response-tentative{color:var(--warning-text)}
+  :root[data-theme="dark"] .modal-backdrop,:root[data-theme="dark"] .gemini-connection-dialog::backdrop{background:#080910b8}
+  :root[data-theme="dark"] .safe-html th,:root[data-theme="dark"] .safe-html td{border-color:var(--line2)}
+  :root[data-theme="dark"] .safe-html blockquote{border-inline-start:2px solid var(--line2);color:var(--muted);padding-inline-start:12px}
+  :root[data-theme="dark"] .safe-html pre,:root[data-theme="dark"] .safe-html code{background:var(--soft);color:var(--text)}
+  /* Content canvas deliberately light: email signatures and documents are exported as authored. */
+  :root[data-theme="dark"] .signature-rich-editor,:root[data-theme="dark"] .signature-preview,:root[data-theme="dark"] .gemini-signature-preview,:root[data-theme="dark"] .attachment-preview iframe{color-scheme:light}
+}
+@media(prefers-reduced-motion:reduce){.theme-toggle{transition:none}}
