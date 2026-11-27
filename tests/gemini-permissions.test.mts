@@ -154,3 +154,13 @@ test("creative modes use explicit selection and scoped native transport",()=>{
  assert.ok(creative.includes("isDefault:false,isReplyDefault:false"));
  assert.ok(creative.includes("GeminiMarkdown"));
 });
+
+
+test("creative exports require an explicit file picker and validate native raster writes",()=>{
+ const creative=readFileSync(new URL("../src/components/GeminiCreative.tsx",import.meta.url),"utf8");
+ assert.ok(creative.includes("await saveDialog("));
+ assert.ok(creative.includes('invoke("gemini_save_image"'));
+ assert.ok(rust.includes("create_new(true)"));
+ assert.ok(rust.includes("destination.is_absolute()"));
+ assert.ok(creative.includes("Salvar documento (.md)"));
+});

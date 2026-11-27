@@ -1,4 +1,7 @@
 import { Fragment, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { bridge } from "../lib/bridge";
 import { sanitizeSignatureHtml, signatureTextHtml } from "../lib/signatures";
 import type { SignatureItem } from "../types";
 export type CreativeMode="chat"|"image"|"signature"|"document";
@@ -35,10 +38,21 @@ export function CreativePreview({result,mode,accountId,email,onSaveSignature,bus
   }
   async function copy(text:string){try{await navigator.clipboard.writeText(text);}catch{setError("Não foi possível copiar o conteúdo.");}}
   const image=result.image;
+  async function exportResult(){
+    if(busy||saving)return;
+    setSaving(true);setError("");
+    try{
+      const extension=image?(image.mimeType==="image/jpeg"?"jpg":image.mimeType==="image/webp"?"webp":"png"):sig?"html":"md";
+      const path=await saveDialog({defaultPath:`seven-mail-gemini.${extension}`,filters:[{name:image?"Imagem":sig?"Assinatura HTML":"Documento Markdown",extensions:[extension]}]});
+      if(!path)return;
+      if(image){await invoke("gemini_save_image",{path,mimeType:image.mimeType,data:image.data});}
+      else{await bridge.writeTextFile(path,sig?html:result.text);}
+    }catch(reason){setError(String(reason));}finally{setSaving(false);}
+  }
   return <div className="gemini-creative-result">
-    {image&&<><img className="gemini-generated-image" alt="Imagem gerada pelo Gemini" src={"data:"+image.mimeType+";base64,"+image.data}/><button className="secondary" type="button" disabled={busy} onClick={()=>void copy("data:"+image.mimeType+";base64,"+image.data)}>Copiar imagem (Data URL)</button></>}
-    {sig&&<><b>Prévia da assinatura · {email}</b><div className="gemini-signature-preview" dangerouslySetInnerHTML={{__html:html}}/><button className="secondary" type="button" onClick={()=>void copy(html)}>Copiar HTML</button><button className="primary" type="button" disabled={busy||saving||saved} onClick={()=>void save()}>{saved?"Assinatura salva":saving?"Salvando…":"Salvar nova assinatura"}</button><small>A assinatura existente será preservada. Defina como padrão nas configurações da conta.</small></>}
-    {mode==="document"&&<button className="secondary" type="button" onClick={()=>void copy(result.text)}>Copiar documento</button>}
+    {image&&<><img className="gemini-generated-image" alt="Imagem gerada pelo Gemini" src={"data:"+image.mimeType+";base64,"+image.data}/><button className="secondary" type="button" disabled={busy||saving} onClick={()=>void exportResult()}>Salvar imagem</button></>}
+    {sig&&<><b>Prévia da assinatura · {email}</b><div className="gemini-signature-preview" dangerouslySetInnerHTML={{__html:html}}/><button className="secondary" type="button" onClick={()=>void copy(html)}>Copiar HTML</button><button className="secondary" type="button" disabled={busy||saving} onClick={()=>void exportResult()}>Exportar HTML</button><button className="primary" type="button" disabled={busy||saving||saved} onClick={()=>void save()}>{saved?"Assinatura salva":saving?"Salvando…":"Salvar nova assinatura"}</button><small>A assinatura existente será preservada. Defina como padrão nas configurações da conta.</small></>}
+    {mode==="document"&&<><button className="secondary" type="button" onClick={()=>void copy(result.text)}>Copiar documento</button><button className="secondary" type="button" disabled={busy||saving} onClick={()=>void exportResult()}>Salvar documento (.md)</button></>}
     {error&&<p role="alert">{error}</p>}
   </div>;
 }

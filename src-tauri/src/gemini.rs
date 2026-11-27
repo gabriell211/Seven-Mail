@@ -647,6 +647,22 @@ pub async fn gemini_create(token:String,account_id:String,mode:String,question:S
         Ok(result)
     }).await.map_err(|_|"Falha ao gerar conteúdo Gemini.".to_string())?
 }
+#[tauri::command]
+pub fn gemini_save_image(path:String,mime_type:String,data:String)->Result<(),String>{
+    app_lock::require_unlocked()?;
+    if data.len()>MAX_FILE_BYTES.div_ceil(3)*4{return Err("Imagem acima de 5 MiB.".into());}
+    let bytes=STANDARD.decode(data).map_err(|_|"Imagem inválida.")?;
+    if bytes.is_empty()||bytes.len()>MAX_FILE_BYTES||!matches!(mime_type.as_str(),"image/png"|"image/jpeg"|"image/webp")||!valid_media_signature(&mime_type,&bytes){return Err("Imagem inválida.".into());}
+    let destination=std::path::Path::new(&path);
+    let extension=destination.extension().and_then(|v|v.to_str()).unwrap_or_default().to_ascii_lowercase();
+    let correct=match mime_type.as_str(){"image/png"=>extension=="png","image/jpeg"=>matches!(extension.as_str(),"jpg"|"jpeg"),"image/webp"=>extension=="webp",_=>false};
+    if !destination.is_absolute()||!correct{return Err("Escolha um arquivo com a extensão correta.".into());}
+    // Never overwrite an existing file; explicit save dialog precedes this command.
+    let mut file=std::fs::OpenOptions::new().write(true).create_new(true).open(destination).map_err(|_|"Não foi possível criar o arquivo. Escolha um nome novo.")?;
+    use std::io::Write as _;
+    file.write_all(&bytes).map_err(|_|"Falha ao gravar a imagem.".into())
+}
+
 #[cfg(test)]
 mod creative_tests{
     use super::*;
