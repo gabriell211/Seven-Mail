@@ -1406,7 +1406,9 @@ mod native_pst_writer {
         };
         let imported_folder = string(p, "pstFolder");
         let mut path = vec!["Seven Workspace", folder];
-        if !imported_folder.is_empty() && imported_folder != folder { path.extend(imported_folder.split('/').filter(|s| !s.is_empty())); }
+        let existing = imported_folder.split('/').filter(|s| !s.is_empty()).collect::<Vec<_>>();
+        if existing.starts_with(&["Seven Workspace", folder]) { path.extend_from_slice(&existing[2..]); }
+        else if !imported_folder.is_empty() && imported_folder != folder { path.extend(existing); }
         else if doc.kind == "task" && !string(p,"listName").is_empty() { path.push(string(p,"listName")); }
         let container = match doc.kind.as_str() { "calendar" => "IPF.Appointment", "contact" => "IPF.Contact", "task" => "IPF.Task", _ => unreachable!() };
         for depth in 2..=path.len() {
@@ -1744,6 +1746,92 @@ mod pst_interop_tests {
             assert_eq!(decoded.to[0].email, "to@example.test");
             assert_eq!(decoded.cc[0].email, "cc@example.test");
             assert_eq!(decoded.bcc[0].email, "bcc@example.test");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+
+    #[test]
+    fn native_pst_workspace_roundtrip_has_typed_folders_and_named_properties() {
+        use crate::models::WorkspaceDocument;
+        use serde_json::json;
+        let root = std::env::temp_dir().join(format!("seven-native-pst-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let archive = root.join("workspace.pst");
+        let stamp = "2026-11-27T14:00:00Z";
+        let fixtures = [
+            ("calendar", "Calendar", "IPF.Appointment", "IPM.Appointment",
+             json!({"id":"appt","title":"Reunião","description":"Agenda","location":"Sala A",
+                "startAt":stamp,"endAt":"2026-11-27T15:00:00Z","allDay":false,
+                "participants":["person@example.test"],"categories":["Projetos"]})),
+            ("contact", "Contacts", "IPF.Contact", "IPM.Contact",
+             json!({"id":"contact","displayName":"Pessoa","firstName":"Pessoa","email":"person@example.test",
+                "phone":"+55 48 99999-0000","company":"Seven","jobTitle":"Engenharia","categories":["Projetos"]})),
+            ("task", "Tasks", "IPF.Task", "IPM.Task",
+             json!({"id":"task","title":"Entrega","notes":"Revisar","dueAt":stamp,
+                "completedAt":"2026-11-27T15:00:00Z","priority":"high","categories":["Projetos"]})),
+        ];
+        {
+            let mut writer = pstsmith::UnicodePstWriter::create(&archive).unwrap();
+            for (kind, _, _, _, payload) in &fixtures {
+                native_pst_writer::workspace(&mut writer, &WorkspaceDocument {
+                    id: payload["id"].as_str().unwrap().into(), kind: (*kind).into(),
+                    updated_at: stamp.into(), payload: payload.clone(), deleted_at: None,
+                }).unwrap();
+            }
+            // A mail folder must not be silently reclassified.
+            writer.ensure_folder_path(&["Ordinary Mail"]).unwrap();
+            assert!(writer.ensure_typed_folder_path(&["Ordinary Mail"], "IPF.Contact").is_err());
+            writer.close().unwrap();
+        }
+        {
+            let store = outlook_pst::open_store(&archive).unwrap();
+            let named = PstNamedIds::read(store.as_ref()).unwrap();
+            let subtree = store.open_folder(&store.properties().ipm_sub_tree_entry_id().unwrap()).unwrap();
+            fn child(parent: &dyn PstFolder, name: &str) -> Rc<dyn PstFolder> {
+                for row in parent.hierarchy_table().unwrap().rows_matrix() {
+                    let store = parent.store();
+                    let entry = store.properties().make_entry_id(NodeId::from(u32::from(row.id()))).unwrap();
+                    let folder = store.open_folder(&entry).unwrap();
+                    if folder.properties().display_name().unwrap().to_string() == name {
+                        return folder;
+                    }
+                }
+                panic!("Missing folder {name}");
+            }
+            let workspace = child(subtree.as_ref(), "Seven Workspace");
+            let account: AccountProfile = serde_json::from_value(json!({
+                "id":"fixture","displayName":"Fixture","email":"fixture@example.test",
+                "provider":"custom","color":"#64748b","isDefault":true
+            })).unwrap();
+            for (kind, folder_name, container, class, _) in fixtures {
+                let folder = child(workspace.as_ref(), folder_name);
+                assert_eq!(pst_property_text(folder.properties().get(0x3613)).as_deref(), Some(container));
+                let row = folder.contents_table().unwrap().rows_matrix().next().unwrap();
+                let entry = store.properties().make_entry_id(NodeId::from(u32::from(row.id()))).unwrap();
+                let message = store.open_message(&entry, None).unwrap();
+                assert_eq!(pst_property_text(message.properties().get(0x001A)).as_deref(), Some(class));
+                let cats = named.categories(message.as_ref());
+                assert_eq!(cats, vec!["Projetos".to_string()]);
+                let doc = pst_workspace_item(message.as_ref(), &named, &account, folder_name, &cats).unwrap().unwrap();
+                assert_eq!(doc.kind, kind);
+                match kind {
+                    "calendar" => {
+                        assert_eq!(doc.payload["location"], "Sala A");
+                        assert_eq!(doc.payload["startAt"], "2026-11-27T14:00:00+00:00");
+                        assert_eq!(doc.payload["participants"][0], "person@example.test");
+                    }
+                    "contact" => {
+                        assert_eq!(doc.payload["email"], "person@example.test");
+                        assert_eq!(doc.payload["company"], "Seven");
+                    }
+                    "task" => {
+                        assert_eq!(doc.payload["priority"], "high");
+                        assert_eq!(doc.payload["completedAt"], "2026-11-27T15:00:00+00:00");
+                    }
+                    _ => unreachable!(),
+                }
+            }
         }
         fs::remove_dir_all(root).unwrap();
     }
