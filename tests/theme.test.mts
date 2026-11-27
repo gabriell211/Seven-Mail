@@ -27,3 +27,11 @@ test("theme is persisted through existing settings and applied before render",()
  assert.ok(css.includes("--action:#6247c5"));
  assert.ok(css.includes('signature-preview,:root[data-theme="dark"] .gemini-signature-preview'));
 });
+
+
+test("settings uses a cog outline distinct from the sun and moon",()=>{
+ const icons=readFileSync(new URL("../src/icons.tsx",import.meta.url),"utf8");
+ assert.match(icons,/settings:\["M9\.4 3h5\.2/);
+ assert.match(icons,/sun:\["M12 7a5 5/);
+ assert.match(icons,/moon:\["M20 15a8 8/);
+});
