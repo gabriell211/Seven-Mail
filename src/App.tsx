@@ -403,11 +403,12 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
   }
 
   return <div className="modal-backdrop" onMouseDown={onClose}>
-    <section className="modal account-modal" role="dialog" aria-modal="true" onMouseDown={e=>e.stopPropagation()}>
+    <section className="modal account-modal" role="dialog" aria-modal="true" aria-labelledby="connect-account-title" onMouseDown={e=>e.stopPropagation()}>
       <header className="modal-header">
-        <div><span className="eyebrow">NOVA CONTA</span><h2>Conectar e-mail</h2><p>Configuração automática para provedores conhecidos e modo manual para servidores corporativos.</p></div>
+        <div><span className="eyebrow">NOVA CONTA</span><h2 id="connect-account-title">Conectar e-mail</h2><p>Configuração automática para provedores conhecidos e modo manual para servidores corporativos.</p></div>
         <button className="icon-button" onClick={onClose} aria-label="Fechar"><Icon name="x"/></button>
       </header>
+      <div className="account-modal-body">
       <ProviderSelector value={provider} onChange={setProvider}/>
       <div className="form-grid">
         <label><span>Nome</span><input value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="Seu nome"/></label>
@@ -419,20 +420,22 @@ function AddAccountModal({onClose,onAdded}:{onClose:()=>void;onAdded:(account:Ac
         {incomingProtocol==="imap"?<>
           <label><span>IMAP</span><input value={server.imapHost} onChange={e=>setServer(v=>({...v,imapHost:e.target.value}))} placeholder="imap.dominio.com"/></label>
           <label><span>Porta IMAP</span><input type="number" value={server.imapPort} onChange={e=>setServer(v=>({...v,imapPort:Number(e.target.value)}))}/></label>
-          <label className="full"><span>Segurança IMAP</span><select value={server.imapSecurityMode??"tls"} onChange={e=>setServer(v=>({...v,imapSecurityMode:e.target.value as "tls"|"starttls"}))}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option></select></label>
+          <label className="account-server-security"><span>Segurança IMAP</span><select value={server.imapSecurityMode??"tls"} onChange={e=>{const mode=e.target.value as NonNullable<ProviderSettings["imapSecurityMode"]>;setServer(v=>({...v,imapSecurityMode:mode,imapPort:mode==="tls"&&v.imapPort===143?993:mode!=="tls"&&v.imapPort===993?143:v.imapPort}));}}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option><option value="plain">Nenhum (sem criptografia)</option></select></label>
+          {server.imapSecurityMode==="plain"&&<div className="full secure-note smtp-plain-warning" role="status"><Icon name="shield" size={16}/><span>IMAP sem criptografia: mensagens e senhas podem ser interceptadas. Use somente servidores confiáveis. A porta habitual é 143. OAuth exige TLS.</span></div>}
         </>:<>
           <label><span>POP3</span><input value={pop3Host} onChange={e=>setPop3Host(e.target.value)} placeholder="pop.dominio.com"/></label>
           <label><span>Porta POP</span><input type="number" value={pop3Port} onChange={e=>setPop3Port(Number(e.target.value))}/></label>
-          <label className="full"><span>Segurança POP3</span><select value={server.pop3SecurityMode??"tls"} onChange={e=>setServer(v=>({...v,pop3SecurityMode:e.target.value as "tls"|"starttls"}))}><option value="tls">TLS direto</option><option value="starttls">STARTTLS (STLS)</option></select></label>
+          <label className="account-server-security"><span>Segurança POP3</span><select value={server.pop3SecurityMode??"tls"} onChange={e=>setServer(v=>({...v,pop3SecurityMode:e.target.value as "tls"|"starttls"}))}><option value="tls">TLS direto</option><option value="starttls">STARTTLS (STLS)</option></select></label>
         </>}
         <label><span>SMTP</span><input value={server.smtpHost} onChange={e=>setServer(v=>({...v,smtpHost:e.target.value}))} placeholder="smtp.dominio.com"/></label>
         <label><span>Porta SMTP</span><input type="number" value={server.smtpPort} onChange={e=>setServer(v=>({...v,smtpPort:Number(e.target.value)}))}/></label>
-        <label className="full"><span>Segurança SMTP</span><select value={server.smtpSecurityMode??server.securityMode} onChange={e=>{const value=e.target.value as NonNullable<ProviderSettings["smtpSecurityMode"]>;setServer(v=>({...v,smtpSecurityMode:value,securityMode:value==="plain"?v.securityMode:value}));}}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option><option value="plain">Nenhum (sem criptografia)</option></select></label>
-        {server.smtpSecurityMode==="plain"&&<div className="full secure-note smtp-plain-warning" role="status"><Icon name="shield" size={16}/><span>SMTP sem criptografia: mensagens e senhas podem ser interceptadas. Utilize somente servidores confiáveis que exigem este modo. Informe a porta indicada pelo provedor; normalmente 25. IMAP e POP3 continuam protegidos.</span></div>}
+        <label className="account-server-security"><span>Segurança SMTP</span><select value={server.smtpSecurityMode??server.securityMode} onChange={e=>{const value=e.target.value as NonNullable<ProviderSettings["smtpSecurityMode"]>;setServer(v=>({...v,smtpSecurityMode:value,securityMode:value==="plain"?v.securityMode:value}));}}><option value="tls">TLS direto</option><option value="starttls">STARTTLS</option><option value="plain">Nenhum (sem criptografia)</option></select></label>
+        {server.smtpSecurityMode==="plain"&&<div className="full secure-note smtp-plain-warning" role="status"><Icon name="shield" size={16}/><span>SMTP sem criptografia: mensagens e senhas podem ser interceptadas. Use somente servidores confiáveis. A porta habitual é 25.</span></div>}
       </div>}
-      <div className="secure-note"><Icon name="lock" size={16}/><span>A credencial nunca é gravada no cache. A conta só aparece como conectada depois que entrada e SMTP forem validados.</span></div>
+      <div className="secure-note"><Icon name="lock" size={16}/><span>Senha protegida pelo armazenamento seguro do sistema. Entrada e SMTP serão validados.</span></div>
       {connectionStep&&<div className="connection-progress" role="status"><Icon name="refresh" size={14}/><span>{connectionStep}</span></div>}
       {error&&<div className="form-error"><ConnectionError error={error} email={email} provider={provider}/></div>}
+      </div>
       <footer className="modal-footer"><button className="secondary" onClick={onClose}>Cancelar</button><button className="primary" disabled={!email.trim()||busy} onClick={connect}>{busy?"Conectando...":"Conectar"}</button></footer>
     </section>
   </div>;

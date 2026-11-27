@@ -175,9 +175,9 @@ pub fn settings_for(account: &AccountProfile) -> ProviderSettings {
     }
 }
 
-// Allow user-configured SMTP hostnames and IPs when plaintext is explicitly
+// Allow user-configured mail hostnames and IPs when plaintext is explicitly
 // selected. Never infer plaintext from the port or downgrade a failed TLS connection.
-fn plaintext_smtp_host_allowed(host: &str) -> bool {
+pub(crate) fn plaintext_host_allowed(host: &str) -> bool {
     let host = host.trim();
     let host = host.strip_prefix('[').and_then(|value| value.strip_suffix(']')).unwrap_or(host);
     if let Ok(ip) = host.parse::<IpAddr>() {
@@ -199,7 +199,7 @@ fn smtp_transport(account: &AccountProfile) -> Result<SmtpTransport, String> {
     let settings = settings_for(account);
     let mode = settings.smtp_security_mode.to_ascii_lowercase();
     if mode == "plain" {
-        if !plaintext_smtp_host_allowed(&settings.smtp_host) {
+        if !plaintext_host_allowed(&settings.smtp_host) {
             return Err("Servidor SMTP inválido. Informe um nome de domínio ou endereço IP, sem URL, caminho ou porta.".to_string());
         }
         if account.oauth_enabled {
@@ -745,12 +745,12 @@ mod protocol_security_tests {
         for host in ["localhost", "127.0.0.1", "10.0.0.20", "192.168.1.10",
             "::1", "[::1]", "fd00::20", "smtp.example.com", "mail.example.com.br",
             "smtp.local", "mailserver", "smtp.example.com.", "203.0.113.10", "2001:db8::10"] {
-            assert!(plaintext_smtp_host_allowed(host), "{host}");
+            assert!(plaintext_host_allowed(host), "{host}");
         }
         for host in ["", " ", "https://smtp.example.com", "smtp.example.com:587",
             "smtp.example.com/path", "user@smtp.example.com", "bad host", "-smtp.example.com",
             "smtp..example.com", "0.0.0.0", "::", "224.0.0.1", "255.255.255.255"] {
-            assert!(!plaintext_smtp_host_allowed(host), "{host}");
+            assert!(!plaintext_host_allowed(host), "{host}");
         }
     }
 

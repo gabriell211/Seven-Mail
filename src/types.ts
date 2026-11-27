@@ -37,7 +37,7 @@ export interface AccountProfile {
   oauthRedirectUri?: string;
   smtpHost?: string;
   smtpPort?: number;
-  imapSecurityMode?: "tls" | "starttls";
+  imapSecurityMode?: "tls" | "starttls" | "plain";
   smtpSecurityMode?: "tls" | "starttls" | "plain";
   securityMode?: "tls" | "starttls";
   aliases?: string[];
@@ -66,7 +66,7 @@ export interface ProviderSettings {
   smtpPort: number;
   /** Legacy compatibility; protocol-specific fields are authoritative. */
   securityMode: "tls" | "starttls";
-  imapSecurityMode?: "tls" | "starttls";
+  imapSecurityMode?: "tls" | "starttls" | "plain";
   smtpSecurityMode?: "tls" | "starttls" | "plain";
 }
 
