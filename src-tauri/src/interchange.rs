@@ -1102,7 +1102,13 @@ pub fn export_pst(paths: &AppPaths, account_id: Option<&str>, destination: &str)
 
     // Build beside the destination, then publish without replacing existing files.
     let temporary = parent.join(format!(".seven-mail-pst-{}", uuid::Uuid::new_v4()));
-    fs::create_dir(&temporary).map_err(|error| format!("Não foi possível preparar a exportação: {error}"))?;
+    let mut directory = fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        directory.mode(0o700);
+    }
+    directory.create(&temporary).map_err(|error| format!("Não foi possível preparar a exportação: {error}"))?;
     let archive = temporary.join("archive.pst");
     let result = (|| -> Result<(), String> {
         let mut initialized = false;
@@ -1131,6 +1137,12 @@ pub fn export_pst(paths: &AppPaths, account_id: Option<&str>, destination: &str)
                 UnicodePstFile::append_many_in_folder(&archive, &folder, pending)
                     .map_err(|error| format!("Falha ao adicionar mensagens ao PST: {error}"))?;
             }
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&archive, fs::Permissions::from_mode(0o600))
+                .map_err(|error| format!("Não foi possível proteger o arquivo PST: {error}"))?;
         }
         fs::hard_link(&archive, destination)
             .map_err(|error| format!("Não foi possível publicar o PST sem sobrescrever o destino (use uma unidade que suporte hard links): {error}"))?;
