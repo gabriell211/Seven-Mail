@@ -54,11 +54,11 @@ O exportador organiza pastas não vazias pela hierarquia local, separa contas po
 
 A biblioteca `outlook-pst-rw` 1.2.9 escreve mensagens, destinatários e hierarquia, mas sua interface de escrita não oferece propriedades MAPI arbitrárias, propriedades nomeadas ou classes de itens de calendário, contatos e tarefas.
 
-- [ ] Escrita e leitura de categorias nativas (`PidNameKeywords`, PS_PUBLIC_STRINGS).
+- [ ] Escrita de categorias nativas (`PidNameKeywords`, PS_PUBLIC_STRINGS). Leitura e registro de nomes implementados nesta branch, pendentes de fixture Outlook; cores originais não são recuperadas.
 - [ ] Escrita de sinalizadores, leitura, conclusão de acompanhamento e datas de acompanhamento.
-- [ ] Calendários (`IPM.Appointment`), incluindo recorrência, horários e fuso.
-- [ ] Contatos (`IPM.Contact`), incluindo e-mails e telefones.
-- [ ] Tarefas (`IPM.Task`), incluindo vencimentos, status e conclusão.
+- [ ] Exportação de calendários (`IPM.Appointment`), recorrência e fuso original. Importação básica de eventos únicos, horários UTC, local, participantes e categorias implementada, pendente de validação.
+- [ ] Exportação de contatos (`IPM.Contact`). Importação básica de nome, e-mails, telefones, empresa, cargo, notas e categorias implementada, pendente de validação.
+- [ ] Exportação de tarefas (`IPM.Task`) e recorrência/status avançados. Importação básica de título, datas disponíveis, prioridade, notas e categorias implementada, pendente de validação.
 - [ ] Anexos e pastas vazias, bem como pastas especiais e metadados de contas.
 - [ ] Preservação de CC/CCO nas futuras revisões de sincronização em nuvem, com isolamento de privacidade.
 - [ ] Testes de ida e volta com PST produzido e aberto no Outlook clássico real.
@@ -103,3 +103,7 @@ Para uma migração entre computadores ou a partir de outro cliente:
 8. valide caixas, calendários, contatos e filas antes de remover a origem.
 
 Credenciais não são copiadas de forma insegura entre dispositivos.
+
+### Importação de itens MAPI
+
+O leitor resolve propriedades nomeadas pelo GUID e LID/nome do mapa do próprio PST, sem assumir que IDs `0x8000+` sejam iguais entre arquivos. Itens de calendário, contatos e tarefas são encaminhados ao workspace, não tratados como e-mails. A importação de recorrências e classes desconhecidas ainda retorna erro explícito; itens importados anteriormente podem permanecer no cache, portanto a importação ainda não é transacional. O exportador continua restrito a mensagens, não sendo um backup completo de workspace.
